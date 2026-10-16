@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Build synthetic bugtool bundle fixtures (tar.bz2 and zip) for testing."""
+import io
+import os
+import tarfile
+import zipfile
+import bz2
+
+OUT = os.path.join(os.path.dirname(__file__), "fixtures")
+
+XAPI_DB = """<?xml version="1.0"?>
+<database>
+<table name="pool">
+<row uuid="pool-uuid-1" name_label="mypool" master="OpaqueRef:host1"/>
+</table>
+<table name="host">
+<row id="host1" uuid="host-uuid-1" name_label="host1" hostname="host1.example.com" address="192.168.1.11" enabled="true" power_state="Running" memory_total="34359738368" memory_free="8589934592" cpu_info="('cpu_count'%.'8')('cores_per_socket'%.'4')('socket_count'%.'2')('modelname'%.'Intel(R)%.Xeon(R)%.CPU%.E5-2630')('hostname'%.'host1')" software_version="('product_version'%.'8.3.0')('xen_version'%.'4.17')('linux_version'%.'4.19.0-1.el8.xcpng')"/>
+<row id="host2" uuid="host-uuid-2" name_label="host2" hostname="host2.example.com" address="192.168.1.12" enabled="true" power_state="Running" memory_total="34359738368" memory_free="12884901888" cpu_info="('cpu_count'%.'8')('cores_per_socket'%.'4')('socket_count'%.'2')('modelname'%.'Intel(R)%.Xeon(R)%.CPU%.E5-2630')" software_version="('product_version'%.'8.3.0')('xen_version'%.'4.17')('linux_version'%.'4.19.0-1.el8.xcpng')"/>
+</table>
+<table name="SR">
+<row id="sr-local" uuid="sr-uuid-local" name_label="Local storage" type="lvm" shared="false" physical_size="998999399104" physical_utilisation="123456789" />
+<row id="sr-nfs" uuid="sr-uuid-nfs" name_label="NFS repo" type="nfs" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" />
+</table>
+<table name="PBD">
+<row id="pbd1" host="OpaqueRef:host1" SR="OpaqueRef:sr-local" currently_attached="true"/>
+<row id="pbd2" host="OpaqueRef:host2" SR="OpaqueRef:sr-local" currently_attached="true"/>
+<row id="pbd3" host="OpaqueRef:host1" SR="OpaqueRef:sr-nfs" currently_attached="true"/>
+<row id="pbd4" host="OpaqueRef:host2" SR="OpaqueRef:sr-nfs" currently_attached="true"/>
+</table>
+<table name="VDI">
+<row id="vdi1" uuid="vdi-uuid-1" name_label="vm1-disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="( 'vbd1' )"/>
+<row id="vdi2" uuid="vdi-uuid-2" name_label="vm2-disk" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-local" VBDs="( 'vbd2' )"/>
+</table>
+<table name="VBD">
+<row id="vbd1" VDI="OpaqueRef:vdi1" VM="OpaqueRef:vm1" currently_attached="true"/>
+<row id="vbd2" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" currently_attached="true"/>
+</table>
+<table name="VM">
+<row id="vm1" uuid="vm-uuid-1" name_label="vm1" power_state="Running" is_a_template="false" resident_on="OpaqueRef:host1" memory_dynamic_max="4294967296" VCPUs_max="4" guest_metrics="('os-name'%.'Debian%.12')"/>
+<row id="vm2" uuid="vm-uuid-2" name_label="vm2" power_state="Halted" is_a_template="false" resident_on="OpaqueRef:NULL" memory_dynamic_max="2147483648" VCPUs_max="2"/>
+<row id="tmpl" uuid="vm-uuid-tpl" name_label="Debian 12 template" power_state="Halted" is_a_template="true" resident_on="OpaqueRef:NULL" memory_dynamic_max="2147483648" VCPUs_max="2"/>
+</table>
+<table name="VIF">
+<row id="vif1" uuid="vif-uuid-1" VM="OpaqueRef:vm1" network="OpaqueRef:net0" device="0" MAC="aa:bb:cc:dd:ee:01" currently_attached="true"/>
+</table>
+<table name="PIF">
+<row id="pif1" uuid="pif-uuid-1" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth0" MAC="aa:bb:cc:dd:ee:f1" IP="192.168.1.11" currently_attached="true" VLAN="-1" bond_mode=""/>
+</table>
+<table name="network">
+<row id="net0" uuid="net-uuid-0" name_label="Pool-wide%.network%.associated%.with%.eth0"/>
+</table>
+</database>
+"""
+
+INVENTORY = """# automatically generated
+INSTALLATION_UUID='inv-uuid'
+PRODUCT_VERSION='8.3.0'
+PRODUCT_VERSION_TEXT='8.3.0'
+XEN_VERSION='4.17'
+KERNEL_VERSION='4.19.0-1.el8.xcpng'
+CONTROL_DOMAIN_MEMORY='2048'
+CONTROL_DOMAIN_CPUS='2'
+"""
+
+
+def build(host: str, suffix: str):
+    os.makedirs(OUT, exist_ok=True)
+    base = f"{host}/etc/xensource-inventory"
+    if suffix == "tar.bz2":
+        path = os.path.join(OUT, f"{host}.tar.bz2")
+        with tarfile.open(path, "w:bz2") as tar:
+            for name, data in [
+                (f"{host}/xapi-db.xml", XAPI_DB),
+                (base, INVENTORY),
+            ]:
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data.encode()))
+    else:
+        path = os.path.join(OUT, f"{host}.zip")
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr(f"{host}/xapi-db.xml", XAPI_DB)
+            z.writestr(base, INVENTORY)
+    print("built", path)
+
+
+if __name__ == "__main__":
+    # also write a plain xapi-db.xml for rust unit tests
+    with open(os.path.join(OUT, "xapi-db.xml"), "w") as f:
+        f.write(XAPI_DB)
+    for host in ("host1", "host2"):
+        build(host, "tar.bz2")
+    build("host1", "zip")
