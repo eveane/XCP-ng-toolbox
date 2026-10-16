@@ -85,7 +85,7 @@ pub fn render_text(r: &BundleReport) -> String {
     for v in &r.vms {
         let _ = writeln!(
             out,
-            "{} [{}] {}{} vCPUs={} mem={} host={} VIFs={} VDIs={}",
+            "{} [{}] {}{} vCPUs={} mem={} host={} VIFs={} VBDs={}",
             v.name,
             v.uuid,
             v.power_state,
@@ -94,7 +94,7 @@ pub fn render_text(r: &BundleReport) -> String {
             mib(v.memory_dynamic_max_bytes),
             v.resident_host,
             v.vif_count,
-            v.vdi_count
+            v.vbd_count
         );
         if !v.os_name.is_empty() {
             let _ = writeln!(out, "    os: {}", v.os_name);
@@ -110,6 +110,15 @@ pub fn render_text(r: &BundleReport) -> String {
         );
     }
 
+    let _ = writeln!(out, "\n--- VBDs ({}) ---", r.vbds.len());
+    for b in &r.vbds {
+        let _ = writeln!(
+            out,
+            "{} vm={} vdi={} dev={} type={} mode={} attached={} bootable={}",
+            b.uuid, b.vm, b.vdi, b.device, b.vbd_type, b.mode, b.attached, b.bootable
+        );
+    }
+
     let _ = writeln!(out, "\n--- PIFs ({}) ---", r.pifs.len());
     for p in &r.pifs {
         let _ = writeln!(
@@ -119,6 +128,9 @@ pub fn render_text(r: &BundleReport) -> String {
             p.vlan.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
             p.attached
         );
+        if p.management {
+            let _ = writeln!(out, "    (management)");
+        }
     }
 
     let _ = writeln!(out, "\n--- VIFs ({}) ---", r.vifs.len());
@@ -234,6 +246,7 @@ input#filter { width:260px; padding:6px 10px; border:1px solid #d5dde4; border-r
     <table id="srs"><thead></thead><tbody></tbody></table></section>
   <section><h2>Virtual machines</h2><table id="vms"><thead></thead><tbody></tbody></table></section>
   <section><h2>VDIs</h2><table id="vdis"><thead></thead><tbody></tbody></table></section>
+  <section><h2>VBDs</h2><table id="vbds"><thead></thead><tbody></tbody></table></section>
   <section><h2>PIFs</h2><table id="pifs"><thead></thead><tbody></tbody></table></section>
   <section><h2>VIFs</h2><table id="vifs"><thead></thead><tbody></tbody></table></section>
 </main>
@@ -273,9 +286,12 @@ fill('vms', ['Name','UUID','State','vCPUs','Memory','Host','VIFs','VDIs','OS'],
 fill('vdis', ['Name','UUID','Type','Size','SR','VM'],
   r.vdis.map(d=>[`<td>${esc(d.name)}</td>`,`<td class="muted">${esc(d.uuid)}</td>`,`<td>${esc(d.vdi_type)}</td>`,
     `<td>${fmtGib(d.size_bytes)}</td>`,`<td>${esc(d.sr)}</td>`,`<td>${esc(d.vm)}</td>`]));
-fill('pifs', ['Host','Network','Device','IP','MAC','VLAN','Attached'],
+fill('vbds', ['VM','VDI','Device','Type','Mode','Attached','Bootable'],
+  r.vbds.map(b=>[`<td>${esc(b.vm)}</td>`,`<td>${esc(b.vdi)}</td>`,`<td>${esc(b.device)}</td>`,
+    `<td>${esc(b.vbd_type)}</td>`,`<td>${esc(b.mode)}</td>`,`<td>${b.attached}</td>`,`<td>${b.bootable}</td>`]));
+fill('pifs', ['Host','Network','Device','IP','MAC','VLAN','Management','Attached'],
   r.pifs.map(p=>[`<td>${esc(p.host)}</td>`,`<td>${esc(p.network)}</td>`,`<td>${esc(p.device)}</td>`,`<td>${esc(p.address)}</td>`,
-    `<td class="muted">${esc(p.mac)}</td>`,`<td>${p.vlan ?? '-'}</td>`,`<td>${p.attached}</td>`]));
+    `<td class="muted">${esc(p.mac)}</td>`,`<td>${p.vlan ?? '-'}</td>`,`<td>${p.management}</td>`,`<td>${p.attached}</td>`]));
 fill('vifs', ['VM','Network','Device','MAC','Attached'],
   r.vifs.map(v=>[`<td>${esc(v.vm)}</td>`,`<td>${esc(v.network)}</td>`,`<td>${esc(v.device)}</td>`,
     `<td class="muted">${esc(v.mac)}</td>`,`<td>${v.attached}</td>`]));
