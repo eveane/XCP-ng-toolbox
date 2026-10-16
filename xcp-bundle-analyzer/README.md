@@ -35,6 +35,90 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   consolidation), `render.rs` (text/JSON/HTML output). Add a feature by
   adding a module and a subcommand.
 
+## Installation and usage, step by step
+
+### 1. Install a Rust toolchain (one-time)
+
+If you don't have Rust yet:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+(Debian/Ubuntu alternative: `sudo apt install cargo rustc` — but rustup gives
+you a current compiler.)
+
+Verify: `cargo --version` (needs >= 1.70).
+
+### 2. Get the code and build
+
+```bash
+git clone https://github.com/eveane/XCP-ng-toolbox.git
+cd XCP-ng-toolbox/xcp-bundle-analyzer
+cargo build --release
+```
+
+The binary lands in `./target/release/xcp-bundle-analyzer`.
+
+Optional — make it available system-wide:
+
+```bash
+sudo cp target/release/xcp-bundle-analyzer /usr/local/bin/
+```
+
+### 3. Collect a bundle from your XCP-ng host
+
+On **each host** you want analyzed, generate the status report:
+
+```bash
+xen-bugtool --yestoall
+```
+
+It prints the path of the generated archive, e.g.:
+`/var/opt/xen/bug-report/XenServer-host1-20260616.tar.bz2`
+
+Copy it to your machine:
+
+```bash
+scp root@host1:/var/opt/xen/bug-report/XenServer-host1-*.tar.bz2 .
+```
+
+### 4. Run the analysis
+
+```bash
+# quick look in the terminal
+xcp-bundle-analyzer analyze XenServer-host1-20260616.tar.bz2
+
+# JSON report
+xcp-bundle-analyzer analyze -f json -o report.json XenServer-host1-20260616.tar.bz2
+
+# web dashboard — open report.html in your browser, works fully offline
+xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1-20260616.tar.bz2
+
+# whole pool: pass every host's bundle, get a consolidated view
+xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2 host3.tar.bz2
+
+# explore what's inside a bundle
+xcp-bundle-analyzer list XenServer-host1-20260616.tar.bz2
+
+# dump any raw xapi table (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
+xcp-bundle-analyzer xapi-db XenServer-host1-20260616.tar.bz2 host
+```
+
+### Notes
+
+- `xen-bugtool` must run as **root** on the host (it reads `/var/xapi/state.db`
+  and privileged files).
+- Supported archive formats: `.tar`, `.tar.gz`, `.tar.bz2`, `.zip`.
+- The bundle must contain `xapi-db.xml` (included by default in the
+  `xenserver-databases` capability — if you used `--entries=` to trim, keep
+  that one).
+- If you run the analyzer on the XCP-ng host itself, build on a separate
+  machine — dom0 has no compiler and shouldn't be used for builds. Just copy
+  the binary over (`scp target/release/xcp-bundle-analyzer root@host:`); it
+  has no runtime dependencies beyond glibc.
+
 ## Build
 
 ```bash
