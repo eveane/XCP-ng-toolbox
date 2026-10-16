@@ -14,11 +14,11 @@ XAPI_DB = """<?xml version="1.0"?>
 <row ref="OpaqueRef:pool1" uuid="pool-uuid-1" name__label="mypool" master="OpaqueRef:host1"/>
 </table>
 <table name="host">
-<row ref="OpaqueRef:host1" uuid="host-uuid-1" name__label="host1" hostname="host1.example.com" address="192.168.1.11" enabled="true" power_state="Running" metrics="OpaqueRef:hm1" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd3')" PIFs="('OpaqueRef:pif1')" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
+<row ref="OpaqueRef:host1" uuid="host-uuid-1" name__label="host1" hostname="host1.example.com" address="192.168.1.11" enabled="true" power_state="Running" metrics="OpaqueRef:hm1" other_config="(('boot_time' '1750000000'))" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd3')" PIFs="('OpaqueRef:pif1')" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
 <row ref="OpaqueRef:host2" uuid="host-uuid-2" name__label="host2" hostname="host2.example.com" address="192.168.1.12" enabled="true" power_state="Running" metrics="OpaqueRef:hm2" PBDs="('OpaqueRef:pbd2' 'OpaqueRef:pbd4')" PIFs="()" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
 </table>
 <table name="host_metrics">
-<row ref="OpaqueRef:hm1" memory__total="34359738368" memory__free="8589934592"/>
+<row ref="OpaqueRef:hm1" memory__total="34359738368" memory__free="8589934592" last_updated="20260615T12:00:00Z"/>
 <row ref="OpaqueRef:hm2" memory__total="34359738368" memory__free="12884901888"/>
 </table>
 <table name="SR">
@@ -42,6 +42,7 @@ XAPI_DB = """<?xml version="1.0"?>
 <table name="VM">
 <row ref="OpaqueRef:vm1" uuid="vm-uuid-1" name__label="vm1" power_state="Running" is_a_template="false" is_control_domain="false" resident_on="OpaqueRef:host1" memory__dynamic_max="4294967296" VCPUs__max="4" VIFs="('OpaqueRef:vif1')" VBDs="('OpaqueRef:vbd1')" guest_metrics="OpaqueRef:gm1"/>
 <row ref="OpaqueRef:vm2" uuid="vm-uuid-2" name__label="vm2" power_state="Halted" is_a_template="false" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="('OpaqueRef:vbd2')" guest_metrics="OpaqueRef:NULL"/>
+<row ref="OpaqueRef:dom0" uuid="dom0-uuid" name__label="Control domain on host1" power_state="Running" is_a_template="false" is_control_domain="true" domid="0" resident_on="OpaqueRef:host1" affinity="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__target="4294967296" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 <row ref="OpaqueRef:tmpl" uuid="vm-uuid-tpl" name__label="Debian%.12%.template" power_state="Halted" is_a_template="true" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 </table>
 <table name="VM_guest_metrics">

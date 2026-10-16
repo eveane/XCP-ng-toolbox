@@ -35,6 +35,16 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   showing the interval, plus the list of hosts they are attached to.
 - Cores per socket is derived from cpu_count / socket_count when the dump only
   reports those; hosts whose free-memory metric is missing are flagged.
+- Host uptime and boot time are derived from `host.other_config:boot_time` and
+  `host_metrics.last_updated` (dump time). Note: `__ctime`/`__mtime` on rows is a
+  xapi database generation counter, not a timestamp.
+- Live dom0 memory comes from the control-domain VM row (`domid=0`,
+  `is_control_domain=true`) when `xensource-inventory` is unavailable.
+- Host uptime and boot time are derived from `host.other_config:boot_time` and
+  `host_metrics.last_updated` (dump time). Note: `__ctime`/`__mtime` on rows is a
+  xapi database generation counter, not a timestamp.
+- Live dom0 memory comes from the control-domain VM row (`domid=0`,
+  `is_control_domain=true`) when `xensource-inventory` is unavailable.
 - Consolidated view: pass several bundles (e.g. one per host of a pool) and
   hosts/SRs/VMs are merged by UUID into a single pool report. This is the
   extension point for future features (upload bundles from a whole pool,

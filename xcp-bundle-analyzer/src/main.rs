@@ -19,6 +19,35 @@ enum Format {
     Html,
 }
 
+const EXAMPLES: &str = r#"EXAMPLES:
+
+  # Full text report on stdout
+  xcp-bundle-analyzer analyze XenServer-host1-20260616.tar.bz2
+
+  # Only one section: pool, hosts, srs, vms, vdis, vbds, vifs, pifs
+  xcp-bundle-analyzer analyze --section vms XenServer-host1.tar.bz2
+  xcp-bundle-analyzer analyze --section srs XenServer-host1.tar.bz2
+
+  # JSON report to a file (compact with -c)
+  xcp-bundle-analyzer analyze -f json -o report.json XenServer-host1.tar.bz2
+
+  # Self-contained HTML dashboard (open in a browser, works offline)
+  xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1.tar.bz2
+
+  # Whole pool: pass one bundle per host, get a consolidated view
+  xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2
+
+  # List the entries inside a bundle
+  xcp-bundle-analyzer list XenServer-host1.tar.bz2
+  xcp-bundle-analyzer list --grep xapi XenServer-host1.tar.bz2
+
+  # Dump a raw xapi table from xapi-db.xml (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
+  xcp-bundle-analyzer xapi-db XenServer-host1.tar.bz2 host
+
+  # Show version/build number
+  xcp-bundle-analyzer -V
+"#;
+
 #[derive(Parser)]
 #[command(
     name = "xcp-bundle-analyzer",
@@ -27,7 +56,13 @@ enum Format {
         " (build ", env!("XCP_BA_GIT_HASH", "unknown"),
         ", built ", env!("XCP_BA_BUILD_DATE", "unknown"), ")"
     ),
-    about = "Analyze XCP-ng / XenServer status-report bundles produced by xen-bugtool"
+    about = "Analyze XCP-ng / XenServer status-report bundles produced by xen-bugtool.
+
+Outputs a report as plain text, JSON, or a self-contained HTML dashboard.
+Reads tar, tar.gz, tar.bz2 and zip bundles. Extracts hosts, SRs, VDIs,
+VBDs, VMs (with templates and snapshots), VIFs and PIFs from xapi-db.xml,
+plus dom0 configuration, uptime and bundle origin.",
+    after_long_help = EXAMPLES
 )]
 struct Cli {
     #[command(subcommand)]
@@ -54,7 +89,7 @@ enum Commands {
         #[arg(short, long, default_value = "false")]
         compact: bool,
     },
-    /// List interesting entries in a bundle
+    /// List all entries in a bundle
     List {
         bundle: PathBuf,
         /// Filter by substring

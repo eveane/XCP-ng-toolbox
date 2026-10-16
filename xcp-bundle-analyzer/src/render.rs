@@ -136,17 +136,29 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
         );
         let _ = writeln!(
             out,
-            "  memory: {} total / {} free{}   dom0 config: {}, {} CPUs",
+            "  memory: {} total / {} free{}   dom0: {} (live: {})",
             gib(h.memory_total_bytes),
             gib(h.memory_free_bytes),
             if h.mem_free_stale { " (free memory unknown/unavailable in dump)" } else { "" },
             h.dom0_memory_config_mib
                 .map(|m| format!("{m} MiB"))
+                .or_else(|| h.dom0_memory_live_bytes.map(|b| mib(b)))
                 .unwrap_or_else(|| "n/a".into()),
-            h.dom0_cpus_config
-                .map(|c| c.to_string())
+            h.dom0_memory_live_bytes
+                .map(|b| mib(b))
                 .unwrap_or_else(|| "n/a".into())
         );
+        if let (Some(up), Some(boot)) = (h.uptime_seconds, h.boot_time) {
+            let days = up / 86400;
+            let hrs = (up % 86400) / 3600;
+            let mins = (up % 3600) / 60;
+            let _ = writeln!(
+                out,
+                "  uptime: {days}d {hrs}h {mins}m (booted at unix {boot})"
+            );
+        } else if let Some(boot) = h.boot_time {
+            let _ = writeln!(out, "  boot time: unix {boot} (uptime unknown)");
+        }
         let _ = writeln!(out, "  PBDs: {}   PIFs: {}", h.pbd_count, h.pif_count);
     }
 }
@@ -415,12 +427,14 @@ const esc = s => String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>
 const badge = (state, tpl) => tpl ? '<span class="badge tpl">template</span>'
   : `<span class="badge ${state==='Running'?'run':state==='Halted'?'off':''}">${esc(state)}</span>`;
 
-fill('hosts', ['Name','UUID','Address','Product','Xen','CPU','Cores/socket','Memory','Free','dom0 config','PBDs','PIFs','Note'],
+fill('hosts', ['Name','UUID','Address','Product','Xen','CPU','Cores/socket','Memory','Free','dom0','Uptime','PBDs','PIFs','Note'],
   r.hosts.map(h=>[`<td>${esc(h.hostname)}${h.is_bundle_origin?' <span class="badge">bundle origin</span>':''}</td>`,`<td class="muted">${esc(h.uuid)}</td>`,`<td>${esc(h.address)}</td>`,
     `<td>${esc(h.product_version)}</td>`,`<td>${esc(h.xen_version)}</td>`,`<td>${esc(h.cpu_model)}</td>`,
     `<td>${h.cores_per_socket}</td>`,`<td>${fmtGib(h.memory_total_bytes)}</td>`,
     `<td>${fmtGib(h.memory_free_bytes)}${h.mem_free_stale?' <span class="badge warn">n/a</span>':''}</td>`,
-    `<td>${h.dom0_memory_config_mib ?? '-'} MiB / ${h.dom0_cpus_config ?? '-'} vCPU</td>`,`<td>${h.pbd_count}</td>`,`<td>${h.pif_count}</td>`,
+    `<td>${(h.dom0_memory_config_mib ?? (h.dom0_memory_live_bytes ? Math.round(h.dom0_memory_live_bytes/1024**2) : '-'))} MiB</td>`,
+    `<td>${h.uptime_seconds!=null ? Math.floor(h.uptime_seconds/86400)+'d '+Math.floor(h.uptime_seconds%86400/3600)+'h' : '-'}</td>`,
+    `<td>${h.pbd_count}</td>`,`<td>${h.pif_count}</td>`,
     `<td>${h.is_bundle_origin?'this bundle was collected here':''}</td>`]));
 fill('srs', ['Name','UUID','Type','Shared','Size','Used','PBDs','VDIs','auto-scan-interval','Attached hosts'],
   r.srs.map(s=>[`<td>${esc(s.name)}</td>`,`<td class="muted">${esc(s.uuid)}</td>`,`<td>${esc(s.sr_type)}</td>`,
