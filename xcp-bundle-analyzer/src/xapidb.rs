@@ -153,8 +153,9 @@ fn parse_row_attrs(e: &quick_xml::events::BytesStart, table: Option<&str>, db: &
     }
     let key = attrs
         .get("ref")
-        .cloned()
-        .or_else(|| attrs.get("id").cloned())
+        .or_else(|| attrs.get("_ref"))
+        .or_else(|| attrs.get("id"))
+        .and_then(|r| as_ref(r))
         .unwrap_or_else(|| {
             (db.tables.get(table.unwrap_or("")).map(|t| t.len()).unwrap_or(0) + 1).to_string()
         });
