@@ -23,7 +23,7 @@ XAPI_DB = """<?xml version="1.0"?>
 </table>
 <table name="SR">
 <row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local storage" type="lvm" shared="false" physical_size="998999399104" physical_utilisation="123456789" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2')" VDIs="('OpaqueRef:vdi2')"/>
-<row ref="OpaqueRef:sr-nfs" uuid="sr-uuid-nfs" name__label="NFS repo" type="nfs" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" PBDs="('OpaqueRef:pbd3' 'OpaqueRef:pbd4')" VDIs="('OpaqueRef:vdi1')"/>
+<row ref="OpaqueRef:sr-nfs" uuid="sr-uuid-nfs" name__label="NFS repo" type="nfs" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" PBDs="('OpaqueRef:pbd3' 'OpaqueRef:pbd4')" VDIs="('OpaqueRef:vdi1')" other_config="(('auto-scan-interval' '300'))"/>
 </table>
 <table name="PBD">
 <row ref="OpaqueRef:pbd1" host="OpaqueRef:host1" SR="OpaqueRef:sr-local" currently_attached="true"/>
@@ -65,6 +65,8 @@ PRODUCT_VERSION='8.3.0'
 PRODUCT_VERSION_TEXT='8.3.0'
 XEN_VERSION='4.17'
 KERNEL_VERSION='4.19.0-1.el8.xcpng'
+INSTALLATION_UUID='host-uuid-1'
+HOSTNAME='host1.example.com'
 CONTROL_DOMAIN_MEMORY='2048'
 CONTROL_DOMAIN_CPUS='2'
 """

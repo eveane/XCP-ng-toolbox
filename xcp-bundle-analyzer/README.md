@@ -26,6 +26,15 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   and `xml_spaces.ml`): `OpaqueRef:` references, S-expression sets/maps, and
   the whitespace protection scheme (`%.` = space, `%t`/`%n`/`%r` = tab/nl/cr,
   `%%` = `%`).
+- `--section` option to display only one part of the report: pool, hosts, srs,
+  vms, vdis, vbds, vifs or pifs.
+- The host the bundle was collected from is highlighted (`<<< THIS BUNDLE` in
+  text output, badge in the HTML dashboard) — detected by matching the
+  bundle's `xensource-inventory` INSTALLATION_UUID/hostname against pool hosts.
+- SRs with an `other-config:auto-scan-interval` get a highlighted line
+  showing the interval, plus the list of hosts they are attached to.
+- Cores per socket is derived from cpu_count / socket_count when the dump only
+  reports those; hosts whose free-memory metric is missing are flagged.
 - Consolidated view: pass several bundles (e.g. one per host of a pool) and
   hosts/SRs/VMs are merged by UUID into a single pool report. This is the
   extension point for future features (upload bundles from a whole pool,
@@ -98,6 +107,10 @@ xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1-20260616.tar.
 
 # whole pool: pass every host's bundle, get a consolidated view
 xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2 host3.tar.bz2
+
+# only display one section (pool, hosts, srs, vms, vdis, vbds, vifs, pifs)
+xcp-bundle-analyzer analyze --section vms XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer analyze --section srs XenServer-host1-20260616.tar.bz2
 
 # explore what's inside a bundle
 xcp-bundle-analyzer list XenServer-host1-20260616.tar.bz2
