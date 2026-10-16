@@ -71,9 +71,15 @@ pub struct VmReport {
     pub opaque_ref: String,
     pub power_state: String,
     pub is_template: bool,
+    pub is_default_template: bool,
+    pub is_snapshot: bool,
+    pub is_vmss_snapshot: bool,
+    pub is_control_domain: bool,
     pub resident_host: String,
     pub memory_dynamic_max_bytes: u64,
+    pub memory_static_max_bytes: u64,
     pub vcpus_max: u64,
+    pub vcpus_at_startup: u64,
     pub os_name: String,
     pub vif_count: usize,
     pub vbd_count: usize,
@@ -394,11 +400,15 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         if uuid.is_empty() {
             continue;
         }
-        let is_template =
-            as_bool(get(vm, "is_a_template")).unwrap_or(false) || get(vm, "is_control_domain") == "true";
+        let is_control_domain = as_bool(get(vm, "is_control_domain")).unwrap_or(false);
+        let is_snapshot = as_bool(get(vm, "is_a_snapshot")).unwrap_or(false);
+        let is_vmss_snapshot = as_bool(get(vm, "is_vmss_snapshot")).unwrap_or(false);
+        let is_template = as_bool(get(vm, "is_a_template")).unwrap_or(false);
+        let is_default_template = as_bool(get(vm, "is_default_template")).unwrap_or(false);
+        let is_real_vm = !is_template && !is_control_domain && !is_snapshot && !is_vmss_snapshot;
         let resident = ref_of(vm, "resident_on");
         let power_state = get(vm, "power_state").to_string();
-        if !is_template {
+        if is_real_vm {
             report.pool.vm_total += 1;
             if power_state == "Running" {
                 report.pool.vm_running += 1;
@@ -422,9 +432,15 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             opaque_ref: format!("OpaqueRef:{r}"),
             power_state,
             is_template,
+            is_default_template,
+            is_snapshot,
+            is_vmss_snapshot,
+            is_control_domain,
             resident_host: ref_label(db, "host", &resident, "hostname"),
             memory_dynamic_max_bytes: as_u64(get(vm, "memory__dynamic_max")).unwrap_or(0),
+            memory_static_max_bytes: as_u64(get(vm, "memory__static_max")).unwrap_or(0),
             vcpus_max: as_u64(get(vm, "VCPUs__max")).unwrap_or(0),
+            vcpus_at_startup: as_u64(get(vm, "VCPUs__at_startup")).unwrap_or(0),
             os_name,
             vif_count: vm_vifs.get(r).map(|v| v.len()).unwrap_or(0),
             vbd_count: vm_vbds.get(r).map(|v| v.len()).unwrap_or(0),
@@ -599,6 +615,30 @@ mod tests {
         assert_eq!(r.pifs.len(), 2);
         let mgmt = r.pifs.iter().find(|p| p.management).unwrap();
         assert_eq!(mgmt.address, "10.80.229.40");
+    }
+
+    #[test]
+    fn report_from_user_vm_rows() {
+        // Two rows extracted from a real XCP-ng 8.3 xapi-db.xml
+        // (a default template and its cloned VM).
+        let xml = include_str!("../tests/fixtures/user-vm-rows.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        assert_eq!(r.vms.len(), 2);
+        let tpl = r.vms.iter().find(|v| v.uuid == "07d91aaa-43f7-430a-bf84-0edb6714df0f").unwrap();
+        assert_eq!(tpl.name, "Debian Bookworm 12");
+        assert!(tpl.is_template);
+        assert!(tpl.is_default_template);
+        assert_eq!(tpl.vcpus_max, 1);
+        assert_eq!(tpl.vbd_count, 0);
+        let vm = r.vms.iter().find(|v| v.uuid == "a5609e55-f48c-56c7-e795-5edee4841245").unwrap();
+        assert_eq!(vm.name, "backupproxy");
+        assert!(!vm.is_template);
+        assert!(!vm.is_snapshot);
+        assert_eq!(vm.vcpus_max, 2);
+        assert_eq!(vm.memory_dynamic_max_bytes, 4294967296);
+        assert_eq!(vm.vbd_count, 2);
+        assert_eq!(vm.vif_count, 1);
     }
 
     #[test]

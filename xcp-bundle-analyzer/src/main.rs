@@ -1,4 +1,5 @@
 mod bundle;
+mod build_info;
 mod inventory;
 mod render;
 mod report;
@@ -21,7 +22,11 @@ enum Format {
 #[derive(Parser)]
 #[command(
     name = "xcp-bundle-analyzer",
-    version,
+    version = concat!(
+        "v", env!("CARGO_PKG_VERSION"),
+        " (build ", env!("XCP_BA_GIT_HASH", "unknown"),
+        ", built ", env!("XCP_BA_BUILD_DATE", "unknown"), ")"
+    ),
     about = "Analyze XCP-ng / XenServer status-report bundles produced by xen-bugtool"
 )]
 struct Cli {
