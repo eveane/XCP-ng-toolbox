@@ -29,6 +29,12 @@ pub struct HostReport {
     pub pif_count: usize,
     /// True when this host is the one the bugtool bundle was collected on.
     pub is_bundle_origin: bool,
+    /// Host uptime in seconds at dump time (host.other_config boot_time).
+    pub uptime_seconds: Option<u64>,
+    /// Unix timestamp of last host boot (host.other_config boot_time).
+    pub boot_time: Option<u64>,
+    /// Live dom0 memory in bytes, from the control-domain VM row (domid=0).
+    pub dom0_memory_live_bytes: Option<u64>,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -182,6 +188,34 @@ fn ref_label(db: &XapiDb, table: &str, key: &str, field: &str) -> String {
 
 /// Set elements in dumps carry the full OpaqueRef: prefix; table keys are
 /// stored stripped. Normalize for lookups.
+/// Parse xapi compact UTC timestamps: "20120724T13:04:01Z" -> unix epoch.
+fn parse_xapi_time(s: &str) -> Option<u64> {
+    // Format: 20120724T13:04:01Z (18 chars)
+    let s = s.trim();
+    if s.len() != 18 {
+        return None;
+    }
+    let b = s.as_bytes();
+    if b[8] != b'T' || b[17] != b'Z' {
+        return None;
+    }
+    let y: i64 = s.get(0..4)?.parse().ok()?;
+    let mo: i64 = s.get(4..6)?.parse().ok()?;
+    let d: i64 = s.get(6..8)?.parse().ok()?;
+    let h: i64 = s.get(9..11)?.parse().ok()?;
+    let mi: i64 = s.get(12..14)?.parse().ok()?;
+    let se: i64 = s.get(15..17)?.parse().ok()?;
+    // days from civil (Howard Hinnant's algorithm), then epoch seconds
+    let y = if mo <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = if mo > 2 { mo - 3 } else { mo + 9 };
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Some((days * 86400 + h * 3600 + mi * 60 + se) as u64)
+}
+
 fn ref_set(v: &str) -> Vec<String> {
     decode_set(v)
         .into_iter()
@@ -274,6 +308,31 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
     }
 
+    // Live dom0 memory per host: the control-domain VM row (domid=0,
+    // is_control_domain=true) has memory__dynamic_max / memory__target.
+    let mut dom0_mem: BTreeMap<String, u64> = BTreeMap::new();
+    for (_, vm) in db.rows("VM") {
+        if get(vm, "is_control_domain") == "true" || get(vm, "domid") == "0" {
+            let host = ref_of(vm, "resident_on");
+            if host.is_empty() {
+                continue;
+            }
+            // On the master the control domain is resident on itself; other
+            // hosts' control domains are resident_on=NULL, so also index by
+            // affinity.
+            let mem = as_u64(get(vm, "memory__dynamic_max"))
+                .or_else(|| as_u64(get(vm, "memory__target")))
+                .unwrap_or(0);
+            if mem > 0 {
+                dom0_mem.insert(host, mem);
+                let aff = ref_of(vm, "affinity");
+                if !aff.is_empty() {
+                    dom0_mem.insert(aff, mem);
+                }
+            }
+        }
+    }
+
     // Determine which host this bundle was collected from: match the
     // installation UUID from xensource-inventory, or the hostname.
     let inv_uuid = inventory.get("INSTALLATION_UUID").unwrap_or("");
@@ -288,6 +347,9 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let hostname = get(host, "hostname").to_string();
         let is_bundle_origin = (!inv_uuid.is_empty() && uuid == inv_uuid)
             || (!inv_host.is_empty() && hostname == inv_host);
+        let host_other = decode_map(get(host, "other_config"));
+        let boot_time = map_get(&host_other, "boot_time")
+            .and_then(|v| v.trim_end_matches('.').parse().ok());
         if is_bundle_origin {
             report.bundle_origin_host = hostname.clone();
         }
@@ -321,6 +383,17 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         // their overheads, minus a dom0 allowance is too speculative — keep 0
         // but flag it.
         let mem_free_stale = mem_free == 0 && mem_total > 0;
+        // Uptime = dump time (host_metrics.last_updated, e.g. "20120724T13:04:01Z")
+        // minus boot_time. Falls back to None when either is missing.
+        let dump_epoch = db
+            .table("host_metrics")
+            .and_then(|t| t.get(&metrics_ref))
+            .and_then(|m| parse_xapi_time(get(m, "last_updated")));
+        let uptime_seconds = match (dump_epoch, boot_time) {
+            (Some(now), Some(boot)) if now > boot => Some(now - boot),
+            _ => None,
+        };
+
         let sockets = map_get(&cpu_info, "socket_count")
             .and_then(as_u64)
             .or_else(|| map_get(&cpu_info, "sockets").and_then(as_u64))
@@ -372,6 +445,9 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             pbd_count: host_pdbs.get(r).map(|v| v.len()).unwrap_or(0),
             pif_count: host_pifs.get(r).map(|v| v.len()).unwrap_or(0),
             is_bundle_origin,
+            uptime_seconds,
+            boot_time,
+            dom0_memory_live_bytes: dom0_mem.get(r).copied(),
         });
     }
 
@@ -735,7 +811,7 @@ mod tests {
         assert_eq!(h.cpu_count, 8);
         assert_eq!(h.dom0_memory_config_mib, Some(2048));
         assert_eq!(r.srs.len(), 2);
-        assert_eq!(r.vms.len(), 3);
+        assert_eq!(r.vms.len(), 4);
         assert_eq!(r.pool.vm_running, 1);
         assert!(!r.vbds.is_empty());
         // bundle origin detection via INSTALLATION_UUID
@@ -744,9 +820,29 @@ mod tests {
         assert!(!r.hosts[1].is_bundle_origin);
         // cores_per_socket derived from cpu_count / sockets
         assert_eq!(r.hosts[0].cores_per_socket, 4);
+        // dom0 live memory from the control-domain row
+        assert_eq!(r.hosts[0].dom0_memory_live_bytes, Some(4294967296));
+        // uptime derived from host_metrics.last_updated - boot_time
+        assert_eq!(r.hosts[0].boot_time, Some(1750000000));
+        assert!(r.hosts[0].uptime_seconds.unwrap() > 0);
+        // control domain excluded from real VM list
+        assert!(r.vms.iter().any(|v| v.is_control_domain));
         // auto-scan-interval surfaced on the SR, with attached hosts
         let nfs = r.srs.iter().find(|s| s.name == "NFS repo").unwrap();
         assert_eq!(nfs.auto_scan_interval, Some(300));
         assert_eq!(nfs.hosts, vec!["host1.example.com", "host2.example.com"]);
+    }
+}
+
+#[cfg(test)]
+mod time_tests {
+    use super::parse_xapi_time;
+
+    #[test]
+    fn parses_xapi_time() {
+        assert_eq!(parse_xapi_time("20260615T12:00:00Z"), Some(1781524800));
+        assert_eq!(parse_xapi_time("20120724T13:04:01Z"), Some(1343135041));
+        assert_eq!(parse_xapi_time(""), None);
+        assert_eq!(parse_xapi_time("garbage"), None);
     }
 }

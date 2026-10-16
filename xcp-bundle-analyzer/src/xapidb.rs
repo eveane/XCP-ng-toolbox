@@ -355,7 +355,7 @@ mod tests {
         let xml = include_str!("../tests/fixtures/xapi-db.xml");
         let db = XapiDb::from_xml(xml).unwrap();
         assert_eq!(db.table("host").map(|t| t.len()), Some(2));
-        assert_eq!(db.table("VM").map(|t| t.len()), Some(3));
+        assert_eq!(db.table("VM").map(|t| t.len()), Some(4));
         let host1 = db.table("host").unwrap().get("host1").unwrap();
         assert_eq!(host1.get("hostname").unwrap(), "host1.example.com");
     }
