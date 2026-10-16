@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "xcp-bundle-analyzer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bzip2 0.4.4",

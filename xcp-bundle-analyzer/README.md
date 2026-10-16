@@ -125,6 +125,19 @@ xcp-bundle-analyzer xapi-db XenServer-host1-20260616.tar.bz2 host
 cargo build --release
 ```
 
+Every binary is stamped with a build number: `-V` / `--version` shows the
+crate version plus the git commit (with `-dirty` suffix when there are
+uncommitted changes) and the build timestamp, e.g.:
+
+```
+$ xcp-bundle-analyzer -V
+xcp-bundle-analyzer v0.2.0 (build 9d0770b, built 2026-10-16T21:26:21Z)
+```
+
+The same build string is printed in the header of text/HTML reports, so a
+report always shows which build generated it. When reporting an issue,
+include those two lines.
+
 ## Usage
 
 ```bash
