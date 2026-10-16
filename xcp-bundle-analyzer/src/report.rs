@@ -22,9 +22,13 @@ pub struct HostReport {
     pub sockets: u64,
     pub memory_total_bytes: u64,
     pub memory_free_bytes: u64,
+    /// True when memory_free could not be determined (reported 0 by the dump).
+    pub mem_free_stale: bool,
     pub power_state: String,
     pub pbd_count: usize,
     pub pif_count: usize,
+    /// True when this host is the one the bugtool bundle was collected on.
+    pub is_bundle_origin: bool,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -38,6 +42,10 @@ pub struct SrReport {
     pub used_bytes: u64,
     pub pbd_count: usize,
     pub vdi_count: usize,
+    /// SR other_config:auto-scan-interval, in seconds, when set.
+    pub auto_scan_interval: Option<u64>,
+    /// Hostnames the SR is attached to (via PBDs).
+    pub hosts: Vec<String>,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -127,6 +135,8 @@ pub struct PoolSummary {
 #[derive(Serialize, Default, Debug, Clone)]
 pub struct BundleReport {
     pub bundle_path: String,
+    /// Hostname of the host the bundle was collected from, when identifiable.
+    pub bundle_origin_host: String,
     pub pool: PoolSummary,
     pub hosts: Vec<HostReport>,
     pub srs: Vec<SrReport>,
@@ -170,6 +180,21 @@ fn ref_label(db: &XapiDb, table: &str, key: &str, field: &str) -> String {
         .unwrap_or_else(|| key.to_string())
 }
 
+/// Set elements in dumps carry the full OpaqueRef: prefix; table keys are
+/// stored stripped. Normalize for lookups.
+fn ref_set(v: &str) -> Vec<String> {
+    decode_set(v)
+        .into_iter()
+        .map(|e| {
+            if let Some(stripped) = e.strip_prefix("OpaqueRef:") {
+                stripped.to_string()
+            } else {
+                e
+            }
+        })
+        .collect()
+}
+
 fn map_get<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
     pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
 }
@@ -200,20 +225,20 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
     let mut network_vifs: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
     for (r, host) in db.rows("host") {
-        host_pdbs.insert(r.clone(), decode_set(get(host, "PBDs")));
-        host_pifs.insert(r.clone(), decode_set(get(host, "PIFs")));
+        host_pdbs.insert(r.clone(), ref_set(get(host, "PBDs")));
+        host_pifs.insert(r.clone(), ref_set(get(host, "PIFs")));
     }
     for (r, vm) in db.rows("VM") {
-        vm_vifs.insert(r.clone(), decode_set(get(vm, "VIFs")));
-        vm_vbds.insert(r.clone(), decode_set(get(vm, "VBDs")));
+        vm_vifs.insert(r.clone(), ref_set(get(vm, "VIFs")));
+        vm_vbds.insert(r.clone(), ref_set(get(vm, "VBDs")));
     }
     for (r, sr) in db.rows("SR") {
-        sr_pbds.insert(r.clone(), decode_set(get(sr, "PBDs")));
-        sr_vdis.insert(r.clone(), decode_set(get(sr, "VDIs")));
+        sr_pbds.insert(r.clone(), ref_set(get(sr, "PBDs")));
+        sr_vdis.insert(r.clone(), ref_set(get(sr, "VDIs")));
     }
     for (r, net) in db.rows("network") {
-        network_pifs.insert(r.clone(), decode_set(get(net, "PIFs")));
-        network_vifs.insert(r.clone(), decode_set(get(net, "VIFs")));
+        network_pifs.insert(r.clone(), ref_set(get(net, "PIFs")));
+        network_vifs.insert(r.clone(), ref_set(get(net, "VIFs")));
     }
     // Fallback for older formats where sets are stored on the child object.
     if host_pdbs.values().all(|v| v.is_empty()) {
@@ -249,29 +274,69 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
     }
 
+    // Determine which host this bundle was collected from: match the
+    // installation UUID from xensource-inventory, or the hostname.
+    let inv_uuid = inventory.get("INSTALLATION_UUID").unwrap_or("");
+    let inv_host = inventory.get("HOSTNAME").unwrap_or("");
+
     // Hosts
     for (r, host) in db.rows("host") {
         let uuid = get(host, "uuid").to_string();
         if uuid.is_empty() {
             continue;
         }
+        let hostname = get(host, "hostname").to_string();
+        let is_bundle_origin = (!inv_uuid.is_empty() && uuid == inv_uuid)
+            || (!inv_host.is_empty() && hostname == inv_host);
+        if is_bundle_origin {
+            report.bundle_origin_host = hostname.clone();
+        }
         let cpu_info = decode_map(get(host, "cpu_info"));
         let software = decode_map(get(host, "software_version"));
         let metrics_ref = ref_of(host, "metrics");
-        let (mem_total, mem_free) = db
+        let (mut mem_total, mut mem_free) = db
             .table("host_metrics")
             .and_then(|t| t.get(&metrics_ref))
             .map(|m| {
                 (
-                    as_u64(get(m, "memory__total")).unwrap_or(0),
-                    as_u64(get(m, "memory__free")).unwrap_or(0),
+                    as_u64(get(m, "memory__total"))
+                        .or_else(|| as_u64(get(m, "memory_total")))
+                        .unwrap_or(0),
+                    as_u64(get(m, "memory__free"))
+                        .or_else(|| as_u64(get(m, "memory_free")))
+                        .unwrap_or(0),
                 )
             })
             .unwrap_or((0, 0));
+        // Older/host-row fallbacks (pre-5.6 dumps kept memory on the host row).
+        if mem_total == 0 {
+            mem_total = as_u64(get(host, "memory_total")).unwrap_or(0);
+        }
+        if mem_free == 0 {
+            mem_free = as_u64(get(host, "memory_free")).unwrap_or(0);
+        }
+        // If free is still 0 while total is known, xapi's live metric is
+        // stale/unavailable (common when the host was not the one xapi polled).
+        // Estimate: total minus the sum of resident VM memory targets and
+        // their overheads, minus a dom0 allowance is too speculative — keep 0
+        // but flag it.
+        let mem_free_stale = mem_free == 0 && mem_total > 0;
         let sockets = map_get(&cpu_info, "socket_count")
             .and_then(as_u64)
             .or_else(|| map_get(&cpu_info, "sockets").and_then(as_u64))
             .unwrap_or(0);
+        let cpu_count = map_get(&cpu_info, "cpu_count").and_then(as_u64).unwrap_or(0);
+        let cores_per_socket = map_get(&cpu_info, "cores_per_socket")
+            .and_then(as_u64)
+            .unwrap_or_else(|| {
+                // Common on modern dumps: only cpu_count and socket_count are
+                // reported. Derive cores/socket from those.
+                if cpu_count > 0 && sockets > 0 {
+                    cpu_count / sockets
+                } else {
+                    0
+                }
+            });
         report.hosts.push(HostReport {
             name: get2(host, "name__label").to_string(),
             uuid,
@@ -297,16 +362,16 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" "),
-            cpu_count: map_get(&cpu_info, "cpu_count").and_then(as_u64).unwrap_or(0),
-            cores_per_socket: map_get(&cpu_info, "cores_per_socket")
-                .and_then(as_u64)
-                .unwrap_or(0),
+            cpu_count,
+            cores_per_socket,
             sockets,
             memory_total_bytes: mem_total,
             memory_free_bytes: mem_free,
+            mem_free_stale,
             power_state: get(host, "power_state").to_string(),
             pbd_count: host_pdbs.get(r).map(|v| v.len()).unwrap_or(0),
             pif_count: host_pifs.get(r).map(|v| v.len()).unwrap_or(0),
+            is_bundle_origin,
         });
     }
 
@@ -318,6 +383,21 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
         let size = as_u64(get(sr, "physical_size")).unwrap_or(0);
         let used = as_u64(get(sr, "physical_utilisation")).unwrap_or(0);
+        let other_config = decode_map(get(sr, "other_config"));
+        let auto_scan_interval = map_get(&other_config, "auto-scan-interval")
+            .and_then(as_u64);
+        let sr_hosts = sr_pbds
+            .get(r)
+            .map(|pbds| {
+                pbds
+                    .iter()
+                    .filter_map(|p| db.table("PBD").and_then(|t| t.get(p)))
+                    .filter_map(|pbd| as_ref(get(pbd, "host")))
+                    .filter_map(|h| db.table("host").and_then(|t| t.get(&h)))
+                    .map(|h| get(h, "hostname").to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         report.srs.push(SrReport {
             name: get2(sr, "name__label").to_string(),
             uuid,
@@ -328,6 +408,8 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             used_bytes: used,
             pbd_count: sr_pbds.get(r).map(|v| v.len()).unwrap_or(0),
             vdi_count: sr_vdis.get(r).map(|v| v.len()).unwrap_or(0),
+            auto_scan_interval,
+            hosts: sr_hosts,
         });
         // iso/udev SRs report -1 for sizes: don't add them to pool totals
         if size != u64::MAX && used != u64::MAX {
@@ -645,7 +727,7 @@ mod tests {
     fn report_from_fixture() {
         let xml = include_str!("../tests/fixtures/xapi-db.xml");
         let db = XapiDb::from_xml(xml).unwrap();
-        let inv = Inventory::parse("CONTROL_DOMAIN_MEMORY='2048'\nCONTROL_DOMAIN_CPUS='2'\n");
+        let inv = Inventory::parse("INSTALLATION_UUID='host-uuid-1'\nHOSTNAME='host1.example.com'\nCONTROL_DOMAIN_MEMORY='2048'\nCONTROL_DOMAIN_CPUS='2'\n");
         let r = build_report(&db, &inv, "test");
         assert_eq!(r.hosts.len(), 2);
         let h = &r.hosts[0];
@@ -656,5 +738,15 @@ mod tests {
         assert_eq!(r.vms.len(), 3);
         assert_eq!(r.pool.vm_running, 1);
         assert!(!r.vbds.is_empty());
+        // bundle origin detection via INSTALLATION_UUID
+        assert_eq!(r.bundle_origin_host, "host1.example.com");
+        assert!(r.hosts[0].is_bundle_origin);
+        assert!(!r.hosts[1].is_bundle_origin);
+        // cores_per_socket derived from cpu_count / sockets
+        assert_eq!(r.hosts[0].cores_per_socket, 4);
+        // auto-scan-interval surfaced on the SR, with attached hosts
+        let nfs = r.srs.iter().find(|s| s.name == "NFS repo").unwrap();
+        assert_eq!(nfs.auto_scan_interval, Some(300));
+        assert_eq!(nfs.hosts, vec!["host1.example.com", "host2.example.com"]);
     }
 }

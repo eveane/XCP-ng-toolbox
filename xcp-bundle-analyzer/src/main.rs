@@ -41,6 +41,9 @@ enum Commands {
         /// Bundle files (tar, tar.gz, tar.bz2 or zip)
         #[arg(required = true)]
         bundles: Vec<PathBuf>,
+        /// Only display one section: pool, hosts, srs, vms, vdis, vbds, vifs, pifs (text output)
+        #[arg(short, long)]
+        section: Option<String>,
         /// Output format
         #[arg(short, long, value_enum, default_value = "text")]
         format: Format,
@@ -120,7 +123,13 @@ fn write_output(path: Option<&Path>, content: &str) -> Result<()> {
     Ok(())
 }
 
-fn cmd_analyze(bundles: &[PathBuf], format: Format, output: Option<&Path>, compact: bool) -> Result<()> {
+fn cmd_analyze(
+    bundles: &[PathBuf],
+    format: Format,
+    output: Option<&Path>,
+    compact: bool,
+    section: Option<&str>,
+) -> Result<()> {
     if bundles.is_empty() {
         bail!("no bundle given");
     }
@@ -131,11 +140,18 @@ fn cmd_analyze(bundles: &[PathBuf], format: Format, output: Option<&Path>, compa
 
     match format {
         Format::Text => {
+            let sec = match section {
+                Some(s) => render::Section::parse(s)
+                    .with_context(|| format!("unknown section '{s}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs)"))?,
+                None => render::Section::All,
+            };
             if reports.len() == 1 {
-                write_output(output, &render::render_text(&reports[0]))
-            } else {
+                write_output(output, &render::render_sections(&reports[0], sec))
+            } else if sec == render::Section::All {
                 let c = report::consolidate(reports);
                 write_output(output, &render::render_consolidated_text(&c))
+            } else {
+                write_output(output, &render::render_sections(&reports[0], sec))
             }
         }
         Format::Json => {
@@ -204,7 +220,8 @@ fn main() -> Result<()> {
             format,
             output,
             compact,
-        } => cmd_analyze(&bundles, format, output.as_deref(), compact),
+            section,
+        } => cmd_analyze(&bundles, format, output.as_deref(), compact, section.as_deref()),
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
     }
