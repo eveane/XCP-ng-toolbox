@@ -61,6 +61,14 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   - **VBDs** are sorted per VM name, with the count of attached CD devices
     summarized on top.
   - **VIFs** are sorted per VM name (then device).
+  - **PIFs** are grouped per host (sorted by device inside each group), with a
+    per-host header showing PIF and management counts.
+  - **SRs** show a coarse storage category (nfs / iscsi / fc/fcoe / zfs /
+    xostor / smb / local / iso, derived from the SR type and device_config),
+    their device-config (including `preferred-image-formats`), other-config,
+    and multipath details: per-host path counts parsed from the
+    `mpath-<SCSIid>` values, with a highlighted warning when hosts report
+    different path counts for the same LUN.
   - **PBDs** are grouped per SR (with shared/local marker) showing host,
     attach state, UUID and the disk-format preference order from the PBD's
     `other-config:preferred-image-formats` (e.g. `vhd > qcow2`). Pool

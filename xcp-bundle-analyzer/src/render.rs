@@ -1,5 +1,5 @@
 use crate::build_info::VERSION;
-use crate::report::{BundleReport, ConsolidatedReport, VdiReport, PbdReport, VmReport};
+use crate::report::{BundleReport, ConsolidatedReport, VdiReport, PbdReport, PifReport, VmReport};
 use std::collections::BTreeMap;
 use serde::Serialize;
 use std::fmt::Write as _;
@@ -180,10 +180,11 @@ fn render_srs(r: &BundleReport, out: &mut String) {
     for s in &r.srs {
         let _ = writeln!(
             out,
-            "{} [{}] type={} shared={} size={} used={} PBDs={} VDIs={}",
+            "{} [{}] type={} category={} shared={} size={} used={} PBDs={} VDIs={}",
             s.name,
             s.uuid,
             s.sr_type,
+            s.category,
             s.shared,
             gib(s.size_bytes),
             gib(s.used_bytes),
@@ -198,6 +199,36 @@ fn render_srs(r: &BundleReport, out: &mut String) {
         }
         if !s.hosts.is_empty() {
             let _ = writeln!(out, "  attached to hosts: {}", s.hosts.join(", "));
+        }
+        if !s.device_config.is_empty() {
+            let _ = writeln!(out, "  device-config:");
+            for (k, v) in &s.device_config {
+                let _ = writeln!(out, "    {k} = {v}");
+            }
+        }
+        if !s.other_config.is_empty() {
+            let _ = writeln!(out, "  other-config:");
+            for (k, v) in &s.other_config {
+                let _ = writeln!(out, "    {k} = {v}");
+            }
+        }
+        if !s.multipath.is_empty() {
+            let _ = writeln!(out, "  multipath:");
+            for m in &s.multipath {
+                let _ = writeln!(
+                    out,
+                    "    host={} paths={} ({})",
+                    m.host,
+                    m.paths.map(|p| p.to_string()).unwrap_or_else(|| "?".into()),
+                    m.raw
+                );
+            }
+            if s.multipath_mismatch {
+                let _ = writeln!(
+                    out,
+                    "  *** MULTIPATH PATH COUNT MISMATCH between hosts ***"
+                );
+            }
         }
     }
 }
@@ -411,20 +442,31 @@ fn render_pbds(r: &BundleReport, out: &mut String) {
 
 fn render_pifs(r: &BundleReport, out: &mut String) {
     let _ = writeln!(out, "\n--- PIFs ({}) ---", r.pifs.len());
+    let mut by_host: BTreeMap<String, Vec<&PifReport>> = BTreeMap::new();
     for p in &r.pifs {
-        let _ = writeln!(
-            out,
-            "{} host={} net={} dev={} ip={} mac={} vlan={} mgmt={} attached={}",
-            p.uuid,
-            p.host,
-            p.network,
-            p.device,
-            p.address,
-            p.mac,
-            p.vlan.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
-            p.management,
-            p.attached
-        );
+        by_host
+            .entry(if p.host.is_empty() { "(no host)".to_string() } else { p.host.clone() })
+            .or_default()
+            .push(p);
+    }
+    for (host, group) in &by_host {
+        let mut group = group.clone();
+        group.sort_by(|a, b| a.device.to_lowercase().cmp(&b.device.to_lowercase()));
+        let mgmt = group.iter().filter(|p| p.management).count();
+        let _ = writeln!(out, "\n  host: {} ({} PIFs, {} management)", host, group.len(), mgmt);
+        for p in &group {
+            let _ = writeln!(
+                out,
+                "    dev={} ip={} net={} mac={} vlan={} mgmt={} attached={}",
+                p.device,
+                p.address,
+                p.network,
+                p.mac,
+                p.vlan.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
+                p.management,
+                p.attached
+            );
+        }
     }
 }
 
