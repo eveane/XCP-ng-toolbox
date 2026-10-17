@@ -9,7 +9,7 @@ pub type Row = BTreeMap<String, String>;
 /// All rows of a table, keyed by row ref key (e.g. "12" for `OpaqueRef:12`).
 pub type Table = BTreeMap<String, Row>;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct XapiDb {
     pub tables: BTreeMap<String, Table>,
 }

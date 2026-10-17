@@ -6,7 +6,6 @@ mod report;
 mod xapidb;
 
 use anyhow::{bail, Context, Result};
-use bundle::Bundle;
 use clap::{Parser, Subcommand, ValueEnum};
 use report::BundleReport;
 use std::io::Write;
@@ -23,6 +22,16 @@ const EXAMPLES: &str = r#"EXAMPLES:
 
   # Full text report on stdout
   xcp-bundle-analyzer analyze XenServer-host1-20260616.tar.bz2
+
+  # Against a directory where the bundle is already decompressed
+  xcp-bundle-analyzer analyze /path/to/decompressed-bundle
+
+  # No argument: use the current directory as the decompressed bundle
+  cd /path/to/decompressed-bundle && xcp-bundle-analyzer analyze
+
+  # Against a bare xapi-db.xml dump file
+  xcp-bundle-analyzer analyze xapi-db.xml
+  xcp-bundle-analyzer vm-display xapi-db.xml uuid=<uuid>
 
   # Only one section: pool, hosts, srs, vms, vdis, vbds, vifs, pifs
   xcp-bundle-analyzer analyze --section vms XenServer-host1.tar.bz2
@@ -62,9 +71,11 @@ const EXAMPLES: &str = r#"EXAMPLES:
     about = "Analyze XCP-ng / XenServer status-report bundles produced by xen-bugtool.
 
 Outputs a report as plain text, JSON, or a self-contained HTML dashboard.
-Reads tar, tar.gz, tar.bz2 and zip bundles. Extracts hosts, SRs, VDIs,
-VBDs, VMs (with templates and snapshots), VIFs and PIFs from xapi-db.xml,
-plus dom0 configuration, uptime and bundle origin.",
+Inputs can be bugtool archives (tar/tar.gz/tar.bz2/zip), a directory with an
+already-decompressed bundle, or a bare xapi-db.xml dump. With no argument,
+the current directory is used as a decompressed bundle. Extracts hosts, SRs,
+VDIs, VBDs, VMs (with templates and snapshots), VIFs and PIFs from
+xapi-db.xml, plus dom0 configuration, uptime and bundle origin.",
     after_long_help = EXAMPLES
 )]
 struct Cli {
@@ -76,8 +87,9 @@ struct Cli {
 enum Commands {
     /// Analyze one or more bundles (a pool view is consolidated when several are given)
     Analyze {
-        /// Bundle files (tar, tar.gz, tar.bz2 or zip)
-        #[arg(required = true)]
+        /// Bundle files (tar/tar.gz/tar.bz2/zip), decompressed bundle directories,
+        /// or bare xapi-db.xml files. Defaults to the current directory.
+        #[arg(default_value = ".")]
         bundles: Vec<PathBuf>,
         /// Only display one section: pool, hosts, srs, vms, vdis, vbds, vifs, pifs (text output)
         #[arg(short, long)]
@@ -113,12 +125,12 @@ enum Commands {
     },
 }
 
-fn analyze_one(bundle_path: &Path) -> Result<BundleReport> {
-    let bundle = Bundle::open(bundle_path)?;
+fn analyze_one(source_path: &Path) -> Result<BundleReport> {
+    let source = bundle::Source::open(source_path)?;
     let mut warnings = Vec::new();
 
-    let db = match bundle.read_best("xapi-db.xml") {
-        Some(Ok(bytes)) => Some(xapidb::XapiDb::from_bytes(&bytes)?),
+    let db = match source.xapi_db() {
+        Some(Ok(db)) => Some(db),
         Some(Err(e)) => {
             warnings.push(format!("failed reading xapi-db.xml: {e:#}"));
             None
@@ -129,16 +141,17 @@ fn analyze_one(bundle_path: &Path) -> Result<BundleReport> {
         }
     };
 
-    let inventory = bundle
+    let inventory = source
         .read_best("xensource-inventory")
         .and_then(|r| r.ok())
         .map(|b| inventory::Inventory::parse(&String::from_utf8_lossy(&b)))
         .unwrap_or_default();
 
+    let path_str = source.path().display().to_string();
     let mut rep = match &db {
-        Some(db) => report::build_report(db, &inventory, &bundle_path.display().to_string()),
+        Some(db) => report::build_report(db, &inventory, &path_str),
         None => report::BundleReport {
-            bundle_path: bundle_path.display().to_string(),
+            bundle_path: path_str,
             ..Default::default()
         },
     };
@@ -219,8 +232,8 @@ fn cmd_analyze(
 }
 
 fn cmd_list(bundle_path: &Path, grep: Option<&str>) -> Result<()> {
-    let bundle = Bundle::open(bundle_path)?;
-    for (name, size) in bundle.list() {
+    let source = bundle::Source::open(bundle_path)?;
+    for (name, size) in source.list() {
         if let Some(g) = grep {
             if !name.contains(g) {
                 continue;
@@ -232,12 +245,11 @@ fn cmd_list(bundle_path: &Path, grep: Option<&str>) -> Result<()> {
 }
 
 fn cmd_xapidb(bundle_path: &Path, table: &str) -> Result<()> {
-    let bundle = Bundle::open(bundle_path)?;
-    let bytes = bundle
-        .read_best("xapi-db.xml")
+    let source = bundle::Source::open(bundle_path)?;
+    let db = source
+        .xapi_db()
         .transpose()?
-        .context("no xapi-db.xml found in bundle")?;
-    let db = xapidb::XapiDb::from_bytes(&bytes)?;
+        .context("no xapi-db.xml found in this source")?;
     let rows: Vec<_> = db.rows(table).collect();
     if rows.is_empty() {
         eprintln!(
@@ -284,12 +296,11 @@ fn cmd_vm_display(bundle_path: &Path, uuid: &str) -> Result<()> {
         (bundle_path, uuid)
     };
     let uuid = uuid.strip_prefix("uuid=").unwrap_or(uuid);
-    let bundle = Bundle::open(bundle_path)?;
-    let bytes = bundle
-        .read_best("xapi-db.xml")
+    let source = bundle::Source::open(bundle_path)?;
+    let db = source
+        .xapi_db()
         .transpose()?
-        .context("no xapi-db.xml found in bundle")?;
-    let db = xapidb::XapiDb::from_bytes(&bytes)?;
+        .context("no xapi-db.xml found in this source")?;
     let text = render::render_vm_display(&db, uuid)?;
     print!("{text}");
     Ok(())
