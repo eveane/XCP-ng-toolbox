@@ -22,7 +22,7 @@
 <row ref="OpaqueRef:pbd4" host="OpaqueRef:host2" SR="OpaqueRef:sr-nfs" currently_attached="true"/>
 </table>
 <table name="VDI">
-<row ref="OpaqueRef:vdi1" uuid="vdi-uuid-1" name__label="vm1-disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="('OpaqueRef:vbd1')"/>
+<row ref="OpaqueRef:vdi1" uuid="vdi-uuid-1" name__label="vm1-disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="('OpaqueRef:vbd1')" sm_config="(('vdi_type' 'vhd'))"/>
 <row ref="OpaqueRef:vdi2" uuid="vdi-uuid-2" name__label="vm2-disk" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd2')"/>
 </table>
 <table name="VBD">
@@ -30,9 +30,10 @@
 <row ref="OpaqueRef:vbd2" uuid="vbd-uuid-2" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="false"/>
 </table>
 <table name="VM">
-<row ref="OpaqueRef:vm1" uuid="vm-uuid-1" name__label="vm1" power_state="Running" is_a_template="false" is_control_domain="false" resident_on="OpaqueRef:host1" memory__dynamic_max="4294967296" VCPUs__max="4" VIFs="('OpaqueRef:vif1')" VBDs="('OpaqueRef:vbd1')" guest_metrics="OpaqueRef:gm1"/>
+<row ref="OpaqueRef:vm1" uuid="vm-uuid-1" name__label="vm1" power_state="Running" is_a_template="false" is_a_snapshot="false" is_control_domain="false" domid="7" resident_on="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__static_max="4294967296" memory__target="4294967296" VCPUs__max="4" VCPUs__at_startup="4" VIFs="('OpaqueRef:vif1')" VBDs="('OpaqueRef:vbd1')" snapshots="('OpaqueRef:snap1')" guest_metrics="OpaqueRef:gm1"/>
 <row ref="OpaqueRef:vm2" uuid="vm-uuid-2" name__label="vm2" power_state="Halted" is_a_template="false" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="('OpaqueRef:vbd2')" guest_metrics="OpaqueRef:NULL"/>
 <row ref="OpaqueRef:dom0" uuid="dom0-uuid" name__label="Control domain on host1" power_state="Running" is_a_template="false" is_control_domain="true" domid="0" resident_on="OpaqueRef:host1" affinity="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__target="4294967296" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
+<row ref="OpaqueRef:snap1" uuid="snap-uuid-1" name__label="vm1 snapshot" power_state="Halted" is_a_template="false" is_a_snapshot="true" is_control_domain="false" snapshot_of="OpaqueRef:vm1" snapshot_time="20260615T10:00:00Z" resident_on="OpaqueRef:NULL" memory__dynamic_max="4294967296" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 <row ref="OpaqueRef:tmpl" uuid="vm-uuid-tpl" name__label="Debian%.12%.template" power_state="Halted" is_a_template="true" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 </table>
 <table name="VM_guest_metrics">

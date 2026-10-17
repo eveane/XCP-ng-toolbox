@@ -127,6 +127,11 @@ xcp-bundle-analyzer list XenServer-host1-20260616.tar.bz2
 
 # dump any raw xapi table (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
 xcp-bundle-analyzer xapi-db XenServer-host1-20260616.tar.bz2 host
+
+# detailed view of one VM (like `xe vm-param-list`): name, uuid, vCPUs, memory,
+# state, host, dom-id, VBDs -> VDIs (uuid, size, format vhd/qcow2/raw, SR),
+# VIFs -> MAC/IP/network, snapshot chain and template uuid
+xcp-bundle-analyzer vm-display XenServer-host1-20260616.tar.bz2 uuid=a5609e55-f48c-56c7-e795-5edee4841245
 ```
 
 ### Notes

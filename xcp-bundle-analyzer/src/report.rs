@@ -811,7 +811,7 @@ mod tests {
         assert_eq!(h.cpu_count, 8);
         assert_eq!(h.dom0_memory_config_mib, Some(2048));
         assert_eq!(r.srs.len(), 2);
-        assert_eq!(r.vms.len(), 4);
+        assert_eq!(r.vms.len(), 5);
         assert_eq!(r.pool.vm_running, 1);
         assert!(!r.vbds.is_empty());
         // bundle origin detection via INSTALLATION_UUID
