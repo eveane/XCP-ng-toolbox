@@ -29,6 +29,8 @@ pub struct HostReport {
     pub pif_count: usize,
     /// True when this host is the one the bugtool bundle was collected on.
     pub is_bundle_origin: bool,
+    /// Host other-config:auto-scan-interval, in seconds, when set.
+    pub auto_scan_interval: Option<u64>,
     /// Host uptime in seconds at dump time (host.other_config boot_time).
     pub uptime_seconds: Option<u64>,
     /// Unix timestamp of last host boot (host.other_config boot_time).
@@ -107,6 +109,8 @@ pub struct VbdReport {
     pub opaque_ref: String,
     pub vm: String,
     pub vdi: String,
+    /// VDI UUID (full).
+    pub vdi_uuid: String,
     pub device: String,
     pub vbd_type: String,
     pub mode: String,
@@ -440,6 +444,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let host_other = decode_map(get(host, "other_config"));
         let boot_time = map_get(&host_other, "boot_time")
             .and_then(|v| v.trim_end_matches('.').parse().ok());
+        let host_auto_scan = map_get(&host_other, "auto-scan-interval").and_then(as_u64);
         if is_bundle_origin {
             report.bundle_origin_host = hostname.clone();
         }
@@ -541,6 +546,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vcpus_in_use: 0,
             vms_running: 0,
             vms_resident: 0,
+            auto_scan_interval: host_auto_scan,
         });
     }
 
@@ -723,6 +729,11 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             opaque_ref: format!("OpaqueRef:{r}"),
             vm: ref_label(db, "VM", &ref_of(vbd, "VM"), "name__label"),
             vdi: ref_label(db, "VDI", &ref_of(vbd, "VDI"), "name__label"),
+            vdi_uuid: db
+                .table("VDI")
+                .and_then(|t| t.get(&ref_of(vbd, "VDI")))
+                .map(|vdi| get(vdi, "uuid").to_string())
+                .unwrap_or_default(),
             device: get(vbd, "device").to_string(),
             vbd_type: get(vbd, "type").to_string(),
             mode: get(vbd, "mode").to_string(),
@@ -1117,6 +1128,11 @@ mod tests {
         assert_eq!(pbd3.preferred_formats, vec!["vhd".to_string(), "qcow2".to_string()]);
         let kinds: Vec<&str> = r.pbd_inconsistencies.iter().map(|i| i.kind.as_str()).collect();
         assert!(kinds.contains(&"PBD unplugged"));
+        // host auto-scan-interval
+        assert_eq!(r.hosts[0].auto_scan_interval, Some(600));
+        // VBD carries its VDI uuid
+        let vbd1 = r.vbds.iter().find(|b| b.uuid == "vbd-uuid-1").unwrap();
+        assert_eq!(vbd1.vdi_uuid, "vdi-uuid-1");
         // SR device_config / multipath / category
         let iscsi = r.srs.iter().find(|s| s.uuid == "sr-uuid-iscsi").unwrap();
         assert_eq!(iscsi.category, "iscsi");

@@ -171,6 +171,12 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
             "  VMs: {} running / {} resident   vCPUs in use: {}",
             h.vms_running, h.vms_resident, h.vcpus_in_use
         );
+        if let Some(interval) = h.auto_scan_interval {
+            let _ = writeln!(
+                out,
+                "  *** auto-scan-interval: {interval}s (this host rescans SRs automatically every {interval}s) ***"
+            );
+        }
         let _ = writeln!(out, "  PBDs: {}   PIFs: {}", h.pbd_count, h.pif_count);
     }
 }
@@ -390,10 +396,18 @@ fn render_vbds(r: &BundleReport, out: &mut String) {
             let _ = writeln!(out, "\n  vm: {}", if b.vm.is_empty() { "(no VM)" } else { &b.vm });
             last_vm = b.vm.clone();
         }
+        let vdi_short: String = b.vdi_uuid.chars().take(8).collect();
         let _ = writeln!(
             out,
-            "    dev={} vdi={} type={} mode={} attached={} bootable={}",
-            b.device, b.vdi, b.vbd_type, b.mode, b.attached, b.bootable
+            "    dev={} vdi={} [{}] type={} mode={} attached={} bootable={} uuid={}",
+            b.device,
+            b.vdi,
+            vdi_short,
+            b.vbd_type,
+            b.mode,
+            b.attached,
+            b.bootable,
+            b.uuid
         );
     }
 }
