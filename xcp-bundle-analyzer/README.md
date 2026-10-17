@@ -61,6 +61,11 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   - **VBDs** are sorted per VM name, with the count of attached CD devices
     summarized on top.
   - **VIFs** are sorted per VM name (then device).
+  - **PBDs** are grouped per SR (with shared/local marker) showing host,
+    attach state, UUID and the disk-format preference order from the PBD's
+    `other-config:preferred-image-formats` (e.g. `vhd > qcow2`). Pool
+    inconsistencies are highlighted on top: a shared SR missing a PBD on
+    one of the pool hosts, or a shared SR whose PBD is unplugged on a host.
 - Consolidated view: pass several bundles (e.g. one per host of a pool) and
   hosts/SRs/VMs are merged by UUID into a single pool report. This is the
   extension point for future features (upload bundles from a whole pool,

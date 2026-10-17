@@ -1,5 +1,5 @@
 use crate::build_info::VERSION;
-use crate::report::{BundleReport, ConsolidatedReport, VdiReport, VmReport};
+use crate::report::{BundleReport, ConsolidatedReport, VdiReport, PbdReport, VmReport};
 use std::collections::BTreeMap;
 use serde::Serialize;
 use std::fmt::Write as _;
@@ -25,6 +25,7 @@ pub enum Section {
     VDIs,
     VBDs,
     VIFs,
+    PBDs,
     PIFs,
 }
 
@@ -39,6 +40,7 @@ impl Section {
             "vdis" | "vdi" => Section::VDIs,
             "vbds" | "vbd" => Section::VBDs,
             "vifs" | "vif" => Section::VIFs,
+            "pbds" | "pbd" => Section::PBDs,
             "pifs" | "pif" => Section::PIFs,
             _ => None?,
         })
@@ -70,6 +72,9 @@ pub fn render_sections(r: &BundleReport, section: Section) -> String {
     }
     if show(Section::VBDs) {
         render_vbds(r, &mut out);
+    }
+    if show(Section::PBDs) {
+        render_pbds(r, &mut out);
     }
     if show(Section::PIFs) {
         render_pifs(r, &mut out);
@@ -359,6 +364,48 @@ fn render_vbds(r: &BundleReport, out: &mut String) {
             "    dev={} vdi={} type={} mode={} attached={} bootable={}",
             b.device, b.vdi, b.vbd_type, b.mode, b.attached, b.bootable
         );
+    }
+}
+
+fn render_pbds(r: &BundleReport, out: &mut String) {
+    let _ = writeln!(out, "\n--- PBDs ({}) ---", r.pbds.len());
+
+    // inconsistencies on top
+    if !r.pbd_inconsistencies.is_empty() {
+        let _ = writeln!(out, "\n  *** PBD INCONSISTENCIES ({}) ***", r.pbd_inconsistencies.len());
+        for inc in &r.pbd_inconsistencies {
+            let _ = writeln!(
+                out,
+                "  [{}] {} [{}] on SR {}: {}",
+                inc.kind, inc.sr, inc.sr_uuid, inc.sr, inc.detail
+            );
+        }
+    }
+
+    // group per SR
+    let mut by_sr: BTreeMap<String, Vec<&PbdReport>> = BTreeMap::new();
+    for p in &r.pbds {
+        by_sr.entry(p.sr.clone()).or_default().push(p);
+    }
+    for (sr, group) in &by_sr {
+        let shared = group.iter().any(|p| p.sr_shared);
+        let _ = writeln!(
+            out,
+            "\n  SR: {}{} ({} PBDs)",
+            sr,
+            if shared { " [shared]" } else { " [local]" },
+            group.len()
+        );
+        for p in group {
+            let _ = writeln!(
+                out,
+                "    host={} attached={} uuid={} formats={}",
+                p.host,
+                p.attached,
+                p.uuid,
+                if p.preferred_formats.is_empty() { "-".to_string() } else { p.preferred_formats.join(" > ") }
+            );
+        }
     }
 }
 
