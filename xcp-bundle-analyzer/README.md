@@ -8,8 +8,9 @@ self-contained HTML dashboard (XO-like single page, no external assets).
 
 ## Features
 
-- Reads `tar`, `tar.gz`, `tar.bz2` and `zip` bundles (the formats xen-bugtool
-  can emit).
+- Inputs: bugtool archives (`tar`, `tar.gz`, `tar.bz2`, `zip`), a directory
+  with an already-decompressed bundle, or a bare `xapi-db.xml` dump file.
+  With no argument, the current directory is used as the decompressed bundle.
 - Parses `xapi-db.xml` (the full xapi database dump, with secrets already
   filtered by xen-bugtool) into typed tables and rows:
   - hosts: hostname, UUID, opaque-ref, IP, product (XCP-ng/XenServer) version,

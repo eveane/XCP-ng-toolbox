@@ -34,6 +34,7 @@ impl Inventory {
         self.0.get(key).map(|s| s.as_str())
     }
 
+    #[allow(dead_code)]
     pub fn str_or(&self, key: &str, default: &str) -> String {
         self.get(key).unwrap_or(default).to_string()
     }

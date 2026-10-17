@@ -44,6 +44,7 @@ impl Section {
     }
 }
 
+#[allow(dead_code)]
 pub fn render_text(r: &BundleReport) -> String {
     render_sections(r, Section::All)
 }
