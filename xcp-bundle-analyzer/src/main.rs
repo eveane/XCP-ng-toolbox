@@ -41,6 +41,9 @@ const EXAMPLES: &str = r#"EXAMPLES:
   xcp-bundle-analyzer list XenServer-host1.tar.bz2
   xcp-bundle-analyzer list --grep xapi XenServer-host1.tar.bz2
 
+  # Detailed view of one VM (like `xe vm-param-list`)
+  xcp-bundle-analyzer vm-display XenServer-host1.tar.bz2 uuid=a5609e55-f48c-56c7-e795-5edee4841245
+
   # Dump a raw xapi table from xapi-db.xml (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
   xcp-bundle-analyzer xapi-db XenServer-host1.tar.bz2 host
 
@@ -101,6 +104,12 @@ enum Commands {
         bundle: PathBuf,
         /// Table name (e.g. host, VM, SR, VDI, VIF, PIF, PBD, network)
         table: String,
+    },
+    /// Show a detailed view of one VM, like `xe vm-param-list`
+    VmDisplay {
+        bundle: PathBuf,
+        /// VM UUID, given as uuid=<uuid> or just <uuid>
+        uuid: String,
     },
 }
 
@@ -259,5 +268,29 @@ fn main() -> Result<()> {
         } => cmd_analyze(&bundles, format, output.as_deref(), compact, section.as_deref()),
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
+        Commands::VmDisplay { bundle, uuid } => cmd_vm_display(&bundle, &uuid),
     }
+}
+
+fn cmd_vm_display(bundle_path: &Path, uuid: &str) -> Result<()> {
+    // Accept uuid= prefix on either argument so both
+    // `vm-display <bundle> uuid=<uuid>` and `vm-display uuid=<uuid> <bundle>`
+    // work: if the bundle arg looks like a uuid, swap them.
+    let bp = bundle_path.display().to_string();
+    let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
+    let (bundle_path, uuid): (&Path, &str) = if looks_like_uuid(&bp) && !looks_like_uuid(uuid) {
+        (Path::new(uuid), bp.as_str())
+    } else {
+        (bundle_path, uuid)
+    };
+    let uuid = uuid.strip_prefix("uuid=").unwrap_or(uuid);
+    let bundle = Bundle::open(bundle_path)?;
+    let bytes = bundle
+        .read_best("xapi-db.xml")
+        .transpose()?
+        .context("no xapi-db.xml found in bundle")?;
+    let db = xapidb::XapiDb::from_bytes(&bytes)?;
+    let text = render::render_vm_display(&db, uuid)?;
+    print!("{text}");
+    Ok(())
 }
