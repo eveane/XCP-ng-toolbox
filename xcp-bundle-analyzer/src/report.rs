@@ -96,6 +96,28 @@ pub struct VbdReport {
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
+pub struct PbdReport {
+    pub uuid: String,
+    pub opaque_ref: String,
+    pub sr: String,
+    pub sr_uuid: String,
+    pub sr_shared: bool,
+    pub host: String,
+    pub attached: bool,
+    /// Disk-format preference order from PBD other_config:preferred-image-formats
+    /// (e.g. "vhd, qcow2"). Empty when not set.
+    pub preferred_formats: Vec<String>,
+}
+
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct PbdInconsistency {
+    pub sr: String,
+    pub sr_uuid: String,
+    pub kind: String,
+    pub detail: String,
+}
+
+#[derive(Serialize, Default, Debug, Clone)]
 pub struct VmReport {
     pub name: String,
     pub uuid: String,
@@ -168,6 +190,10 @@ pub struct BundleReport {
     pub vms: Vec<VmReport>,
     pub vifs: Vec<VifReport>,
     pub pifs: Vec<PifReport>,
+    pub pbds: Vec<PbdReport>,
+    /// Pool-level PBD inconsistencies (shared SR missing PBDs on some hosts,
+    /// or PBDs not attached).
+    pub pbd_inconsistencies: Vec<PbdInconsistency>,
     pub networks: usize,
     pub warnings: Vec<String>,
 }
@@ -666,6 +692,84 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
     }
 
+    // PBDs, grouped per SR at render time; detect pool inconsistencies.
+    {
+        let hostnames: Vec<String> = db
+            .rows("host")
+            .map(|(_, h)| get(h, "hostname").to_string())
+            .collect();
+        for (r, pbd) in db.rows("PBD") {
+            let uuid = get(pbd, "uuid").to_string();
+            if uuid.is_empty() {
+                continue;
+            }
+            let sr_ref = ref_of(pbd, "SR");
+            let (sr_name, sr_uuid, sr_shared) = db
+                .table("SR")
+                .and_then(|t| t.get(&sr_ref))
+                .map(|sr| {
+                    (
+                        get2(sr, "name__label").to_string(),
+                        get(sr, "uuid").to_string(),
+                        as_bool(get(sr, "shared")).unwrap_or(false),
+                    )
+                })
+                .unwrap_or_default();
+            let other = decode_map(get(pbd, "other_config"));
+            let preferred = map_get(&other, "preferred-image-formats")
+                .map(|v| {
+                    v.split(|c| c == ',' || c == ' ')
+                        .filter(|f| !f.is_empty())
+                        .map(|f| f.trim().to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            report.pbds.push(PbdReport {
+                uuid,
+                opaque_ref: format!("OpaqueRef:{r}"),
+                sr: sr_name,
+                sr_uuid,
+                sr_shared,
+                host: ref_label(db, "host", &ref_of(pbd, "host"), "hostname"),
+                attached: as_bool(get(pbd, "currently_attached")).unwrap_or(false),
+                preferred_formats: preferred,
+            });
+        }
+        // Inconsistency check: a shared SR should have a PBD on every pool host.
+        for sr in &report.srs {
+            if !sr.shared {
+                continue;
+            }
+            let covered: Vec<String> = report
+                .pbds
+                .iter()
+                .filter(|p| p.sr_uuid == sr.uuid)
+                .map(|p| p.host.clone())
+                .collect();
+            for h in &hostnames {
+                if !covered.contains(h) {
+                    report.pbd_inconsistencies.push(PbdInconsistency {
+                        sr: sr.name.clone(),
+                        sr_uuid: sr.uuid.clone(),
+                        kind: "missing PBD".to_string(),
+                        detail: format!("shared SR has no PBD on host {h}"),
+                    });
+                }
+            }
+        }
+        // Also flag PBDs that are unplugged (shared SR partially attached).
+        for p in &report.pbds {
+            if p.sr_shared && !p.attached {
+                report.pbd_inconsistencies.push(PbdInconsistency {
+                    sr: p.sr.clone(),
+                    sr_uuid: p.sr_uuid.clone(),
+                    kind: "PBD unplugged".to_string(),
+                    detail: format!("PBD on host {} is not attached", p.host),
+                });
+            }
+        }
+    }
+
     // VIFs
     for (r, vif) in db.rows("VIF") {
         let uuid = get(vif, "uuid").to_string();
@@ -876,7 +980,7 @@ mod tests {
         assert_eq!(h.hostname, "host1.example.com");
         assert_eq!(h.cpu_count, 8);
         assert_eq!(h.dom0_memory_config_mib, Some(2048));
-        assert_eq!(r.srs.len(), 2);
+        assert_eq!(r.srs.len(), 3);
         assert_eq!(r.vms.len(), 5);
         assert_eq!(r.pool.vm_running, 1);
         assert!(!r.vbds.is_empty());
@@ -893,6 +997,13 @@ mod tests {
         assert!(r.hosts[0].uptime_seconds.unwrap() > 0);
         // control domain excluded from real VM list
         assert!(r.vms.iter().any(|v| v.is_control_domain));
+        // PBD section: grouping fields + inconsistencies
+        assert_eq!(r.pbds.len(), 5);
+        let pbd3 = r.pbds.iter().find(|p| p.uuid == "pbd-uuid-3").unwrap();
+        assert_eq!(pbd3.preferred_formats, vec!["vhd".to_string(), "qcow2".to_string()]);
+        let kinds: Vec<&str> = r.pbd_inconsistencies.iter().map(|i| i.kind.as_str()).collect();
+        assert!(kinds.contains(&"missing PBD"));
+        assert!(kinds.contains(&"PBD unplugged"));
         // VDI snapshot/HA fields
         let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
         assert!(ha.is_ha_statefile);

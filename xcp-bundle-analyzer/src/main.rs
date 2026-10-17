@@ -33,7 +33,7 @@ const EXAMPLES: &str = r#"EXAMPLES:
   xcp-bundle-analyzer analyze xapi-db.xml
   xcp-bundle-analyzer vm-display xapi-db.xml uuid=<uuid>
 
-  # Only one section: pool, hosts, srs, vms, vdis, vbds, vifs, pifs
+  # Only one section: pool, hosts, srs, vms, vdis, vbds, vifs, pbds, pifs
   xcp-bundle-analyzer analyze --section vms XenServer-host1.tar.bz2
   xcp-bundle-analyzer analyze --section srs XenServer-host1.tar.bz2
 
