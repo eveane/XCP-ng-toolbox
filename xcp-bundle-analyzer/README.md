@@ -46,6 +46,21 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   xapi database generation counter, not a timestamp.
 - Live dom0 memory comes from the control-domain VM row (`domid=0`,
   `is_control_domain=true`) when `xensource-inventory` is unavailable.
+- Grouped, sorted report sections:
+  - **Hosts** show per-host vCPU usage (sum of vCPUs of running VMs) and
+    running/resident VM counts.
+  - **VMs** are grouped per resident host (alphabetical order inside each
+    group), with a per-host header line showing running count and vCPUs in
+    use; templates and snapshots are listed in separate, alphabetically
+    sorted sections.
+  - **VDIs** are grouped per SR (alphabetical inside each group); HA
+    statefile disks ("Statefile for HA", type ha_statefile) are listed
+    separately on top; each VDI is flagged `SNAPSHOT`, `HAS-SNAPSHOTS`,
+    or `*** BROKEN PARENT ***` when its `snapshot_of` points to a VDI that
+    no longer exists in the dump.
+  - **VBDs** are sorted per VM name, with the count of attached CD devices
+    summarized on top.
+  - **VIFs** are sorted per VM name (then device).
 - Consolidated view: pass several bundles (e.g. one per host of a pool) and
   hosts/SRs/VMs are merged by UUID into a single pool report. This is the
   extension point for future features (upload bundles from a whole pool,

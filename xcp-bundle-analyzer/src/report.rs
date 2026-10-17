@@ -66,9 +66,20 @@ pub struct VdiReport {
     pub uuid: String,
     pub opaque_ref: String,
     pub sr: String,
+    pub sr_uuid: String,
     pub vdi_type: String,
     pub size_bytes: u64,
     pub vm: String,
+    /// True when this VDI is a snapshot (is_a_snapshot=true).
+    pub is_snapshot: bool,
+    /// True when this VDI has at least one snapshot child.
+    pub has_snapshots: bool,
+    /// True when snapshot_of is set but the parent VDI no longer exists
+    /// in the dump (broken snapshot chain, usually after the parent was
+    /// deleted or coalesced away).
+    pub broken_parent: bool,
+    /// True for HA statefile disks (type=ha_statefile, "Statefile for HA").
+    pub is_ha_statefile: bool,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -531,14 +542,33 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             .pool
             .vdi_total_size_bytes
             .saturating_add(size);
+        let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
+        let has_snapshots = !decode_set(get(vdi, "snapshots")).is_empty();
+        let snap_of = ref_of(vdi, "snapshot_of");
+        let broken_parent = !snap_of.is_empty()
+            && db
+                .table("VDI")
+                .and_then(|t| t.get(&snap_of))
+                .is_none();
+        let is_ha_statefile = get(vdi, "type") == "ha_statefile"
+            || get(vdi, "name__label") == "Statefile for HA";
         report.vdis.push(VdiReport {
             name: get2(vdi, "name__label").to_string(),
             uuid,
             opaque_ref: format!("OpaqueRef:{r}"),
             sr: ref_label(db, "SR", &sr_ref, "name__label"),
+            sr_uuid: db
+                .table("SR")
+                .and_then(|t| t.get(&sr_ref))
+                .map(|sr| get(sr, "uuid").to_string())
+                .unwrap_or_default(),
             vdi_type: get(vdi, "type").to_string(),
             size_bytes: size,
             vm: ref_label(db, "VM", &vm_ref, "name__label"),
+            is_snapshot,
+            has_snapshots,
+            broken_parent,
+            is_ha_statefile,
         });
     }
 
@@ -863,6 +893,17 @@ mod tests {
         assert!(r.hosts[0].uptime_seconds.unwrap() > 0);
         // control domain excluded from real VM list
         assert!(r.vms.iter().any(|v| v.is_control_domain));
+        // VDI snapshot/HA fields
+        let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
+        assert!(ha.is_ha_statefile);
+        let snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-snap").unwrap();
+        assert!(snap.is_snapshot);
+        assert!(!snap.broken_parent);
+        let orphan = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-orphan").unwrap();
+        assert!(orphan.is_snapshot);
+        assert!(orphan.broken_parent);
+        let base = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-1").unwrap();
+        assert!(base.has_snapshots);
         // auto-scan-interval surfaced on the SR, with attached hosts
         let nfs = r.srs.iter().find(|s| s.name == "NFS repo").unwrap();
         assert_eq!(nfs.auto_scan_interval, Some(300));

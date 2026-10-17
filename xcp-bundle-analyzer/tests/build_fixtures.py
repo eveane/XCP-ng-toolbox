@@ -32,11 +32,15 @@ XAPI_DB = """<?xml version="1.0"?>
 <row ref="OpaqueRef:pbd4" host="OpaqueRef:host2" SR="OpaqueRef:sr-nfs" currently_attached="true"/>
 </table>
 <table name="VDI">
-<row ref="OpaqueRef:vdi1" uuid="vdi-uuid-1" name__label="vm1-disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="('OpaqueRef:vbd1')" sm_config="(('vdi_type' 'vhd'))"/>
+<row ref="OpaqueRef:vdi1" uuid="vdi-uuid-1" name__label="vm1-disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="('OpaqueRef:vbd1')" snapshots="('OpaqueRef:vdi-snap')" sm_config="(('vdi_type' 'vhd'))"/>
 <row ref="OpaqueRef:vdi2" uuid="vdi-uuid-2" name__label="vm2-disk" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd2')"/>
+<row ref="OpaqueRef:vdi-ha" uuid="vdi-uuid-ha" name__label="Statefile for HA" type="ha_statefile" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="()" is_a_snapshot="false"/>
+<row ref="OpaqueRef:vdi-snap" uuid="vdi-uuid-snap" name__label="vm1-disk snapshot" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi1"/>
+<row ref="OpaqueRef:vdi-orphan" uuid="vdi-uuid-orphan" name__label="orphaned snapshot" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi-gone"/>
 </table>
 <table name="VBD">
 <row ref="OpaqueRef:vbd1" uuid="vbd-uuid-1" VDI="OpaqueRef:vdi1" VM="OpaqueRef:vm1" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="true"/>
+<row ref="OpaqueRef:vbd-cd" uuid="vbd-uuid-cd" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvdd" type="CD" mode="RO" bootable="false" currently_attached="true"/>
 <row ref="OpaqueRef:vbd2" uuid="vbd-uuid-2" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="false"/>
 </table>
 <table name="VM">
