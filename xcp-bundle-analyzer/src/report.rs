@@ -35,6 +35,12 @@ pub struct HostReport {
     pub boot_time: Option<u64>,
     /// Live dom0 memory in bytes, from the control-domain VM row (domid=0).
     pub dom0_memory_live_bytes: Option<u64>,
+    /// Sum of vCPUs of running VMs resident on this host (at-startup counts).
+    pub vcpus_in_use: u64,
+    /// Number of VMs currently running on this host.
+    pub vms_running: usize,
+    /// Number of VMs resident (any state) on this host.
+    pub vms_resident: usize,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -448,6 +454,9 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             uptime_seconds,
             boot_time,
             dom0_memory_live_bytes: dom0_mem.get(r).copied(),
+            vcpus_in_use: 0,
+            vms_running: 0,
+            vms_resident: 0,
         });
     }
 
@@ -662,6 +671,33 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vlan: get(pif, "VLAN").parse().ok(),
             management: as_bool(get(pif, "management")).unwrap_or(false),
         });
+    }
+
+    // Per-host vCPU usage: sum vCPUs of running VMs resident on each host.
+    {
+        // map host hostname -> (vcpus, running, resident)
+        let mut usage: BTreeMap<String, (u64, usize, usize)> = BTreeMap::new();
+        for vm in &report.vms {
+            if vm.is_template || vm.is_snapshot || vm.is_vmss_snapshot || vm.is_control_domain {
+                continue;
+            }
+            if vm.resident_host.is_empty() {
+                continue;
+            }
+            let e = usage.entry(vm.resident_host.clone()).or_default();
+            e.2 += 1;
+            if vm.power_state == "Running" {
+                e.1 += 1;
+                e.0 += vm.vcpus_at_startup.max(vm.vcpus_max);
+            }
+        }
+        for h in report.hosts.iter_mut() {
+            if let Some((vcpus, running, resident)) = usage.get(&h.hostname) {
+                h.vcpus_in_use = *vcpus;
+                h.vms_running = *running;
+                h.vms_resident = *resident;
+            }
+        }
     }
 
     report.networks = db.table("network").map(|t| t.len()).unwrap_or(0);
