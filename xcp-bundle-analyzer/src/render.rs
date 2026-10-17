@@ -369,8 +369,8 @@ fn render_vdis(r: &BundleReport, out: &mut String) {
             }
             let _ = writeln!(
                 out,
-                "    {} [{}] type={} size={} vm={}{}",
-                d.name, d.uuid, d.vdi_type, gib(d.size_bytes), d.vm, flags
+                "    {} [{}] type={} size={}{}",
+                d.name, d.uuid, d.vdi_type, gib(d.size_bytes), flags
             );
         }
     }
