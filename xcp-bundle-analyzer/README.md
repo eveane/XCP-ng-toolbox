@@ -47,8 +47,9 @@ self-contained HTML dashboard (XO-like single page, no external assets).
 - Live dom0 memory comes from the control-domain VM row (`domid=0`,
   `is_control_domain=true`) when `xensource-inventory` is unavailable.
 - Grouped, sorted report sections:
-  - **Hosts** show per-host vCPU usage (sum of vCPUs of running VMs) and
-    running/resident VM counts.
+  - **Hosts** show per-host vCPU usage (sum of vCPUs of running VMs),
+    running/resident VM counts, and a highlighted line when the host has
+    `other-config:auto-scan-interval` set.
   - **VMs** are grouped per resident host (alphabetical order inside each
     group), with a per-host header line showing running count and vCPUs in
     use; templates and snapshots are listed in separate, alphabetically
@@ -59,7 +60,9 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     or `*** BROKEN PARENT ***` when its `snapshot_of` points to a VDI that
     no longer exists in the dump.
   - **VBDs** are sorted per VM name, with the count of attached CD devices
-    summarized on top.
+    summarized on top; each line shows the device, VDI name, the first 8
+    characters of the VDI UUID, type, mode, attach state, bootable flag and
+    the VBD UUID.
   - **VIFs** are sorted per VM name (then device).
   - **PIFs** are grouped per host (sorted by device inside each group), with a
     per-host header showing PIF and management counts.
