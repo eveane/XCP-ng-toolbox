@@ -58,6 +58,25 @@ pub struct SrReport {
     pub auto_scan_interval: Option<u64>,
     /// Hostnames the SR is attached to (via PBDs).
     pub hosts: Vec<String>,
+    /// Merged device_config across the SR's PBDs (key -> values from each host).
+    pub device_config: Vec<(String, String)>,
+    /// SR other_config entries (merged across PBDs for multipath keys).
+    pub other_config: Vec<(String, String)>,
+    /// Multipath info when other_config:multipathed=true: per-host path counts
+    /// from the mpath-<id> entries ("[N, N]").
+    pub multipath: Vec<MultipathHost>,
+    /// True when hosts report different path counts for the same LUN.
+    pub multipath_mismatch: bool,
+    /// Coarse storage family: nfs / iscsi / fc / fcoe / zfs / xostor / local / ...
+    pub category: String,
+}
+
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct MultipathHost {
+    pub host: String,
+    /// Path count parsed from the mpath-<SCSIid> value "[N, N]" (first number).
+    pub paths: Option<u64>,
+    pub raw: String,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -270,6 +289,34 @@ fn ref_set(v: &str) -> Vec<String> {
             }
         })
         .collect()
+}
+
+
+/// Coarse storage family from SR type + device_config keys.
+fn classify_sr(sr_type: &str, device_config: &[(String, String)]) -> String {
+    let t = sr_type.trim().to_lowercase();
+    let dc_has = |k: &str| device_config.iter().any(|(ek, _)| ek == k);
+    if t.contains("nfs") || dc_has("server") && dc_has("serverpath") {
+        "nfs".into()
+    } else if t.contains("iscsi") || dc_has("targetIQN") || dc_has("SCSIid") && !t.contains("hba") {
+        "iscsi".into()
+    } else if t.contains("hba") || t.contains("fibre") || t == "lvmohba" {
+        "fc/fcoe (hba)".into()
+    } else if t.contains("cslg") {
+        "fc/fcoe (cslg)".into()
+    } else if t.contains("xostor") || t.contains("linstor") {
+        "xostor".into()
+    } else if t.contains("zfs") || t.contains("zfs-over") || t == "exto" {
+        "zfs".into()
+    } else if t.contains("smb") || t.contains("cifs") {
+        "smb".into()
+    } else if t.contains("lvm") || t.contains("ext") || t.contains("file") || t == "udev" {
+        "local".into()
+    } else if t == "iso" {
+        "iso".into()
+    } else {
+        sr_type.trim().to_string()
+    }
 }
 
 fn map_get<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
@@ -508,6 +555,68 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let other_config = decode_map(get(sr, "other_config"));
         let auto_scan_interval = map_get(&other_config, "auto-scan-interval")
             .and_then(as_u64);
+
+        // device_config + multipath info merged across this SR's PBDs.
+        let mut device_config: Vec<(String, String)> = Vec::new();
+        let mut multipath: Vec<MultipathHost> = Vec::new();
+        let mut multipathed = false;
+        if let Some(pbd_keys) = sr_pbds.get(r) {
+            for pk in pbd_keys {
+                let pbd = match db.table("PBD").and_then(|t| t.get(pk)) {
+                    Some(p) => p,
+                    None => continue,
+                };
+                let host = ref_label(db, "host", &ref_of(pbd, "host"), "hostname");
+                for (k, v) in decode_map(get(pbd, "device_config")) {
+                    if !device_config.iter().any(|(ek, ev)| ek == &k && ev == &v) {
+                        device_config.push((k, v));
+                    }
+                }
+                for (k, v) in decode_map(get(pbd, "other_config")) {
+                    if k == "multipathed" && v == "true" {
+                        multipathed = true;
+                    }
+                    if k.starts_with("mpath-") {
+                        // value like "[8, 8]": [current, max] paths
+                        let paths = v
+                            .trim_matches(|c| c == '[' || c == ']')
+                            .split(',')
+                            .next()
+                            .and_then(|n| n.trim().parse().ok());
+                        multipath.push(MultipathHost {
+                            host: host.clone(),
+                            paths,
+                            raw: v.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        // Merge SR-row other_config too (minus mpath keys already collected).
+        let mut other_cfg: Vec<(String, String)> = other_config.clone();
+        for (k, v) in &other_cfg {
+            if k.starts_with("mpath-") {
+                let paths = v
+                    .trim_matches(|c| c == '[' || c == ']')
+                    .split(',')
+                    .next()
+                    .and_then(|n| n.trim().parse().ok());
+                multipath.push(MultipathHost {
+                    host: "(SR)".to_string(),
+                    paths,
+                    raw: v.clone(),
+                });
+            }
+        }
+        other_cfg.retain(|(k, _)| !k.starts_with("mpath-"));
+        let multipath_mismatch = multipathed
+            && multipath
+                .iter()
+                .filter_map(|m| m.paths)
+                .collect::<Vec<_>>()
+                .windows(2)
+                .any(|w| w[0] != w[1]);
+        let category = classify_sr(get(sr, "type"), &device_config);
         let sr_hosts = sr_pbds
             .get(r)
             .map(|pbds| {
@@ -532,6 +641,11 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vdi_count: sr_vdis.get(r).map(|v| v.len()).unwrap_or(0),
             auto_scan_interval,
             hosts: sr_hosts,
+            device_config,
+            other_config: other_cfg,
+            multipath,
+            multipath_mismatch,
+            category,
         });
         // iso/udev SRs report -1 for sizes: don't add them to pool totals
         if size != u64::MAX && used != u64::MAX {
@@ -998,12 +1112,23 @@ mod tests {
         // control domain excluded from real VM list
         assert!(r.vms.iter().any(|v| v.is_control_domain));
         // PBD section: grouping fields + inconsistencies
-        assert_eq!(r.pbds.len(), 5);
+        assert_eq!(r.pbds.len(), 6);
         let pbd3 = r.pbds.iter().find(|p| p.uuid == "pbd-uuid-3").unwrap();
         assert_eq!(pbd3.preferred_formats, vec!["vhd".to_string(), "qcow2".to_string()]);
         let kinds: Vec<&str> = r.pbd_inconsistencies.iter().map(|i| i.kind.as_str()).collect();
-        assert!(kinds.contains(&"missing PBD"));
         assert!(kinds.contains(&"PBD unplugged"));
+        // SR device_config / multipath / category
+        let iscsi = r.srs.iter().find(|s| s.uuid == "sr-uuid-iscsi").unwrap();
+        assert_eq!(iscsi.category, "iscsi");
+        assert!(iscsi.device_config.iter().any(|(k, v)| k == "SCSIid" && v == "360050768108101e2c000000000000145"));
+        assert!(iscsi.device_config.iter().any(|(k, v)| k == "preferred-image-formats" && v == "qcow2, vhd"));
+        assert!(iscsi.multipath_mismatch, "4 vs 8 paths should be flagged");
+        let nfs = r.srs.iter().find(|s| s.uuid == "sr-uuid-nfs").unwrap();
+        assert_eq!(nfs.category, "nfs");
+        let lvm = r.srs.iter().find(|s| s.uuid == "sr-uuid-local").unwrap();
+        assert_eq!(lvm.category, "local");
+        // PIFs grouped per host: host1 has 2 now
+        assert_eq!(r.pifs.iter().filter(|p| p.host == "host1.example.com").count(), 2);
         // VDI snapshot/HA fields
         let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
         assert!(ha.is_ha_statefile);

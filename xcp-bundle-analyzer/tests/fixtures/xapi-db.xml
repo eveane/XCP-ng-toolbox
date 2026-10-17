@@ -4,7 +4,7 @@
 <row ref="OpaqueRef:pool1" uuid="pool-uuid-1" name__label="mypool" master="OpaqueRef:host1"/>
 </table>
 <table name="host">
-<row ref="OpaqueRef:host1" uuid="host-uuid-1" name__label="host1" hostname="host1.example.com" address="192.168.1.11" enabled="true" power_state="Running" metrics="OpaqueRef:hm1" other_config="(('boot_time' '1750000000'))" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd3')" PIFs="('OpaqueRef:pif1')" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
+<row ref="OpaqueRef:host1" uuid="host-uuid-1" name__label="host1" hostname="host1.example.com" address="192.168.1.11" enabled="true" power_state="Running" metrics="OpaqueRef:hm1" other_config="(('boot_time' '1750000000'))" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd3')" PIFs="('OpaqueRef:pif1' 'OpaqueRef:pif2')" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
 <row ref="OpaqueRef:host2" uuid="host-uuid-2" name__label="host2" hostname="host2.example.com" address="192.168.1.12" enabled="true" power_state="Running" metrics="OpaqueRef:hm2" PBDs="('OpaqueRef:pbd2' 'OpaqueRef:pbd4')" PIFs="()" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
 </table>
 <table name="host_metrics">
@@ -14,14 +14,15 @@
 <table name="SR">
 <row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local storage" type="lvm" shared="false" physical_size="998999399104" physical_utilisation="123456789" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2')" VDIs="('OpaqueRef:vdi2')"/>
 <row ref="OpaqueRef:sr-nfs" uuid="sr-uuid-nfs" name__label="NFS repo" type="nfs" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" PBDs="('OpaqueRef:pbd3' 'OpaqueRef:pbd4')" VDIs="('OpaqueRef:vdi1')" other_config="(('auto-scan-interval' '300'))"/>
-<row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI shared" type="lvmoiscsi" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd5')" VDIs="()"/>
+<row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI shared" type="lvmoiscsi" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd5' 'OpaqueRef:pbd6')" VDIs="()"/>
 </table>
 <table name="PBD">
 <row ref="OpaqueRef:pbd1" uuid="pbd-uuid-1" host="OpaqueRef:host1" SR="OpaqueRef:sr-local" currently_attached="true"/>
 <row ref="OpaqueRef:pbd2" uuid="pbd-uuid-2" host="OpaqueRef:host2" SR="OpaqueRef:sr-local" currently_attached="true"/>
 <row ref="OpaqueRef:pbd3" uuid="pbd-uuid-3" host="OpaqueRef:host1" SR="OpaqueRef:sr-nfs" currently_attached="true" other_config="(('preferred-image-formats' 'vhd, qcow2'))"/>
 <row ref="OpaqueRef:pbd4" uuid="pbd-uuid-4" host="OpaqueRef:host2" SR="OpaqueRef:sr-nfs" currently_attached="false"/>
-<row ref="OpaqueRef:pbd5" uuid="pbd-uuid-5" host="OpaqueRef:host1" SR="OpaqueRef:sr-iscsi" currently_attached="true"/>
+<row ref="OpaqueRef:pbd5" uuid="pbd-uuid-5" host="OpaqueRef:host1" SR="OpaqueRef:sr-iscsi" currently_attached="true" device_config="(('preferred-image-formats' 'qcow2, vhd')%.('SCSIid' '360050768108101e2c000000000000145'))" other_config="(('mpath-360050768108101e2c000000000000145' '[8, 8]')%.('multipathed' 'true'))"/>
+<row ref="OpaqueRef:pbd6" uuid="pbd-uuid-6" host="OpaqueRef:host2" SR="OpaqueRef:sr-iscsi" currently_attached="true" device_config="(('preferred-image-formats' 'qcow2, vhd')%.('SCSIid' '360050768108101e2c000000000000145'))" other_config="(('mpath-360050768108101e2c000000000000145' '[4, 8]')%.('multipathed' 'true'))"/>
 </table>
 <table name="VDI">
 <row ref="OpaqueRef:vdi1" uuid="vdi-uuid-1" name__label="vm1-disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="('OpaqueRef:vbd1')" snapshots="('OpaqueRef:vdi-snap')" sm_config="(('vdi_type' 'vhd'))"/>
@@ -50,6 +51,7 @@
 </table>
 <table name="PIF">
 <row ref="OpaqueRef:pif1" uuid="pif-uuid-1" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth0" MAC="aa:bb:cc:dd:ee:f1" IP="192.168.1.11" currently_attached="true" VLAN="-1" management="true"/>
+<row ref="OpaqueRef:pif2" uuid="pif-uuid-2" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth1" MAC="aa:bb:cc:dd:ee:f2" IP="" currently_attached="true" VLAN="100" management="false"/>
 </table>
 <table name="network">
 <row ref="OpaqueRef:net0" uuid="net-uuid-0" name__label="Pool-wide%.network%.associated%.with%.eth0"/>
