@@ -1,5 +1,5 @@
 use crate::build_info::VERSION;
-use crate::report::{BundleReport, ConsolidatedReport, VmReport};
+use crate::report::{BundleReport, ConsolidatedReport, VdiReport, VmReport};
 use std::collections::BTreeMap;
 use serde::Serialize;
 use std::fmt::Write as _;
@@ -288,23 +288,76 @@ fn render_vms(r: &BundleReport, out: &mut String) {
 }
 
 fn render_vdis(r: &BundleReport, out: &mut String) {
+    // HA statefiles listed separately, on top
+    let statefiles: Vec<_> = r.vdis.iter().filter(|d| d.is_ha_statefile).collect();
+    let mut normal: Vec<_> = r.vdis.iter().filter(|d| !d.is_ha_statefile).collect();
+    normal.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
     let _ = writeln!(out, "\n--- VDIs ({}) ---", r.vdis.len());
-    for d in &r.vdis {
-        let _ = writeln!(
-            out,
-            "{} [{}] type={} size={} sr={} vm={}",
-            d.name, d.uuid, d.vdi_type, gib(d.size_bytes), d.sr, d.vm
-        );
+    if !statefiles.is_empty() {
+        let _ = writeln!(out, "\n  *** HA STATEFILES ({}) ***", statefiles.len());
+        for d in &statefiles {
+            let _ = writeln!(
+                out,
+                "  {} [{}] sr={} size={}",
+                d.name, d.uuid, d.sr, gib(d.size_bytes)
+            );
+        }
+    }
+
+    // group per SR, alphabetical inside each group
+    let mut by_sr: BTreeMap<String, Vec<&VdiReport>> = BTreeMap::new();
+    for d in &normal {
+        let key = if d.sr.is_empty() { "(no SR)".to_string() } else { d.sr.clone() };
+        by_sr.entry(key).or_default().push(d);
+    }
+    for (sr, group) in &by_sr {
+        let total: u64 = group.iter().map(|d| d.size_bytes).sum();
+        let _ = writeln!(out, "\n  SR: {} ({} VDIs, {} total)", sr, group.len(), gib(total));
+        for d in group {
+            let mut flags = String::new();
+            if d.is_snapshot {
+                flags.push_str(" SNAPSHOT");
+            }
+            if d.has_snapshots {
+                flags.push_str(" HAS-SNAPSHOTS");
+            }
+            if d.broken_parent {
+                flags.push_str(" *** BROKEN PARENT (snapshot_of points to a missing VDI) ***");
+            }
+            let _ = writeln!(
+                out,
+                "    {} [{}] type={} size={} vm={}{}",
+                d.name, d.uuid, d.vdi_type, gib(d.size_bytes), d.vm, flags
+            );
+        }
     }
 }
 
 fn render_vbds(r: &BundleReport, out: &mut String) {
+    let cds_attached = r
+        .vbds
+        .iter()
+        .filter(|b| b.vbd_type == "CD" && b.attached)
+        .count();
+    let mut sorted: Vec<_> = r.vbds.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.vm.to_lowercase()
+            .cmp(&b.vm.to_lowercase())
+            .then(a.device.to_lowercase().cmp(&b.device.to_lowercase()))
+    });
     let _ = writeln!(out, "\n--- VBDs ({}) ---", r.vbds.len());
-    for b in &r.vbds {
+    let _ = writeln!(out, "  CD devices attached: {}", cds_attached);
+    let mut last_vm = String::new();
+    for b in &sorted {
+        if b.vm != last_vm {
+            let _ = writeln!(out, "\n  vm: {}", if b.vm.is_empty() { "(no VM)" } else { &b.vm });
+            last_vm = b.vm.clone();
+        }
         let _ = writeln!(
             out,
-            "{} vm={} vdi={} dev={} type={} mode={} attached={} bootable={}",
-            b.uuid, b.vm, b.vdi, b.device, b.vbd_type, b.mode, b.attached, b.bootable
+            "    dev={} vdi={} type={} mode={} attached={} bootable={}",
+            b.device, b.vdi, b.vbd_type, b.mode, b.attached, b.bootable
         );
     }
 }
@@ -329,12 +382,23 @@ fn render_pifs(r: &BundleReport, out: &mut String) {
 }
 
 fn render_vifs(r: &BundleReport, out: &mut String) {
+    let mut sorted: Vec<_> = r.vifs.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.vm.to_lowercase()
+            .cmp(&b.vm.to_lowercase())
+            .then(a.device.to_lowercase().cmp(&b.device.to_lowercase()))
+    });
     let _ = writeln!(out, "\n--- VIFs ({}) ---", r.vifs.len());
-    for v in &r.vifs {
+    let mut last_vm = String::new();
+    for v in &sorted {
+        if v.vm != last_vm {
+            let _ = writeln!(out, "\n  vm: {}", if v.vm.is_empty() { "(no VM)" } else { &v.vm });
+            last_vm = v.vm.clone();
+        }
         let _ = writeln!(
             out,
-            "{} vm={} net={} dev={} mac={} attached={}",
-            v.uuid, v.vm, v.network, v.device, v.mac, v.attached
+            "    dev={} mac={} net={} attached={}",
+            v.device, v.mac, v.network, v.attached
         );
     }
 }
