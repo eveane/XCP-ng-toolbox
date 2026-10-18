@@ -99,8 +99,9 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   1. management network with an MTU different from 1500
   2. VDI attached to the control domain (dom0)
   3. shared SR missing (or with an unplugged PBD) on one of the pool hosts
-  4. SR with less free space than twice its largest VDI (DVD drives and ISO
-     SRs excluded)
+  4. SR with less free space than twice its largest VDI (DVD/CD drives and
+     ISO SRs excluded — the built-in optical-drive SRs (type udev, e.g.
+     "DVD drives") always report ~0 free and are never relevant here)
   5. inconsistent multipath path counts between hosts
   6. dom0 memory not matching between pool hosts
   7. VDI snapshot chain with a missing parent (`snapshot_of` set, parent gone)

@@ -466,13 +466,22 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         ));
     }
 
-    // 4) SR with less free space than 2x the largest VDI (DVD drives / ISO
-    //    SRs excluded: their VDIs are never grown or coalesced)
+    // 4) SR with less free space than 2x the largest VDI (DVD/CD drives and
+    //    ISO SRs excluded: their VDIs are never grown or coalesced, and the
+    //    built-in optical-drive SRs (type udev, e.g. "DVD drives") always
+    //    report ~0 free)
     for sr in &r.srs {
         if sr.size_bytes == 0 || sr.size_bytes == u64::MAX {
             continue;
         }
-        if sr.sr_type == "iso" || sr.category == "iso" {
+        let sr_type = sr.sr_type.trim().to_lowercase();
+        let sr_name = sr.name.trim().to_lowercase();
+        if sr_type == "iso"
+            || sr_type == "udev"
+            || sr.category == "iso"
+            || sr_name.contains("dvd")
+            || sr_name.contains("cd")
+        {
             continue;
         }
         let free = sr.size_bytes.saturating_sub(sr.used_bytes);
@@ -1663,7 +1672,7 @@ mod tests {
         assert_eq!(h.hostname, "host1.example.com");
         assert_eq!(h.cpu_count, 8);
         assert_eq!(h.dom0_memory_config_mib, Some(2048));
-        assert_eq!(r.srs.len(), 3);
+        assert_eq!(r.srs.len(), 4);
         assert_eq!(r.vms.len(), 6);
         assert_eq!(r.pool.vm_running, 1);
         assert!(!r.vbds.is_empty());
@@ -1756,6 +1765,13 @@ mod tests {
         // the largest disk VDI (vm2-disk, 10 GiB) drives the finding,
         // not the smaller tools DVD attached via a CD VBD
         assert!(free.detail.contains("10.00 GiB"), "detail: {}", free.detail);
+        // the built-in optical-drive SR (udev "DVD drives", 1 GiB size, 0 free,
+        // VDI attached via a Disk VBD) must never trigger the check
+        assert!(
+            !r.anomalies.iter().any(|a| a.category == "sr-free-space" && a.subject == "DVD drives"),
+            "anomalies: {:?}",
+            r.anomalies.iter().filter(|a| a.category == "sr-free-space").collect::<Vec<_>>()
+        );
         // auto-scan-interval: master/slave semantics
         let scans: Vec<&Anomaly> = r.anomalies.iter().filter(|a| a.category == "auto-scan-interval").collect();
         // host1 is the master (pool.master=host1) and has the setting: no
