@@ -58,11 +58,14 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     separately on top; each VDI is flagged `SNAPSHOT`, `HAS-SNAPSHOTS`,
     or `*** BROKEN PARENT ***` when its `snapshot_of` points to a VDI that
     no longer exists in the dump.
-  - **VBDs** are sorted per VM name, with the count of attached CD devices
-    summarized on top; each line shows the device, VDI name, the first 8
-    characters of the VDI UUID, type, mode, attach state, bootable flag and
-    the VBD UUID.
-  - **VIFs** are sorted per VM name (then device).
+  - **VBDs** are grouped per VM UUID (names are not unique), devices sorted
+    inside each group; groups ordered by VM name, displayed as
+    `vm: <name> - <uuid>`, with the count of attached CD devices summarized
+    on top; each line shows the device, VDI name, the first 8 characters of
+    the VDI UUID, type, mode, attach state, bootable flag and the VBD UUID.
+  - **VIFs** are grouped per VM UUID (names are not unique), devices sorted
+    inside each group; groups ordered by VM name and displayed as
+    `vm: <name> - <uuid>`.
   - **Network** is a merged section listing PIFs and VIFs one after the other,
     with a short header summarizing network/PIF/VIF/bond counts and highlighting
     the pool's live-migration and backup networks on top (pool

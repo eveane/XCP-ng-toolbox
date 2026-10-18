@@ -1,5 +1,5 @@
 use crate::build_info::VERSION;
-use crate::report::{BundleReport, ConsolidatedReport, VdiReport, PbdReport, PifReport, VmReport};
+use crate::report::{BundleReport, ConsolidatedReport, VbdReport, VdiReport, PbdReport, PifReport, VifReport, VmReport};
 use std::collections::BTreeMap;
 use serde::Serialize;
 use std::fmt::Write as _;
@@ -111,6 +111,9 @@ pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
                 && !has(want))
             || ((has(Section::SRs) || has(Section::VDIs) || has(Section::PBDs))
                 && want == Section::Storage)
+            // pifs/vifs alone: like srs -> Storage, render the merged Network
+            || ((has(Section::PIFs) || has(Section::VIFs))
+                && want == Section::Network)
     };
     if show(Section::Pool) {
         render_pool(r, &mut out);
@@ -485,20 +488,37 @@ fn render_vbds(r: &BundleReport, out: &mut String) {
         .iter()
         .filter(|b| b.vbd_type == "CD" && b.attached)
         .count();
-    let mut sorted: Vec<_> = r.vbds.iter().collect();
-    sorted.sort_by(|a, b| {
-        a.vm.to_lowercase()
-            .cmp(&b.vm.to_lowercase())
-            .then(a.device.to_lowercase().cmp(&b.device.to_lowercase()))
+    // Group per VM UUID (names are not unique), devices sorted inside each
+    // group; the groups themselves are ordered by VM name.
+    let mut by_vm: BTreeMap<String, Vec<&VbdReport>> = BTreeMap::new();
+    for b in &r.vbds {
+        let key = if b.vm_uuid.is_empty() {
+            format!("(no VM)|{}", b.vm)
+        } else {
+            b.vm_uuid.clone()
+        };
+        by_vm.entry(key).or_default().push(b);
+    }
+    let mut groups: Vec<(&String, &mut Vec<&VbdReport>)> = by_vm.iter_mut().collect();
+    for (_, g) in groups.iter_mut() {
+        g.sort_by(|a, b| a.device.to_lowercase().cmp(&b.device.to_lowercase()));
+    }
+    groups.sort_by(|(_, a), (_, b)| {
+        let an = a.first().map(|b| b.vm.to_lowercase()).unwrap_or_default();
+        let bn = b.first().map(|b| b.vm.to_lowercase()).unwrap_or_default();
+        an.cmp(&bn)
     });
     let _ = writeln!(out, "\n--- VBDs ({}) ---", r.vbds.len());
     let _ = writeln!(out, "  CD devices attached: {}", cds_attached);
-    let mut last_vm = String::new();
-    for b in &sorted {
-        if b.vm != last_vm {
-            let _ = writeln!(out, "\n  vm: {}", if b.vm.is_empty() { "(no VM)" } else { &b.vm });
-            last_vm = b.vm.clone();
-        }
+    for (key, group) in &groups {
+        let b = group[0];
+        let label = if b.vm.is_empty() && b.vm_uuid.is_empty() {
+            "(no VM)".to_string()
+        } else {
+            format!("{} - {}", b.vm, b.vm_uuid)
+        };
+        let _ = if key.starts_with("(no VM)|") { writeln!(out, "\n  vm: {}", b.vm) } else { writeln!(out, "\n  vm: {}", label) };
+        for b in group.iter() {
         let vdi_short: String = b.vdi_uuid.chars().take(8).collect();
         let _ = writeln!(
             out,
@@ -512,6 +532,7 @@ fn render_vbds(r: &BundleReport, out: &mut String) {
             b.bootable,
             b.uuid
         );
+        }
     }
 }
 
@@ -638,23 +659,41 @@ fn render_network(r: &BundleReport, out: &mut String) {
 
     // VIFs sorted per VM
     let _ = writeln!(out, "\n--- VIFs ({}) ---", r.vifs.len());
-    let mut sorted: Vec<_> = r.vifs.iter().collect();
-    sorted.sort_by(|a, b| {
-        a.vm.to_lowercase()
-            .cmp(&b.vm.to_lowercase())
-            .then(a.device.to_lowercase().cmp(&b.device.to_lowercase()))
+    // Group per VM UUID (names are not unique), devices sorted inside each
+    // group; the groups themselves are ordered by VM name.
+    let mut by_vm: BTreeMap<String, Vec<&VifReport>> = BTreeMap::new();
+    for v in &r.vifs {
+        let key = if v.vm_uuid.is_empty() {
+            format!("(no VM)|{}", v.vm)
+        } else {
+            v.vm_uuid.clone()
+        };
+        by_vm.entry(key).or_default().push(v);
+    }
+    let mut groups: Vec<(&String, &mut Vec<&VifReport>)> = by_vm.iter_mut().collect();
+    for (_, g) in groups.iter_mut() {
+        g.sort_by(|a, b| a.device.to_lowercase().cmp(&b.device.to_lowercase()));
+    }
+    groups.sort_by(|(_, a), (_, b)| {
+        let an = a.first().map(|v| v.vm.to_lowercase()).unwrap_or_default();
+        let bn = b.first().map(|v| v.vm.to_lowercase()).unwrap_or_default();
+        an.cmp(&bn)
     });
-    let mut last_vm = String::new();
-    for v in &sorted {
-        if v.vm != last_vm {
-            let _ = writeln!(out, "\n  vm: {}", if v.vm.is_empty() { "(no VM)" } else { &v.vm });
-            last_vm = v.vm.clone();
-        }
+    for (_key, group) in &groups {
+        let v = group[0];
+        let label = if v.vm.is_empty() && v.vm_uuid.is_empty() {
+            "(no VM)".to_string()
+        } else {
+            format!("{} - {}", v.vm, v.vm_uuid)
+        };
+        let _ = writeln!(out, "\n  vm: {}", label);
+        for v in group.iter() {
         let _ = writeln!(
             out,
             "    dev={} mac={} net={} attached={}",
             v.device, v.mac, v.network, v.attached
         );
+        }
     }
 }
 
@@ -1287,5 +1326,28 @@ mod uptime_utc_tests {
         // host2: last_updated now set in the fixture, boot_time still absent ->
         // no uptime line, and nothing wrong should render
         assert!(text.contains("host2.example.com"), "{text}");
+    }
+}
+
+#[cfg(test)]
+mod vm_uuid_grouping_tests {
+    use super::*;
+
+    #[test]
+    fn vbds_and_vifs_group_per_vm_uuid() {
+        let xml = include_str!("../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
+        // VBD reports carry the VM uuid
+        let vbd = r.vbds.iter().find(|b| b.uuid == "vbd-uuid-1").unwrap();
+        assert_eq!(vbd.vm_uuid, "vm-uuid-1");
+        let text = render_sections(&r, &[Section::VBDs]);
+        assert!(text.contains("vm: vm1 - vm-uuid-1"), "{text}");
+        assert!(text.contains("vm: vm2 - vm-uuid-2"), "{text}");
+        // VIF reports carry the VM uuid too
+        let vif = r.vifs.iter().find(|v| v.uuid == "vif-uuid-1").unwrap();
+        assert_eq!(vif.vm_uuid, "vm-uuid-1");
+        let text = render_sections(&r, &[Section::VIFs]);
+        assert!(text.contains("vm: vm1 - vm-uuid-1"), "{text}");
     }
 }
