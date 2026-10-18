@@ -104,11 +104,14 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   5. inconsistent multipath path counts between hosts
   6. dom0 memory not matching between pool hosts
   7. VDI snapshot chain with a missing parent (`snapshot_of` set, parent gone)
-  8. shared block SR (iSCSI/FC/XOSTOR/...) without an
-     `other-config:auto-scan-interval` on an attached host (rescans then only
-     happen every 30 seconds by default, or every 5 minutes for linstor/xostor
-     resyncs) — when the value is set anywhere it is always displayed for
-     review
+  8. `other-config:auto-scan-interval` master/slave semantics: the setting is
+     only read by the pool master, so a master without it (and any slave that
+     carries it while the master does not) is flagged — if the master role
+     moves to a host without the setting, rescans revert to the default
+     (every 30 seconds, or every 5 minutes for linstor/xostor resyncs).
+     Slaves with the setting are listed for review (info when they match the
+     master, warning when the master has none). Per-SR intervals are always
+     displayed for review when set.
   9. inconsistent product versions across hosts of the same pool
 
   The findings are also part of the JSON output (`anomalies` array) and of
