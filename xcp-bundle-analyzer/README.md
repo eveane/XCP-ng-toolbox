@@ -27,6 +27,10 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   and `xml_spaces.ml`): `OpaqueRef:` references, S-expression sets/maps, and
   the whitespace protection scheme (`%.` = space, `%t`/`%n`/`%r` = tab/nl/cr,
   `%%` = `%`).
+- `vdi-tree` subcommand: prints VDI snapshot trees (`VDI.snapshot_of` chains).
+  With a VDI uuid it prints the tree containing that VDI, starting from the
+  chain root; without an argument it prints a tree for every root VDI.
+  Broken parents (snapshot_of pointing to a deleted VDI) are flagged.
 - `--section` option to display only some parts of the report: pool, hosts,
   srs, vms, vdis, vbds, vifs, pifs, or `anomalies` (settings needing
   attention, opt-in only). Accepts a single name or a comma-separated list
@@ -210,6 +214,10 @@ xcp-bundle-analyzer xapi-db XenServer-host1-20260616.tar.bz2 host
 # state, host, dom-id, VBDs -> VDIs (uuid, size, format vhd/qcow2/raw, SR),
 # VIFs -> MAC/IP/network, snapshot chain and template uuid
 xcp-bundle-analyzer vm-display XenServer-host1-20260616.tar.bz2 uuid=a5609e55-f48c-56c7-e795-5edee4841245
+
+# VDI snapshot trees: one tree per root VDI, or the tree containing one VDI
+xcp-bundle-analyzer vdi-tree XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer vdi-tree XenServer-host1-20260616.tar.bz2 uuid=<vdi-uuid>
 ```
 
 ### Notes

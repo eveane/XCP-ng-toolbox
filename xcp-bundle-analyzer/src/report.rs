@@ -113,6 +113,8 @@ pub struct VdiReport {
     pub is_snapshot: bool,
     /// True when this VDI has at least one snapshot child.
     pub has_snapshots: bool,
+    /// UUID of the parent VDI (snapshot_of), when set and resolvable.
+    pub snapshot_of_uuid: String,
     /// True when snapshot_of is set but the parent VDI no longer exists
     /// in the dump (broken snapshot chain, usually after the parent was
     /// deleted or coalesced away).
@@ -1103,6 +1105,14 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
         let has_snapshots = !decode_set(get(vdi, "snapshots")).is_empty();
         let snap_of = ref_of(vdi, "snapshot_of");
+        let snap_of_uuid = if snap_of.is_empty() {
+            String::new()
+        } else {
+            db.table("VDI")
+                .and_then(|t| t.get(&snap_of))
+                .map(|p| get(p, "uuid").to_string())
+                .unwrap_or_default()
+        };
         let broken_parent = !snap_of.is_empty()
             && db
                 .table("VDI")
@@ -1125,6 +1135,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vm: ref_label(db, "VM", &vm_ref, "name__label"),
             is_snapshot,
             has_snapshots,
+            snapshot_of_uuid: snap_of_uuid,
             broken_parent,
             is_ha_statefile,
         });
