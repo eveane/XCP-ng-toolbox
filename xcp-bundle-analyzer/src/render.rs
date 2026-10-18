@@ -172,10 +172,10 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
     for h in &r.hosts {
         let _ = writeln!(
             out,
-            "{} [{}] {}{}",
+            "{} [{}] {}{}{}",
             h.hostname,
             h.uuid,
-            if h.enabled { "enabled" } else { "disabled" },
+            if h.enabled { "enabled" } else { "disabled" },            if h.is_master { "  <== POOL MASTER" } else { "" },
             if h.is_bundle_origin { "  <<< THIS BUNDLE" } else { "" }
         );
         let _ = writeln!(
@@ -231,7 +231,13 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
         if let Some(interval) = h.auto_scan_interval {
             let _ = writeln!(
                 out,
-                "  *** auto-scan-interval: {interval}s (this host rescans SRs automatically every {interval}s) ***"
+                "  *** auto-scan-interval: {interval}s ({}rescans SRs every {interval}s; only effective while this host is the master — if the master role moves to a host without the setting, rescans revert to the default: every 30s, or every 5min for linstor/xostor) ***",
+                if h.is_master { "" } else { "not the master right now; " }
+            );
+        } else if h.is_master {
+            let _ = writeln!(
+                out,
+                "  *** auto-scan-interval: not set on this master; rescans run at the default (every 30s, or every 5min for linstor/xostor) ***"
             );
         }
         let _ = writeln!(out, "  PBDs: {}   PIFs: {}", h.pbd_count, h.pif_count);

@@ -29,6 +29,8 @@ pub struct HostReport {
     pub pif_count: usize,
     /// True when this host is the one the bugtool bundle was collected on.
     pub is_bundle_origin: bool,
+    /// True when this host is the pool master.
+    pub is_master: bool,
     /// Host other-config:auto-scan-interval, in seconds, when set.
     pub auto_scan_interval: Option<u64>,
     /// Storage adapters seen on this host: FC/FCoE HBAs from the PCI table,
@@ -576,8 +578,64 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 8) Shared SR where the host has no auto-scan-interval; always display
-    //    the value for review (also when set).
+    // 8) Shared SR auto-scan-interval. The setting is only read by the
+    //    pool master: if the master does not have it, rescans revert to the
+    //    default (30 s, or 5 min for linstor/xostor). Flag a master without
+    //    the setting, and slaves that carry it (useful only if that slave
+    //    ever takes over the master role; otherwise it is dead config).
+    {
+        let master = r.hosts.iter().find(|h| h.is_master);
+        let master_interval = master.and_then(|h| h.auto_scan_interval);
+        if let Some(m) = master {
+            if m.auto_scan_interval.is_none() && r.pool.host_count > 0 {
+                out.push(warn(
+                    "auto-scan-interval",
+                    m.hostname.clone(),
+                    format!(
+                        "pool master {} has no other-config:auto-scan-interval: if it had one, or if the master role moves to a host without the setting, rescans revert to the default (every 30 seconds, or every 5 minutes for linstor/xostor)",
+                        m.hostname
+                    ),
+                ));
+            }
+        }
+        for h in &r.hosts {
+            if h.is_master {
+                continue;
+            }
+            if let Some(interval) = h.auto_scan_interval {
+                let master_note = match master_interval {
+                    Some(mi) => format!(
+                        "matches the master's setting ({}s), so a master failover to this host keeps the same behaviour",
+                        mi
+                    ),
+                    None => "differs from the master (which has none): a master failover to this host would apply this setting".to_string(),
+                };
+                let sev = if master_interval.is_some() { "info" } else { "warning" };
+                let a = if sev == "info" {
+                    info(
+                        "auto-scan-interval",
+                        h.hostname.clone(),
+                        format!(
+                            "slave (non-master) host {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
+                            h.hostname, interval, master_note
+                        ),
+                    )
+                } else {
+                    warn(
+                        "auto-scan-interval",
+                        h.hostname.clone(),
+                        format!(
+                            "slave (non-master) host {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
+                            h.hostname, interval, master_note
+                        ),
+                    )
+                };
+                out.push(a);
+            }
+        }
+    }
+    // 8b) Per-SR auto-scan-interval: always display the value for review,
+    //     and flag shared block SRs with no interval anywhere.
     for sr in &r.srs {
         if !sr.shared {
             continue;
@@ -671,10 +729,12 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
     };
 
     // Pool
+    let mut pool_master_ref = String::new();
     if let Some((_, pool)) = db.rows("pool").next() {
         report.pool.name = get2(pool, "name__label").to_string();
         report.pool.uuid = get(pool, "uuid").to_string();
         let master_ref = ref_of(pool, "master");
+        pool_master_ref = master_ref.clone();
         report.pool.master = ref_label(db, "host", &master_ref, "hostname");
     }
 
@@ -877,6 +937,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             pbd_count: host_pdbs.get(r).map(|v| v.len()).unwrap_or(0),
             pif_count: host_pifs.get(r).map(|v| v.len()).unwrap_or(0),
             is_bundle_origin,
+            is_master: !pool_master_ref.is_empty() && pool_master_ref == *r,
             uptime_seconds,
             boot_time,
             dom0_memory_live_bytes: dom0_mem.get(r).copied(),
@@ -1695,9 +1756,44 @@ mod tests {
         // the largest disk VDI (vm2-disk, 10 GiB) drives the finding,
         // not the smaller tools DVD attached via a CD VBD
         assert!(free.detail.contains("10.00 GiB"), "detail: {}", free.detail);
-        // auto-scan-interval wording: 30s default, 5min only for linstor/xostor
-        let scan = r.anomalies.iter().find(|a| a.category == "auto-scan-interval").unwrap();
-        assert!(scan.detail.contains("30 seconds"), "detail: {}", scan.detail);
+        // auto-scan-interval: master/slave semantics
+        let scans: Vec<&Anomaly> = r.anomalies.iter().filter(|a| a.category == "auto-scan-interval").collect();
+        // host1 is the master (pool.master=host1) and has the setting: no
+        // "master has none" warning; host2 is a slave with the same setting
+        // -> info entry saying a failover keeps the same behaviour
+        assert!(scans.iter().any(|a| a.severity == "info" && a.detail.contains("slave (non-master) host host2.example.com")
+            && a.detail.contains("failover to this host keeps the same behaviour")),
+            "scans: {scans:?}");
+        // master identified on the host reports
+        // master identified on the host reports
+        assert!(r.hosts.iter().any(|h| h.is_master && h.hostname == "host1.example.com"));
+        assert!(r.hosts.iter().any(|h| !h.is_master && h.hostname == "host2.example.com"));
+    }
+
+    #[test]
+    fn auto_scan_master_missing() {
+        // Master without the setting + slave with the setting: the exact
+        // revert-to-default failover scenario must be flagged.
+        let xml = include_str!("../tests/fixtures/xapi-db.xml").replace(
+            r#"other_config="(('boot_time' '1750000000')%.('auto-scan-interval' '600'))""#,
+            r#"other_config="(('boot_time' '1750000000'))""#,
+        );
+        let db = XapiDb::from_xml(&xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        let scans: Vec<&Anomaly> = r.anomalies.iter().filter(|a| a.category == "auto-scan-interval").collect();
+        assert!(
+            scans.iter().any(|a| a.severity == "warning"
+                && a.detail.contains("pool master host1.example.com has no other-config:auto-scan-interval")),
+            "scans: {scans:?}"
+        );
+        assert!(
+            scans.iter().any(|a| a.severity == "warning"
+                && a.detail.contains("slave (non-master) host host2.example.com")
+                && a.detail.contains("would apply this setting")),
+            "scans: {scans:?}"
+        );
+        // per-SR wording: 30s default, 5min only for linstor/xostor
+        assert!(scans.iter().any(|a| a.detail.contains("30 seconds")), "scans: {scans:?}");
     }
 
     #[test]
