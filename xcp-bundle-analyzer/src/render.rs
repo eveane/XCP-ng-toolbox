@@ -27,6 +27,7 @@ pub enum Section {
     VIFs,
     PBDs,
     PIFs,
+    Network,
 }
 
 impl Section {
@@ -42,6 +43,7 @@ impl Section {
             "vifs" | "vif" => Section::VIFs,
             "pbds" | "pbd" => Section::PBDs,
             "pifs" | "pif" => Section::PIFs,
+            "network" | "networks" | "net" => Section::Network,
             _ => None?,
         })
     }
@@ -54,7 +56,11 @@ pub fn render_text(r: &BundleReport) -> String {
 
 pub fn render_sections(r: &BundleReport, section: Section) -> String {
     let mut out = String::new();
-    let show = |want: Section| section == Section::All || section == want;
+    let show = |want: Section| {
+        section == Section::All
+            || section == want
+            || (section == Section::Network && (want == Section::PIFs || want == Section::VIFs))
+    };
     if show(Section::Pool) {
         render_pool(r, &mut out);
     }
@@ -76,11 +82,8 @@ pub fn render_sections(r: &BundleReport, section: Section) -> String {
     if show(Section::PBDs) {
         render_pbds(r, &mut out);
     }
-    if show(Section::PIFs) {
-        render_pifs(r, &mut out);
-    }
-    if show(Section::VIFs) {
-        render_vifs(r, &mut out);
+    if show(Section::Network) {
+        render_network(r, &mut out);
     }
     if section == Section::All {
         for w in &r.warnings {
@@ -454,7 +457,32 @@ fn render_pbds(r: &BundleReport, out: &mut String) {
     }
 }
 
-fn render_pifs(r: &BundleReport, out: &mut String) {
+fn render_network(r: &BundleReport, out: &mut String) {
+    let _ = writeln!(out, "\n=== NETWORK ===");
+    // short summary header
+    let bonds = r.pifs.iter().filter(|p| p.is_bond_master).count();
+    let nbd_nets = r.network_details.iter().filter(|n| n.is_nbd).count();
+    let _ = writeln!(
+        out,
+        "networks: {}   PIFs: {}   VIFs: {}   bonds: {}   NBD networks: {}",
+        r.networks,
+        r.pifs.len(),
+        r.vifs.len(),
+        bonds,
+        nbd_nets
+    );
+    if nbd_nets > 0 {
+        let _ = writeln!(out, "  *** NBD: {} network(s) dedicated to Network Block Device traffic ***", nbd_nets);
+        for n in r.network_details.iter().filter(|n| n.is_nbd) {
+            let _ = writeln!(
+                out,
+                "      {} [{}] bridge={} mtu={} purposes={}",
+                n.name, n.uuid, n.bridge, n.mtu, n.purposes.join(", ")
+            );
+        }
+    }
+
+    // PIFs grouped per host
     let _ = writeln!(out, "\n--- PIFs ({}) ---", r.pifs.len());
     let mut by_host: BTreeMap<String, Vec<&PifReport>> = BTreeMap::new();
     for p in &r.pifs {
@@ -469,29 +497,44 @@ fn render_pifs(r: &BundleReport, out: &mut String) {
         let mgmt = group.iter().filter(|p| p.management).count();
         let _ = writeln!(out, "\n  host: {} ({} PIFs, {} management)", host, group.len(), mgmt);
         for p in &group {
+            let speed = p
+                .speed
+                .map(|s| if s >= 65535 { "-".to_string() } else { format!("{s} Mb/s") })
+                .unwrap_or_else(|| "-".into());
+            let mut extra = String::new();
+            if p.is_bond_master {
+                extra.push_str(&format!(" BOND({})", p.bond_members.join("+")));
+            }
+            if !p.device_name.is_empty() {
+                extra.push_str(&format!(" [{} {}]", p.vendor_name, p.device_name));
+            }
+            if !p.pci_bus_path.is_empty() {
+                extra.push_str(&format!(" pci={}", p.pci_bus_path));
+            }
             let _ = writeln!(
                 out,
-                "    dev={} ip={} net={} mac={} vlan={} mgmt={} attached={}",
+                "    dev={} ip={} net={} mac={} vlan={} mgmt={} attached={} speed={}{}",
                 p.device,
                 p.address,
                 p.network,
                 p.mac,
                 p.vlan.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
                 p.management,
-                p.attached
+                p.attached,
+                speed,
+                extra
             );
         }
     }
-}
 
-fn render_vifs(r: &BundleReport, out: &mut String) {
+    // VIFs sorted per VM
+    let _ = writeln!(out, "\n--- VIFs ({}) ---", r.vifs.len());
     let mut sorted: Vec<_> = r.vifs.iter().collect();
     sorted.sort_by(|a, b| {
         a.vm.to_lowercase()
             .cmp(&b.vm.to_lowercase())
             .then(a.device.to_lowercase().cmp(&b.device.to_lowercase()))
     });
-    let _ = writeln!(out, "\n--- VIFs ({}) ---", r.vifs.len());
     let mut last_vm = String::new();
     for v in &sorted {
         if v.vm != last_vm {

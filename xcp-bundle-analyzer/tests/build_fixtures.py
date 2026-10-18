@@ -60,11 +60,17 @@ XAPI_DB = """<?xml version="1.0"?>
 <row ref="OpaqueRef:vif1" uuid="vif-uuid-1" VM="OpaqueRef:vm1" network="OpaqueRef:net0" device="0" MAC="aa:bb:cc:dd:ee:01" currently_attached="true"/>
 </table>
 <table name="PIF">
-<row ref="OpaqueRef:pif1" uuid="pif-uuid-1" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth0" MAC="aa:bb:cc:dd:ee:f1" IP="192.168.1.11" currently_attached="true" VLAN="-1" management="true"/>
-<row ref="OpaqueRef:pif2" uuid="pif-uuid-2" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth1" MAC="aa:bb:cc:dd:ee:f2" IP="" currently_attached="true" VLAN="100" management="false"/>
+<row ref="OpaqueRef:pif1" uuid="pif-uuid-1" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth0" MAC="aa:bb:cc:dd:ee:f1" IP="192.168.1.11" currently_attached="true" VLAN="-1" management="true" metrics="OpaqueRef:pm1"/>
+<row ref="OpaqueRef:pif2" uuid="pif-uuid-2" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth1" MAC="aa:bb:cc:dd:ee:f2" IP="" currently_attached="true" VLAN="100" management="false" metrics="OpaqueRef:pm2" bond_master_of="OpaqueRef:bond1"/>
+<row ref="OpaqueRef:pif3" uuid="pif-uuid-3" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth2" MAC="aa:bb:cc:dd:ee:f3" IP="" currently_attached="true" VLAN="-1" management="false" metrics="OpaqueRef:pm3" bond_slave_of="OpaqueRef:bond1"/>
+</table>
+<table name="PIF_metrics">
+<row ref="OpaqueRef:pm1" speed="1000" device_name="NetXtreme II BCM5716" vendor_name="Broadcom" pci_bus_path="0000:02:00.0"/>
+<row ref="OpaqueRef:pm2" speed="1000" device_name="82599ES 10-Gigabit" vendor_name="Intel" pci_bus_path="0000:03:00.0"/>
+<row ref="OpaqueRef:pm3" speed="1000" device_name="82599ES 10-Gigabit" vendor_name="Intel" pci_bus_path="0000:03:00.1"/>
 </table>
 <table name="network">
-<row ref="OpaqueRef:net0" uuid="net-uuid-0" name__label="Pool-wide%.network%.associated%.with%.eth0"/>
+<row ref="OpaqueRef:net0" uuid="net-uuid-0" name__label="Pool-wide%.network%.associated%.with%.eth0" bridge="xenbr0" MTU="1500" purpose="('nbd')"/>
 </table>
 </database>
 """

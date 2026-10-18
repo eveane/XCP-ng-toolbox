@@ -64,8 +64,13 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     characters of the VDI UUID, type, mode, attach state, bootable flag and
     the VBD UUID.
   - **VIFs** are sorted per VM name (then device).
-  - **PIFs** are grouped per host (sorted by device inside each group), with a
-    per-host header showing PIF and management counts.
+  - **Network** is a merged section listing PIFs and VIFs one after the other,
+    with a short header summarizing network/PIF/VIF/bond counts. NBD networks
+    (network purpose `nbd`/`insecure_nbd`) are highlighted with their bridge,
+    MTU and purposes. PIFs are grouped per host and enriched with link speed
+    (from PIF_metrics), NIC vendor/model and PCI bus path; bond masters show
+    the member NICs (`BOND(eth1+eth2)`), resolved via the Bond table links.
+    VIFs are sorted per VM name.
   - **SRs** show a coarse storage category (nfs / iscsi / fc/fcoe / zfs /
     xostor / smb / local / iso, derived from the SR type and device_config),
     their device-config (including `preferred-image-formats`), other-config,

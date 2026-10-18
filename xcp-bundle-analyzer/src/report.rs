@@ -119,6 +119,18 @@ pub struct VbdReport {
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
+pub struct NetworkReport {
+    pub uuid: String,
+    pub name: String,
+    pub bridge: String,
+    pub mtu: u64,
+    /// Purpose entries (e.g. nbd, insecure_nbd).
+    pub purposes: Vec<String>,
+    /// True when purpose contains nbd or insecure_nbd.
+    pub is_nbd: bool,
+}
+
+#[derive(Serialize, Default, Debug, Clone)]
 pub struct PbdReport {
     pub uuid: String,
     pub opaque_ref: String,
@@ -184,6 +196,17 @@ pub struct PifReport {
     pub attached: bool,
     pub vlan: Option<i64>,
     pub management: bool,
+    /// Link speed in Mbit/s, from PIF_metrics.
+    pub speed: Option<u64>,
+    /// NIC model / vendor, from PIF_metrics (device_name / vendor_name).
+    pub device_name: String,
+    pub vendor_name: String,
+    /// PCI bus path of the NIC, from PIF_metrics.
+    pub pci_bus_path: String,
+    /// True when this PIF is a bond master.
+    pub is_bond_master: bool,
+    /// Member device names when this PIF is a bond master.
+    pub bond_members: Vec<String>,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -213,6 +236,8 @@ pub struct BundleReport {
     pub vms: Vec<VmReport>,
     pub vifs: Vec<VifReport>,
     pub pifs: Vec<PifReport>,
+    /// Networks with their purpose flags (nbd / insecure_nbd).
+    pub network_details: Vec<NetworkReport>,
     pub pbds: Vec<PbdReport>,
     /// Pool-level PBD inconsistencies (shared SR missing PBDs on some hosts,
     /// or PBDs not attached).
@@ -912,12 +937,37 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         });
     }
 
-    // PIFs
+    // PIFs (with speed/driver details from PIF_metrics and bond membership)
     for (r, pif) in db.rows("PIF") {
         let uuid = get(pif, "uuid").to_string();
         if uuid.is_empty() {
             continue;
         }
+        let metrics_ref = ref_of(pif, "metrics");
+        let (speed, device_name, vendor_name, pci_bus_path) = db
+            .table("PIF_metrics")
+            .and_then(|t| t.get(&metrics_ref))
+            .map(|m| {
+                (
+                    as_u64(get(m, "speed")).filter(|s| *s != u64::MAX),
+                    get(m, "device_name").to_string(),
+                    get(m, "vendor_name").to_string(),
+                    get(m, "pci_bus_path").to_string(),
+                )
+            })
+            .unwrap_or_default();
+        // Bond membership: bond_master_of / bond_slave_of both reference a
+        // Bond-table row; the master and its slaves share that row.
+        let bond_ref = ref_of(pif, "bond_master_of");
+        let is_bond_master = !bond_ref.is_empty();
+        let bond_members = if is_bond_master {
+            db.rows("PIF")
+                .filter(|(_, other)| ref_of(other, "bond_slave_of") == bond_ref)
+                .map(|(_, other)| get(other, "device").to_string())
+                .collect()
+        } else {
+            Vec::new()
+        };
         report.pifs.push(PifReport {
             uuid,
             opaque_ref: format!("OpaqueRef:{r}"),
@@ -929,6 +979,30 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             attached: as_bool(get(pif, "currently_attached")).unwrap_or(false),
             vlan: get(pif, "VLAN").parse().ok(),
             management: as_bool(get(pif, "management")).unwrap_or(false),
+            speed,
+            device_name,
+            vendor_name,
+            pci_bus_path,
+            is_bond_master,
+            bond_members,
+        });
+    }
+
+    // Network details incl. NBD purpose
+    for (r, net) in db.rows("network") {
+        let uuid = get(net, "uuid").to_string();
+        if uuid.is_empty() {
+            continue;
+        }
+        let purposes = decode_set(get(net, "purpose"));
+        let is_nbd = purposes.iter().any(|p| p == "nbd" || p == "insecure_nbd");
+        report.network_details.push(NetworkReport {
+            uuid,
+            name: get2(net, "name__label").to_string(),
+            bridge: get(net, "bridge").to_string(),
+            mtu: as_u64(get(net, "MTU")).unwrap_or(0),
+            purposes,
+            is_nbd,
         });
     }
 
@@ -1143,8 +1217,19 @@ mod tests {
         assert_eq!(nfs.category, "nfs");
         let lvm = r.srs.iter().find(|s| s.uuid == "sr-uuid-local").unwrap();
         assert_eq!(lvm.category, "local");
-        // PIFs grouped per host: host1 has 2 now
-        assert_eq!(r.pifs.iter().filter(|p| p.host == "host1.example.com").count(), 2);
+        // PIFs grouped per host: host1 has 3 now (incl. one bond slave)
+        assert_eq!(r.pifs.iter().filter(|p| p.host == "host1.example.com").count(), 3);
+        // PIF speed/driver details
+        let eth0 = r.pifs.iter().find(|p| p.uuid == "pif-uuid-1").unwrap();
+        assert_eq!(eth0.speed, Some(1000));
+        assert!(eth0.device_name.contains("BCM5716"));
+        assert_eq!(eth0.pci_bus_path, "0000:02:00.0");
+        // bond master with its member NIC
+        let bond = r.pifs.iter().find(|p| p.uuid == "pif-uuid-2").unwrap();
+        assert!(bond.is_bond_master);
+        assert_eq!(bond.bond_members, vec!["eth2".to_string()]);
+        // NBD network detected via purpose
+        assert!(r.network_details.iter().any(|n| n.is_nbd && n.uuid == "net-uuid-0"));
         // VDI snapshot/HA fields
         let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
         assert!(ha.is_ha_statefile);
