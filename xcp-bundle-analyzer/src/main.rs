@@ -38,6 +38,13 @@ const EXAMPLES: &str = r#"EXAMPLES:
   xcp-bundle-analyzer analyze --section vms XenServer-host1.tar.bz2
   xcp-bundle-analyzer analyze --section srs XenServer-host1.tar.bz2
 
+  # Settings that probably need attention (opt-in, never shown by default):
+  # management MTU != 1500, VDIs on dom0, shared SR missing a host, SR free
+  # space < 2x largest VDI, multipath inconsistencies, dom0 memory mismatch,
+  # broken snapshot parents, missing auto-scan-interval, version mismatches
+  xcp-bundle-analyzer analyze --section anomalies XenServer-host1.tar.bz2
+  xcp-bundle-analyzer analyze --section anomalies host1.tar.bz2 host2.tar.bz2
+
   # JSON report to a file (compact with -c)
   xcp-bundle-analyzer analyze -f json -o report.json XenServer-host1.tar.bz2
 
@@ -92,7 +99,9 @@ enum Commands {
         /// or bare xapi-db.xml files. Defaults to the current directory.
         #[arg(default_value = ".")]
         bundles: Vec<PathBuf>,
-        /// Only display one section: pool, hosts, srs, vms, vdis, vbds, vifs, pifs (text output)
+        /// Only display one section: pool, hosts, srs, vms, vdis, vbds, vifs,
+        /// pifs, network, storage, or anomalies (settings needing attention,
+        /// opt-in only) (text output)
         #[arg(short, long)]
         section: Option<String>,
         /// Output format
@@ -200,11 +209,14 @@ fn cmd_analyze(
         Format::Text => {
             let sec = match section {
                 Some(s) => render::Section::parse(s)
-                    .with_context(|| format!("unknown section '{s}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs)"))?,
+                    .with_context(|| format!("unknown section '{s}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage, anomalies)"))?,
                 None => render::Section::All,
             };
             if reports.len() == 1 {
                 write_output(output, &render::render_sections(&reports[0], sec))
+            } else if sec == render::Section::Anomalies {
+                let c = report::consolidate(reports);
+                write_output(output, &render::render_consolidated_anomalies(&c))
             } else if sec == render::Section::All {
                 let c = report::consolidate(reports);
                 write_output(output, &render::render_consolidated_text(&c))

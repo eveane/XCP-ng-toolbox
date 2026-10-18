@@ -5,14 +5,14 @@
 </table>
 <table name="host">
 <row ref="OpaqueRef:host1" uuid="host-uuid-1" name__label="host1" hostname="host1.example.com" address="192.168.1.11" enabled="true" power_state="Running" metrics="OpaqueRef:hm1" other_config="(('boot_time' '1750000000')%.('auto-scan-interval' '600'))" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd3')" PIFs="('OpaqueRef:pif1' 'OpaqueRef:pif2')" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
-<row ref="OpaqueRef:host2" uuid="host-uuid-2" name__label="host2" hostname="host2.example.com" address="192.168.1.12" enabled="true" power_state="Running" metrics="OpaqueRef:hm2" PBDs="('OpaqueRef:pbd2' 'OpaqueRef:pbd4')" PIFs="()" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
+<row ref="OpaqueRef:host2" uuid="host-uuid-2" name__label="host2" hostname="host2.example.com" address="192.168.1.12" enabled="true" power_state="Running" metrics="OpaqueRef:hm2" PBDs="('OpaqueRef:pbd2' 'OpaqueRef:pbd4')" PIFs="()" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.2.1') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>
 </table>
 <table name="host_metrics">
 <row ref="OpaqueRef:hm1" memory__total="34359738368" memory__free="8589934592" last_updated="20260615T12:00:00Z"/>
 <row ref="OpaqueRef:hm2" memory__total="34359738368" memory__free="12884901888"/>
 </table>
 <table name="SR">
-<row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local storage" type="lvm" shared="false" physical_size="998999399104" physical_utilisation="123456789" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2')" VDIs="('OpaqueRef:vdi2')"/>
+<row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local storage" type="lvm" shared="false" physical_size="21474836480" physical_utilisation="19327352832" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2')" VDIs="('OpaqueRef:vdi2')"/>
 <row ref="OpaqueRef:sr-nfs" uuid="sr-uuid-nfs" name__label="NFS repo" type="nfs" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" PBDs="('OpaqueRef:pbd3' 'OpaqueRef:pbd4')" VDIs="('OpaqueRef:vdi1')" other_config="(('auto-scan-interval' '300'))"/>
 <row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI shared" type="lvmoiscsi" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd5' 'OpaqueRef:pbd6')" VDIs="()"/>
 </table>
@@ -30,16 +30,19 @@
 <row ref="OpaqueRef:vdi-ha" uuid="vdi-uuid-ha" name__label="Statefile for HA" type="ha_statefile" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="()" is_a_snapshot="false"/>
 <row ref="OpaqueRef:vdi-snap" uuid="vdi-uuid-snap" name__label="vm1-disk snapshot" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi1"/>
 <row ref="OpaqueRef:vdi-orphan" uuid="vdi-uuid-orphan" name__label="orphaned snapshot" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi-gone"/>
+<row ref="OpaqueRef:vdi-dom0" uuid="vdi-uuid-dom0" name__label="dom0 extra disk" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd-dom0')"/>
 </table>
 <table name="VBD">
 <row ref="OpaqueRef:vbd1" uuid="vbd-uuid-1" VDI="OpaqueRef:vdi1" VM="OpaqueRef:vm1" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="true"/>
 <row ref="OpaqueRef:vbd-cd" uuid="vbd-uuid-cd" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvdd" type="CD" mode="RO" bootable="false" currently_attached="true"/>
 <row ref="OpaqueRef:vbd2" uuid="vbd-uuid-2" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="false"/>
+<row ref="OpaqueRef:vbd-dom0" uuid="vbd-uuid-dom0" VDI="OpaqueRef:vdi-dom0" VM="OpaqueRef:dom0" device="xvda" type="Disk" mode="RW" bootable="false" currently_attached="true"/>
 </table>
 <table name="VM">
 <row ref="OpaqueRef:vm1" uuid="vm-uuid-1" name__label="vm1" power_state="Running" is_a_template="false" is_a_snapshot="false" is_control_domain="false" domid="7" resident_on="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__static_max="4294967296" memory__target="4294967296" VCPUs__max="4" VCPUs__at_startup="4" VIFs="('OpaqueRef:vif1')" VBDs="('OpaqueRef:vbd1')" snapshots="('OpaqueRef:snap1')" guest_metrics="OpaqueRef:gm1"/>
 <row ref="OpaqueRef:vm2" uuid="vm-uuid-2" name__label="vm2" power_state="Halted" is_a_template="false" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="('OpaqueRef:vbd2')" guest_metrics="OpaqueRef:NULL"/>
-<row ref="OpaqueRef:dom0" uuid="dom0-uuid" name__label="Control domain on host1" power_state="Running" is_a_template="false" is_control_domain="true" domid="0" resident_on="OpaqueRef:host1" affinity="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__target="4294967296" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
+<row ref="OpaqueRef:dom0" uuid="dom0-uuid" name__label="Control domain on host1" power_state="Running" is_a_template="false" is_control_domain="true" domid="0" resident_on="OpaqueRef:host1" affinity="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__target="4294967296" VCPUs__max="4" VIFs="()" VBDs="('OpaqueRef:vbd-dom0')" guest_metrics="OpaqueRef:NULL"/>
+<row ref="OpaqueRef:dom0b" uuid="dom0-uuid-2" name__label="Control domain on host2" power_state="Running" is_a_template="false" is_control_domain="true" domid="0" resident_on="OpaqueRef:NULL" affinity="OpaqueRef:host2" memory__dynamic_max="2147483648" memory__target="2147483648" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 <row ref="OpaqueRef:snap1" uuid="snap-uuid-1" name__label="vm1 snapshot" power_state="Halted" is_a_template="false" is_a_snapshot="true" is_control_domain="false" snapshot_of="OpaqueRef:vm1" snapshot_time="20260615T10:00:00Z" resident_on="OpaqueRef:NULL" memory__dynamic_max="4294967296" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 <row ref="OpaqueRef:tmpl" uuid="vm-uuid-tpl" name__label="Debian%.12%.template" power_state="Halted" is_a_template="true" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 </table>
@@ -63,7 +66,7 @@
 <row ref="OpaqueRef:pm3" speed="1000" device_name="82599ES 10-Gigabit" vendor_name="Intel" pci_bus_path="0000:03:00.1"/>
 </table>
 <table name="network">
-<row ref="OpaqueRef:net0" uuid="net-uuid-0" name__label="Pool-wide%.network%.associated%.with%.eth0" bridge="xenbr0" MTU="1500" purpose="('nbd')"/>
+<row ref="OpaqueRef:net0" uuid="net-uuid-0" name__label="Pool-wide%.network%.associated%.with%.eth0" bridge="xenbr0" MTU="9000" purpose="('nbd')"/>
 <row ref="OpaqueRef:net-bk" uuid="net-uuid-bk" name__label="backup%.network" bridge="xenbakbr0" MTU="9000"/>
 </table>
 </database>

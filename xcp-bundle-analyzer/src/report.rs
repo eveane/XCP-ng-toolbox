@@ -124,6 +124,8 @@ pub struct VbdReport {
     pub uuid: String,
     pub opaque_ref: String,
     pub vm: String,
+    /// True when the VM this VBD belongs to is a control domain (dom0).
+    pub vm_is_control_domain: bool,
     pub vdi: String,
     /// VDI UUID (full).
     pub vdi_uuid: String,
@@ -233,6 +235,20 @@ pub struct PifReport {
     pub bond_members: Vec<String>,
 }
 
+/// A setting that probably needs attention (only shown in the dedicated
+/// anomalies section, never in the default report).
+#[derive(Serialize, Default, Debug, Clone, PartialEq, Eq)]
+pub struct Anomaly {
+    /// Check category, e.g. "management-mtu", "vdi-on-dom0".
+    pub category: String,
+    /// "warning" = probably abnormal, "info" = displayed for review.
+    pub severity: String,
+    /// Object the finding is about (host, SR, VDI, network, ...).
+    pub subject: String,
+    /// Human-readable explanation of the finding.
+    pub detail: String,
+}
+
 #[derive(Serialize, Default, Debug, Clone)]
 pub struct PoolSummary {
     pub name: String,
@@ -266,6 +282,9 @@ pub struct BundleReport {
     /// Pool-level PBD inconsistencies (shared SR missing PBDs on some hosts,
     /// or PBDs not attached).
     pub pbd_inconsistencies: Vec<PbdInconsistency>,
+    /// Settings that probably need attention; only displayed when the
+    /// anomalies section is explicitly requested.
+    pub anomalies: Vec<Anomaly>,
     pub networks: usize,
     pub warnings: Vec<String>,
 }
@@ -374,6 +393,256 @@ fn classify_sr(sr_type: &str, device_config: &[(String, String)]) -> String {
 
 fn map_get<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
     pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+}
+
+fn warn(category: &str, subject: String, detail: String) -> Anomaly {
+    Anomaly {
+        category: category.to_string(),
+        severity: "warning".to_string(),
+        subject,
+        detail,
+    }
+}
+
+fn info(category: &str, subject: String, detail: String) -> Anomaly {
+    Anomaly {
+        category: category.to_string(),
+        severity: "info".to_string(),
+        subject,
+        detail,
+    }
+}
+
+/// Collect settings that probably need attention. These are heuristic
+/// findings: each one is worth a review but is not necessarily a fault.
+pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
+    let mut out = Vec::new();
+
+    // 1) Management network with MTU different from 1500
+    let mgmt_network_uuids: Vec<&str> = r
+        .pifs
+        .iter()
+        .filter(|p| p.management)
+        .map(|p| p.network.as_str())
+        .collect();
+    for net in &r.network_details {
+        if mgmt_network_uuids.iter().any(|n| *n == net.name)
+            && net.mtu != 0
+            && net.mtu != 1500
+        {
+            out.push(warn(
+                "management-mtu",
+                net.name.clone(),
+                format!(
+                    "management network {} [{}] has MTU {} (expected 1500)",
+                    net.name, net.uuid, net.mtu
+                ),
+            ));
+        }
+    }
+
+    // 2) VDI attached to dom0
+    for b in &r.vbds {
+        if b.vm_is_control_domain && b.attached {
+            out.push(warn(
+                "vdi-on-dom0",
+                b.vdi.clone(),
+                format!(
+                    "VDI {} [{}] is attached to the control domain ({})",
+                    b.vdi, b.vdi_uuid, b.vm
+                ),
+            ));
+        }
+    }
+
+    // 3) Shared SR missing on one host (already detected as PBD inconsistencies)
+    for inc in &r.pbd_inconsistencies {
+        out.push(warn(
+            "shared-sr-coverage",
+            inc.sr.clone(),
+            format!("{}: {}", inc.kind, inc.detail),
+        ));
+    }
+
+    // 4) SR with less free space than 2x the largest VDI
+    for sr in &r.srs {
+        if sr.size_bytes == 0 || sr.size_bytes == u64::MAX {
+            continue;
+        }
+        let free = sr.size_bytes.saturating_sub(sr.used_bytes);
+        let largest = r
+            .vdis
+            .iter()
+            .filter(|d| d.sr_uuid == sr.uuid)
+            .map(|d| d.size_bytes)
+            .max()
+            .unwrap_or(0);
+        if largest > 0 && free < largest.saturating_mul(2) {
+            out.push(warn(
+                "sr-free-space",
+                sr.name.clone(),
+                format!(
+                    "SR {} [{}] has {} free but its largest VDI is {} (less than 2x headroom)",
+                    sr.name,
+                    sr.uuid,
+                    gib(free),
+                    gib(largest)
+                ),
+            ));
+        }
+    }
+
+    // 5) Inconsistent multipath between hosts
+    for sr in &r.srs {
+        if sr.multipath_mismatch {
+            let detail = sr
+                .multipath
+                .iter()
+                .map(|m| {
+                    format!(
+                        "{}={} paths",
+                        m.host,
+                        m.paths.map(|p| p.to_string()).unwrap_or_else(|| "?".into())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push(warn(
+                "multipath-mismatch",
+                sr.name.clone(),
+                format!(
+                    "SR {} [{}] reports inconsistent multipath path counts: {}",
+                    sr.name, sr.uuid, detail
+                ),
+            ));
+        }
+    }
+
+    // 6) dom0 memory not matching between hosts (config vs live, and across hosts)
+    {
+        let dom0_sizes: Vec<(String, u64)> = r
+            .hosts
+            .iter()
+            .filter_map(|h| {
+                // Prefer the per-host live value: the inventory config is only
+                // read from the bundle origin and would be copied onto every
+                // host of a single-bundle pool dump.
+                h.dom0_memory_live_bytes
+                    .filter(|b| *b > 0)
+                    .or_else(|| h.dom0_memory_config_mib.map(|m| m * 1024 * 1024))
+                    .map(|b| (h.hostname.clone(), b))
+            })
+            .collect();
+        if let Some(max) = dom0_sizes.iter().map(|(_, b)| *b).max() {
+            for (host, bytes) in &dom0_sizes {
+                if *bytes != max {
+                    out.push(warn(
+                        "dom0-memory-mismatch",
+                        host.clone(),
+                        format!(
+                            "dom0 memory differs between pool hosts: {} has {} MiB, others have up to {} MiB",
+                            host,
+                            bytes / 1024 / 1024,
+                            max / 1024 / 1024
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    // 7) snapshot_of set but parent missing (broken snapshot chain)
+    for d in &r.vdis {
+        if d.broken_parent {
+            out.push(warn(
+                "broken-snapshot-parent",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}] has snapshot_of set but its parent VDI no longer exists",
+                    d.name, d.uuid
+                ),
+            ));
+        }
+    }
+
+    // 8) Shared SR where the host has no auto-scan-interval; always display
+    //    the value for review (also when set).
+    for sr in &r.srs {
+        if !sr.shared {
+            continue;
+        }
+        let blockish = ["iscsi", "fc", "xostor", "zfs", "smb", "lvm"];
+        if !blockish.iter().any(|c| sr.category.contains(c)) {
+            continue;
+        }
+        match sr.auto_scan_interval {
+            Some(interval) => out.push(info(
+                "auto-scan-interval",
+                sr.name.clone(),
+                format!(
+                    "SR {} [{}] has auto-scan-interval={}s (review if appropriate)",
+                    sr.name, sr.uuid, interval
+                ),
+            )),
+            None => {
+                for host in &sr.hosts {
+                    let has_host_interval = r
+                        .hosts
+                        .iter()
+                        .any(|h| &h.hostname == host && h.auto_scan_interval.is_some());
+                    if !has_host_interval {
+                        out.push(warn(
+                            "auto-scan-interval",
+                            sr.name.clone(),
+                            format!(
+                                "shared SR {} [{}] (category {}) has no auto-scan-interval on host {} (rescans only happen every 5 minutes by default)",
+                                sr.name, sr.uuid, sr.category, host
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // 9) Inconsistent versions in the same pool
+    if r.hosts.len() > 1 {
+        let versions: Vec<(String, String, String)> = r
+            .hosts
+            .iter()
+            .map(|h| (h.hostname.clone(), h.product_version.clone(), h.xen_version.clone()))
+            .collect();
+        let uniq_products: Vec<&str> = {
+            let mut v: Vec<&str> = versions.iter().map(|(_, p, _)| p.as_str()).collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        let uniq_xen: Vec<&str> = {
+            let mut v: Vec<&str> = versions.iter().map(|(_, _, x)| x.as_str()).collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        if uniq_products.len() > 1 || uniq_xen.len() > 1 {
+            let detail = versions
+                .iter()
+                .map(|(h, p, x)| format!("{h}: product {p}, xen {x}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            out.push(warn(
+                "pool-version-mismatch",
+                r.pool.name.clone(),
+                format!("hosts run inconsistent versions in the same pool: {detail}"),
+            ));
+        }
+    }
+
+    out
+}
+
+fn gib(bytes: u64) -> String {
+    format!("{:.2} GiB", bytes as f64 / 1024.0 / 1024.0 / 1024.0)
 }
 
 pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> BundleReport {
@@ -774,10 +1043,19 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         if uuid.is_empty() {
             continue;
         }
+        let vm_ref = ref_of(vbd, "VM");
+        let vm_is_control_domain = db
+            .table("VM")
+            .and_then(|t| t.get(&vm_ref))
+            .map(|vm| {
+                get(vm, "is_control_domain") == "true" || get(vm, "domid") == "0"
+            })
+            .unwrap_or(false);
         report.vbds.push(VbdReport {
             uuid,
             opaque_ref: format!("OpaqueRef:{r}"),
-            vm: ref_label(db, "VM", &ref_of(vbd, "VM"), "name__label"),
+            vm: ref_label(db, "VM", &vm_ref, "name__label"),
+            vm_is_control_domain,
             vdi: ref_label(db, "VDI", &ref_of(vbd, "VDI"), "name__label"),
             vdi_uuid: db
                 .table("VDI")
@@ -1165,6 +1443,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             report.pool.name = h.name.clone();
         }
     }
+    report.anomalies = compute_anomalies(&report);
     report
 }
 
@@ -1305,7 +1584,7 @@ mod tests {
         assert_eq!(h.cpu_count, 8);
         assert_eq!(h.dom0_memory_config_mib, Some(2048));
         assert_eq!(r.srs.len(), 3);
-        assert_eq!(r.vms.len(), 5);
+        assert_eq!(r.vms.len(), 6);
         assert_eq!(r.pool.vm_running, 1);
         assert!(!r.vbds.is_empty());
         // bundle origin detection via INSTALLATION_UUID
@@ -1377,6 +1656,23 @@ mod tests {
         let nfs = r.srs.iter().find(|s| s.name == "NFS repo").unwrap();
         assert_eq!(nfs.auto_scan_interval, Some(300));
         assert_eq!(nfs.hosts, vec!["host1.example.com", "host2.example.com"]);
+        // anomalies: all nine checks have fixture coverage
+        let cats: Vec<&str> = r.anomalies.iter().map(|a| a.category.as_str()).collect();
+        assert!(cats.contains(&"management-mtu"), "categories: {cats:?}");
+        assert!(cats.contains(&"vdi-on-dom0"), "categories: {cats:?}");
+        assert!(cats.contains(&"shared-sr-coverage"), "categories: {cats:?}");
+        assert!(cats.contains(&"sr-free-space"), "categories: {cats:?}");
+        assert!(cats.contains(&"multipath-mismatch"), "categories: {cats:?}");
+        assert!(cats.contains(&"dom0-memory-mismatch"), "categories: {cats:?}");
+        assert!(cats.contains(&"broken-snapshot-parent"), "categories: {cats:?}");
+        assert!(cats.contains(&"auto-scan-interval"), "categories: {cats:?}");
+        assert!(cats.contains(&"pool-version-mismatch"), "categories: {cats:?}");
+        let mtu = r.anomalies.iter().find(|a| a.category == "management-mtu").unwrap();
+        assert!(mtu.detail.contains("MTU 9000"));
+        let ver = r.anomalies.iter().find(|a| a.category == "pool-version-mismatch").unwrap();
+        assert!(ver.detail.contains("8.3.0") && ver.detail.contains("8.2.1"));
+        let free = r.anomalies.iter().find(|a| a.category == "sr-free-space").unwrap();
+        assert!(free.subject == "Local storage");
     }
 }
 

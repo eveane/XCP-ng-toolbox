@@ -28,7 +28,8 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   the whitespace protection scheme (`%.` = space, `%t`/`%n`/`%r` = tab/nl/cr,
   `%%` = `%`).
 - `--section` option to display only one part of the report: pool, hosts, srs,
-  vms, vdis, vbds, vifs or pifs.
+  vms, vdis, vbds, vifs, pifs, or `anomalies` (settings needing attention,
+  opt-in only).
 - The host the bundle was collected from is highlighted (`<<< THIS BUNDLE` in
   text output, badge in the HTML dashboard) — detected by matching the
   bundle's `xensource-inventory` INSTALLATION_UUID/hostname against pool hosts.
@@ -93,6 +94,26 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   hosts/SRs/VMs are merged by UUID into a single pool report. This is the
   extension point for future features (upload bundles from a whole pool,
   cross-bundle drift detection, ...).
+- **Settings needing attention** (`--section anomalies`, never shown in the
+  default report): heuristic findings that are probably abnormal or at least
+  worth reviewing, grouped by category with a `PROBABLY ABNORMAL` or `review`
+  marker:
+  1. management network with an MTU different from 1500
+  2. VDI attached to the control domain (dom0)
+  3. shared SR missing (or with an unplugged PBD) on one of the pool hosts
+  4. SR with less free space than twice its largest VDI
+  5. inconsistent multipath path counts between hosts
+  6. dom0 memory not matching between pool hosts
+  7. VDI snapshot chain with a missing parent (`snapshot_of` set, parent gone)
+  8. shared block SR (iSCSI/FC/XOSTOR/...) without an
+     `other-config:auto-scan-interval` on an attached host — when the value
+     is set anywhere it is always displayed for review
+  9. inconsistent product versions across hosts of the same pool
+
+  The findings are also part of the JSON output (`anomalies` array) and of
+  the consolidated pool report. In JSON, each entry carries a `category`,
+  a `severity` (`warning` = probably abnormal, `info` = displayed for
+  review), a `subject` and a human-readable `detail`.
 - Modular layout: `bundle.rs` (archive access), `xapidb.rs` (DB parsing),
   `inventory.rs` (`xensource-inventory`), `report.rs` (report model and
   consolidation), `render.rs` (text/JSON/HTML output). Add a feature by
@@ -165,6 +186,10 @@ xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2 hos
 # only display one section (pool, hosts, srs, vms, vdis, vbds, vifs, pifs)
 xcp-bundle-analyzer analyze --section vms XenServer-host1-20260616.tar.bz2
 xcp-bundle-analyzer analyze --section srs XenServer-host1-20260616.tar.bz2
+
+# settings that probably need attention (opt-in, never shown by default)
+xcp-bundle-analyzer analyze --section anomalies XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer analyze --section anomalies host1.tar.bz2 host2.tar.bz2
 
 # explore what's inside a bundle
 xcp-bundle-analyzer list XenServer-host1-20260616.tar.bz2
