@@ -65,7 +65,9 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     the VBD UUID.
   - **VIFs** are sorted per VM name (then device).
   - **Network** is a merged section listing PIFs and VIFs one after the other,
-    with a short header summarizing network/PIF/VIF/bond counts. NBD networks
+    with a short header summarizing network/PIF/VIF/bond counts and highlighting
+    the pool's live-migration and backup networks on top (pool
+    other-config:xo:migrationNetwork / xo:backupNetwork). NBD networks
     (network purpose `nbd`/`insecure_nbd`) are highlighted with their bridge,
     MTU and purposes. PIFs are grouped per host and enriched with link speed
     (from PIF_metrics), NIC vendor/model and PCI bus path; bond masters show
@@ -77,6 +79,11 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     and multipath details: per-host path counts parsed from the
     `mpath-<SCSIid>` values, with a highlighted warning when hosts report
     different path counts for the same LUN.
+  - **Storage** is a merged section (after the VM and Network sections in the
+    full report) with a summary header and a HOST STORAGE ADAPTERS part
+    listing, per host: FC/FCoE HBAs (from the PCI table, with vendor/model),
+    iSCSI targets (from PBD device-config) and NFS servers (from SR
+    device-config). It then includes the SR, VDI and PBD sub-sections.
   - **PBDs** are grouped per SR (with shared/local marker) showing host,
     attach state, UUID and the disk-format preference order from the PBD's
     `other-config:preferred-image-formats` (e.g. `vhd > qcow2`). Pool

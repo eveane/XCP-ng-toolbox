@@ -28,6 +28,7 @@ pub enum Section {
     PBDs,
     PIFs,
     Network,
+    Storage,
 }
 
 impl Section {
@@ -36,7 +37,7 @@ impl Section {
             "all" | "" => Section::All,
             "pool" => Section::Pool,
             "hosts" | "host" => Section::Hosts,
-            "srs" | "sr" | "storage" => Section::SRs,
+            "srs" | "sr" => Section::SRs,
             "vms" | "vm" => Section::VMs,
             "vdis" | "vdi" => Section::VDIs,
             "vbds" | "vbd" => Section::VBDs,
@@ -44,6 +45,7 @@ impl Section {
             "pbds" | "pbd" => Section::PBDs,
             "pifs" | "pif" => Section::PIFs,
             "network" | "networks" | "net" => Section::Network,
+            "storage" => Section::Storage,
             _ => None?,
         })
     }
@@ -60,6 +62,11 @@ pub fn render_sections(r: &BundleReport, section: Section) -> String {
         section == Section::All
             || section == want
             || (section == Section::Network && (want == Section::PIFs || want == Section::VIFs))
+            || (section == Section::Storage
+                && (want == Section::SRs || want == Section::VDIs || want == Section::PBDs))
+            || (section == Section::SRs && want == Section::Storage)
+            || (section == Section::VDIs && want == Section::Storage)
+            || (section == Section::PBDs && want == Section::Storage)
     };
     if show(Section::Pool) {
         render_pool(r, &mut out);
@@ -67,23 +74,17 @@ pub fn render_sections(r: &BundleReport, section: Section) -> String {
     if show(Section::Hosts) {
         render_hosts(r, &mut out);
     }
-    if show(Section::SRs) {
-        render_srs(r, &mut out);
-    }
     if show(Section::VMs) {
         render_vms(r, &mut out);
     }
-    if show(Section::VDIs) {
-        render_vdis(r, &mut out);
+    if show(Section::Network) {
+        render_network(r, &mut out);
+    }
+    if show(Section::Storage) {
+        render_storage(r, &mut out);
     }
     if show(Section::VBDs) {
         render_vbds(r, &mut out);
-    }
-    if show(Section::PBDs) {
-        render_pbds(r, &mut out);
-    }
-    if show(Section::Network) {
-        render_network(r, &mut out);
     }
     if section == Section::All {
         for w in &r.warnings {
@@ -184,7 +185,47 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
     }
 }
 
-fn render_srs(r: &BundleReport, out: &mut String) {
+fn render_storage(r: &BundleReport, out: &mut String) {
+    let _ = writeln!(out, "\n=== STORAGE ===");
+    let _ = writeln!(
+        out,
+        "SRs: {}   VDIs: {}   PBDs: {}   inconsistencies: {}",
+        r.srs.len(),
+        r.vdis.len(),
+        r.pbds.len(),
+        r.pbd_inconsistencies.len()
+    );
+
+    // Host adapters (FC HBAs, iSCSI targets, NFS servers)
+    let any_adapter = r.hosts.iter().any(|h| !h.storage_adapters.is_empty());
+    if any_adapter {
+        let _ = writeln!(out, "\n--- HOST STORAGE ADAPTERS ---");
+        for h in &r.hosts {
+            if h.storage_adapters.is_empty() {
+                continue;
+            }
+            let _ = writeln!(out, "\n  host: {} ({} adapters)", h.hostname, h.storage_adapters.len());
+            for a in &h.storage_adapters {
+                let _ = writeln!(
+                    out,
+                    "    [{}] {} {}",
+                    a.kind, a.id, a.description
+                );
+            }
+        }
+    }
+
+    {
+        let mut inner = String::new();
+        render_srs_body(r, &mut inner);
+        render_vdis_body(r, &mut inner);
+        render_pbds_body(r, &mut inner);
+        // strip the duplicated outer headers, keep sub-sections
+        out.push_str(&inner);
+    }
+}
+
+fn render_srs_body(r: &BundleReport, out: &mut String) {
     let _ = writeln!(out, "\n--- STORAGE REPOSITORIES ({}) ---", r.srs.len());
     for s in &r.srs {
         let _ = writeln!(
@@ -332,7 +373,7 @@ fn render_vms(r: &BundleReport, out: &mut String) {
     }
 }
 
-fn render_vdis(r: &BundleReport, out: &mut String) {
+fn render_vdis_body(r: &BundleReport, out: &mut String) {
     // HA statefiles listed separately, on top
     let statefiles: Vec<_> = r.vdis.iter().filter(|d| d.is_ha_statefile).collect();
     let mut normal: Vec<_> = r.vdis.iter().filter(|d| !d.is_ha_statefile).collect();
@@ -415,7 +456,7 @@ fn render_vbds(r: &BundleReport, out: &mut String) {
     }
 }
 
-fn render_pbds(r: &BundleReport, out: &mut String) {
+fn render_pbds_body(r: &BundleReport, out: &mut String) {
     let _ = writeln!(out, "\n--- PBDs ({}) ---", r.pbds.len());
 
     // inconsistencies on top
@@ -471,6 +512,15 @@ fn render_network(r: &BundleReport, out: &mut String) {
         bonds,
         nbd_nets
     );
+    // Migration / backup networks highlighted on top
+    let mig = r.network_details.iter().find(|n| n.is_migration);
+    if let Some(n) = mig {
+        let _ = writeln!(out, "  *** LIVE MIGRATION NETWORK: {} [{}] bridge={} mtu={} ***", n.name, n.uuid, n.bridge, n.mtu);
+    }
+    let bak = r.network_details.iter().find(|n| n.is_backup);
+    if let Some(n) = bak {
+        let _ = writeln!(out, "  *** BACKUP NETWORK: {} [{}] bridge={} mtu={} ***", n.name, n.uuid, n.bridge, n.mtu);
+    }
     if nbd_nets > 0 {
         let _ = writeln!(out, "  *** NBD: {} network(s) dedicated to Network Block Device traffic ***", nbd_nets);
         for n in r.network_details.iter().filter(|n| n.is_nbd) {

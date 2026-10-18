@@ -31,6 +31,9 @@ pub struct HostReport {
     pub is_bundle_origin: bool,
     /// Host other-config:auto-scan-interval, in seconds, when set.
     pub auto_scan_interval: Option<u64>,
+    /// Storage adapters seen on this host: FC/FCoE HBAs from the PCI table,
+    /// iSCSI targets from PBD device_config, NFS servers from SR device_config.
+    pub storage_adapters: Vec<StorageAdapter>,
     /// Host uptime in seconds at dump time (host.other_config boot_time).
     pub uptime_seconds: Option<u64>,
     /// Unix timestamp of last host boot (host.other_config boot_time).
@@ -71,6 +74,19 @@ pub struct SrReport {
     pub multipath_mismatch: bool,
     /// Coarse storage family: nfs / iscsi / fc / fcoe / zfs / xostor / local / ...
     pub category: String,
+}
+
+/// A host storage adapter (FC HBA, iSCSI target or NFS server).
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct StorageAdapter {
+    /// fc / iscsi / nfs
+    pub kind: String,
+    /// Hostname of the host the adapter belongs to.
+    pub host: String,
+    /// PCI id (FC HBA), target IQN+address (iSCSI) or server path (NFS).
+    pub id: String,
+    /// Human-readable description (device name / vendor).
+    pub description: String,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -128,6 +144,12 @@ pub struct NetworkReport {
     pub purposes: Vec<String>,
     /// True when purpose contains nbd or insecure_nbd.
     pub is_nbd: bool,
+    /// True when this network is the pool's default live-migration network
+    /// (pool other_config:xo:migrationNetwork, set by Xen Orchestra).
+    pub is_migration: bool,
+    /// True when this network is the pool's backup network
+    /// (pool other_config:xo:backupNetwork, set by Xen Orchestra).
+    pub is_backup: bool,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -142,6 +164,8 @@ pub struct PbdReport {
     /// Disk-format preference order from PBD other_config:preferred-image-formats
     /// (e.g. "vhd, qcow2"). Empty when not set.
     pub preferred_formats: Vec<String>,
+    /// device_config entries of this PBD (target IQN, SCSIid, server, ...).
+    pub device_config: Vec<(String, String)>,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -572,6 +596,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vms_running: 0,
             vms_resident: 0,
             auto_scan_interval: host_auto_scan,
+            storage_adapters: Vec::new(),
         });
     }
 
@@ -874,6 +899,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                         .collect()
                 })
                 .unwrap_or_default();
+            let pbd_dc = decode_map(get(pbd, "device_config"));
             report.pbds.push(PbdReport {
                 uuid,
                 opaque_ref: format!("OpaqueRef:{r}"),
@@ -883,6 +909,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 host: ref_label(db, "host", &ref_of(pbd, "host"), "hostname"),
                 attached: as_bool(get(pbd, "currently_attached")).unwrap_or(false),
                 preferred_formats: preferred,
+                device_config: pbd_dc.clone(),
             });
         }
         // Inconsistency check: a shared SR should have a PBD on every pool host.
@@ -988,6 +1015,15 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         });
     }
 
+    // Pool-level settings used to flag special networks (Xen Orchestra stores
+    // its default migration/backup network in pool other_config).
+    let pool_row = db.rows("pool").next().map(|(_, p)| p.clone()).unwrap_or_default();
+    let pool_other = decode_map(get(&pool_row, "other_config"));
+    let pool_backup_ref = pool_other
+        .iter()
+        .find(|(k, _)| k == "xo:backupNetwork")
+        .map(|(_, v)| v.clone());
+
     // Network details incl. NBD purpose
     for (r, net) in db.rows("network") {
         let uuid = get(net, "uuid").to_string();
@@ -996,6 +1032,15 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
         let purposes = decode_set(get(net, "purpose"));
         let is_nbd = purposes.iter().any(|p| p == "nbd" || p == "insecure_nbd");
+        let is_migration = pool_other
+            .iter()
+            .filter(|(k, _)| k == "xo:migrationNetwork")
+            .any(|(_, v)| as_ref(v).as_deref() == Some(r.as_str()));
+        let is_backup = pool_backup_ref
+            .as_deref()
+            .and_then(as_ref)
+            .map(|b| b == *r)
+            .unwrap_or(false);
         report.network_details.push(NetworkReport {
             uuid,
             name: get2(net, "name__label").to_string(),
@@ -1003,7 +1048,87 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             mtu: as_u64(get(net, "MTU")).unwrap_or(0),
             purposes,
             is_nbd,
+            is_migration,
+            is_backup,
         });
+    }
+
+    // Host storage adapters: FC HBAs from the PCI table.
+    {
+        let mut per_host: BTreeMap<String, Vec<StorageAdapter>> = BTreeMap::new();
+        for (_, pci) in db.rows("PCI") {
+            let class_name = get(pci, "class_name").to_lowercase();
+            let is_fc = class_name.contains("fibre") || class_name.contains("fc host")
+                || get(pci, "driver_name").contains("fc");
+            if !is_fc {
+                continue;
+            }
+            let host = ref_label(db, "host", &ref_of(pci, "host"), "hostname");
+            per_host.entry(host.clone()).or_default().push(StorageAdapter {
+                kind: "fc".into(),
+                host,
+                id: get(pci, "pci_id").to_string(),
+                description: format!(
+                    "{} {} ({})",
+                    get(pci, "vendor_name"),
+                    get(pci, "device_name"),
+                    get(pci, "class_name")
+                ),
+            });
+        }
+        // iSCSI targets from PBD device_config
+        for pbd in &report.pbds {
+            let sr = report
+                .srs
+                .iter()
+                .find(|sr| sr.uuid == pbd.sr_uuid)
+                .cloned()
+                .unwrap_or_default();
+            for (k, v) in &pbd.device_config {
+                if k == "targetIQN" {
+                    per_host.entry(pbd.host.clone()).or_default().push(StorageAdapter {
+                        kind: "iscsi".into(),
+                        host: pbd.host.clone(),
+                        id: format!("{v} (SR {})", sr.name),
+                        description: format!("iSCSI initiator to {}", v),
+                    });
+                }
+            }
+        }
+        // NFS servers from SR device_config
+        for sr in &report.srs {
+            if sr.category != "nfs" {
+                continue;
+            }
+            let server = sr
+                .device_config
+                .iter()
+                .find(|(k, _)| k == "server")
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
+            let path = sr
+                .device_config
+                .iter()
+                .find(|(k, _)| k == "serverpath")
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
+            if server.is_empty() {
+                continue;
+            }
+            for host in &sr.hosts {
+                per_host.entry(host.clone()).or_default().push(StorageAdapter {
+                    kind: "nfs".into(),
+                    host: host.clone(),
+                    id: format!("{server}:{path}"),
+                    description: format!("NFS export for SR {}", sr.name),
+                });
+            }
+        }
+        for h in report.hosts.iter_mut() {
+            if let Some(adapters) = per_host.get(&h.hostname) {
+                h.storage_adapters = adapters.clone();
+            }
+        }
     }
 
     // Per-host vCPU usage: sum vCPUs of running VMs resident on each host.
@@ -1228,6 +1353,13 @@ mod tests {
         let bond = r.pifs.iter().find(|p| p.uuid == "pif-uuid-2").unwrap();
         assert!(bond.is_bond_master);
         assert_eq!(bond.bond_members, vec!["eth2".to_string()]);
+        // migration/backup networks flagged via pool other_config
+        assert!(r.network_details.iter().any(|n| n.is_migration && n.uuid == "net-uuid-0"));
+        assert!(r.network_details.iter().any(|n| n.is_backup && n.uuid == "net-uuid-bk"));
+        // host storage adapters: FC HBA from PCI + iSCSI target from PBD device_config
+        let h1 = &r.hosts[0];
+        assert!(h1.storage_adapters.iter().any(|a| a.kind == "fc" && a.id == "0000:05:00.0"));
+        assert!(h1.storage_adapters.iter().any(|a| a.kind == "iscsi" && a.id.contains("iqn.2004-04.com.qnap")));
         // NBD network detected via purpose
         assert!(r.network_details.iter().any(|n| n.is_nbd && n.uuid == "net-uuid-0"));
         // VDI snapshot/HA fields
