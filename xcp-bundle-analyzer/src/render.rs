@@ -51,24 +51,44 @@ impl Section {
             _ => None?,
         })
     }
+
+    /// Parse a comma-separated list of sections, e.g. "pool,storage".
+    /// Returns Err with the offending name when one entry is unknown.
+    pub fn parse_list(s: &str) -> Result<Vec<Section>, String> {
+        let mut out = Vec::new();
+        for part in s.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+            match Section::parse(part) {
+                Some(sec) => out.push(sec),
+                None => return Err(part.to_string()),
+            }
+        }
+        if out.is_empty() {
+            out.push(Section::All);
+        }
+        Ok(out)
+    }
 }
 
 #[allow(dead_code)]
 pub fn render_text(r: &BundleReport) -> String {
-    render_sections(r, Section::All)
+    render_sections(r, &[Section::All])
 }
 
-pub fn render_sections(r: &BundleReport, section: Section) -> String {
+pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
     let mut out = String::new();
+    let has = |sec: Section| sections.iter().any(|s| *s == sec);
     let show = |want: Section| {
-        section == Section::All
-            || section == want
-            || (section == Section::Network && (want == Section::PIFs || want == Section::VIFs))
-            || (section == Section::Storage
-                && (want == Section::SRs || want == Section::VDIs || want == Section::PBDs))
-            || (section == Section::SRs && want == Section::Storage)
-            || (section == Section::VDIs && want == Section::Storage)
-            || (section == Section::PBDs && want == Section::Storage)
+        has(Section::All)
+            || has(want)
+            || (has(Section::Network)
+                && (want == Section::PIFs || want == Section::VIFs)
+                && !has(Section::PIFs)
+                && !has(Section::VIFs))
+            || (has(Section::Storage)
+                && (want == Section::SRs || want == Section::VDIs || want == Section::PBDs)
+                && !has(want))
+            || ((has(Section::SRs) || has(Section::VDIs) || has(Section::PBDs))
+                && want == Section::Storage)
     };
     if show(Section::Pool) {
         render_pool(r, &mut out);
@@ -89,10 +109,10 @@ pub fn render_sections(r: &BundleReport, section: Section) -> String {
         render_vbds(r, &mut out);
     }
     // The anomalies section is opt-in only: it is never part of Section::All.
-    if section == Section::Anomalies {
+    if has(Section::Anomalies) && !has(Section::All) {
         render_anomalies(r, &mut out);
     }
-    if section == Section::All {
+    if has(Section::All) {
         for w in &r.warnings {
             let _ = writeln!(out, "WARNING: {w}");
         }

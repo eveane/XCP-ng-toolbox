@@ -27,9 +27,10 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   and `xml_spaces.ml`): `OpaqueRef:` references, S-expression sets/maps, and
   the whitespace protection scheme (`%.` = space, `%t`/`%n`/`%r` = tab/nl/cr,
   `%%` = `%`).
-- `--section` option to display only one part of the report: pool, hosts, srs,
-  vms, vdis, vbds, vifs, pifs, or `anomalies` (settings needing attention,
-  opt-in only).
+- `--section` option to display only some parts of the report: pool, hosts,
+  srs, vms, vdis, vbds, vifs, pifs, or `anomalies` (settings needing
+  attention, opt-in only). Accepts a single name or a comma-separated list
+  (e.g. `--section pool,storage,anomalies`).
 - The host the bundle was collected from is highlighted (`<<< THIS BUNDLE` in
   text output, badge in the HTML dashboard) — detected by matching the
   bundle's `xensource-inventory` INSTALLATION_UUID/hostname against pool hosts.
@@ -101,13 +102,16 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   1. management network with an MTU different from 1500
   2. VDI attached to the control domain (dom0)
   3. shared SR missing (or with an unplugged PBD) on one of the pool hosts
-  4. SR with less free space than twice its largest VDI
+  4. SR with less free space than twice its largest VDI (DVD drives and ISO
+     SRs excluded)
   5. inconsistent multipath path counts between hosts
   6. dom0 memory not matching between pool hosts
   7. VDI snapshot chain with a missing parent (`snapshot_of` set, parent gone)
   8. shared block SR (iSCSI/FC/XOSTOR/...) without an
-     `other-config:auto-scan-interval` on an attached host — when the value
-     is set anywhere it is always displayed for review
+     `other-config:auto-scan-interval` on an attached host (rescans then only
+     happen every 30 seconds by default, or every 5 minutes for linstor/xostor
+     resyncs) — when the value is set anywhere it is always displayed for
+     review
   9. inconsistent product versions across hosts of the same pool
 
   The findings are also part of the JSON output (`anomalies` array) and of
@@ -183,9 +187,10 @@ xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1-20260616.tar.
 # whole pool: pass every host's bundle, get a consolidated view
 xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2 host3.tar.bz2
 
-# only display one section (pool, hosts, srs, vms, vdis, vbds, vifs, pifs)
+# only display some sections (pool, hosts, srs, vms, vdis, vbds, vifs, pifs);
+# a comma-separated list shows several sections in one run
 xcp-bundle-analyzer analyze --section vms XenServer-host1-20260616.tar.bz2
-xcp-bundle-analyzer analyze --section srs XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer analyze --section pool,storage XenServer-host1-20260616.tar.bz2
 
 # settings that probably need attention (opt-in, never shown by default)
 xcp-bundle-analyzer analyze --section anomalies XenServer-host1-20260616.tar.bz2

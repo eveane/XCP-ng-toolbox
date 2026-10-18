@@ -464,16 +464,27 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         ));
     }
 
-    // 4) SR with less free space than 2x the largest VDI
+    // 4) SR with less free space than 2x the largest VDI (DVD drives / ISO
+    //    SRs excluded: their VDIs are never grown or coalesced)
     for sr in &r.srs {
         if sr.size_bytes == 0 || sr.size_bytes == u64::MAX {
+            continue;
+        }
+        if sr.sr_type == "iso" || sr.category == "iso" {
             continue;
         }
         let free = sr.size_bytes.saturating_sub(sr.used_bytes);
         let largest = r
             .vdis
             .iter()
-            .filter(|d| d.sr_uuid == sr.uuid)
+            .filter(|d| {
+                d.sr_uuid == sr.uuid
+                    && d.vdi_type != "cd"
+                    && !r
+                        .vbds
+                        .iter()
+                        .any(|b| b.vdi_uuid == d.uuid && b.vbd_type == "CD")
+            })
             .map(|d| d.size_bytes)
             .max()
             .unwrap_or(0);
@@ -595,8 +606,16 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                             "auto-scan-interval",
                             sr.name.clone(),
                             format!(
-                                "shared SR {} [{}] (category {}) has no auto-scan-interval on host {} (rescans only happen every 5 minutes by default)",
-                                sr.name, sr.uuid, sr.category, host
+                                "shared SR {} [{}] (category {}) has no auto-scan-interval on host {}{}",
+                                sr.name,
+                                sr.uuid,
+                                sr.category,
+                                host,
+                                if sr.category == "xostor" {
+                                    " (linstor resync only happens every 5 minutes by default)"
+                                } else {
+                                    " (rescans only happen every 30 seconds by default)"
+                                }
                             ),
                         ));
                     }
@@ -1673,6 +1692,26 @@ mod tests {
         assert!(ver.detail.contains("8.3.0") && ver.detail.contains("8.2.1"));
         let free = r.anomalies.iter().find(|a| a.category == "sr-free-space").unwrap();
         assert!(free.subject == "Local storage");
+        // the largest disk VDI (vm2-disk, 10 GiB) drives the finding,
+        // not the smaller tools DVD attached via a CD VBD
+        assert!(free.detail.contains("10.00 GiB"), "detail: {}", free.detail);
+        // auto-scan-interval wording: 30s default, 5min only for linstor/xostor
+        let scan = r.anomalies.iter().find(|a| a.category == "auto-scan-interval").unwrap();
+        assert!(scan.detail.contains("30 seconds"), "detail: {}", scan.detail);
+    }
+
+    #[test]
+    fn parse_section_lists() {
+        assert_eq!(
+            crate::render::Section::parse_list("pool,storage").unwrap(),
+            vec![crate::render::Section::Pool, crate::render::Section::Storage]
+        );
+        assert_eq!(
+            crate::render::Section::parse_list(" anomalies , vms ").unwrap(),
+            vec![crate::render::Section::Anomalies, crate::render::Section::VMs]
+        );
+        assert!(crate::render::Section::parse_list("").unwrap() == vec![crate::render::Section::All]);
+        assert_eq!(crate::render::Section::parse_list("pool,bogus").unwrap_err(), "bogus");
     }
 }
 

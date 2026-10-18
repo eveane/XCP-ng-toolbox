@@ -33,10 +33,11 @@ const EXAMPLES: &str = r#"EXAMPLES:
   xcp-bundle-analyzer analyze xapi-db.xml
   xcp-bundle-analyzer vm-display xapi-db.xml uuid=<uuid>
 
-  # Only one section: pool, hosts, vms, network (pifs+vifs), storage (srs+vdis+pbds),
-  # or the finer-grained srs, vdis, vbds, vifs, pbds, pifs
+  # One or several sections (comma-separated list): pool, hosts, vms,
+  # network (pifs+vifs), storage (srs+vdis+pbds), or the finer-grained
+  # srs, vdis, vbds, vifs, pbds, pifs
   xcp-bundle-analyzer analyze --section vms XenServer-host1.tar.bz2
-  xcp-bundle-analyzer analyze --section srs XenServer-host1.tar.bz2
+  xcp-bundle-analyzer analyze --section pool,storage XenServer-host1.tar.bz2
 
   # Settings that probably need attention (opt-in, never shown by default):
   # management MTU != 1500, VDIs on dom0, shared SR missing a host, SR free
@@ -99,11 +100,11 @@ enum Commands {
         /// or bare xapi-db.xml files. Defaults to the current directory.
         #[arg(default_value = ".")]
         bundles: Vec<PathBuf>,
-        /// Only display one section: pool, hosts, srs, vms, vdis, vbds, vifs,
-        /// pifs, network, storage, or anomalies (settings needing attention,
-        /// opt-in only) (text output)
-        #[arg(short, long)]
-        section: Option<String>,
+        /// Only display the given sections, single or comma-separated list:
+        /// pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage,
+        /// or anomalies (settings needing attention, opt-in only) (text output)
+        #[arg(short, long, value_delimiter = ',')]
+        section: Option<Vec<String>>,
         /// Output format
         #[arg(short, long, value_enum, default_value = "text")]
         format: Format,
@@ -195,7 +196,7 @@ fn cmd_analyze(
     format: Format,
     output: Option<&Path>,
     compact: bool,
-    section: Option<&str>,
+    section: Option<Vec<String>>,
 ) -> Result<()> {
     if bundles.is_empty() {
         bail!("no bundle given");
@@ -207,21 +208,32 @@ fn cmd_analyze(
 
     match format {
         Format::Text => {
-            let sec = match section {
-                Some(s) => render::Section::parse(s)
-                    .with_context(|| format!("unknown section '{s}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage, anomalies)"))?,
-                None => render::Section::All,
+            let secs = match section {
+                Some(list) => {
+                    let mut secs = Vec::new();
+                    for s in &list {
+                        let parsed = render::Section::parse_list(s).map_err(|bad| {
+                            anyhow::anyhow!(
+                                "unknown section '{bad}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage, anomalies; comma-separated lists allowed)"
+                            )
+                        })?;
+                        secs.extend(parsed);
+                    }
+                    secs
+                }
+                None => vec![render::Section::All],
             };
+            let has = |sec: render::Section| secs.iter().any(|s| *s == sec);
             if reports.len() == 1 {
-                write_output(output, &render::render_sections(&reports[0], sec))
-            } else if sec == render::Section::Anomalies {
+                write_output(output, &render::render_sections(&reports[0], &secs))
+            } else if has(render::Section::Anomalies) && !has(render::Section::All) {
                 let c = report::consolidate(reports);
                 write_output(output, &render::render_consolidated_anomalies(&c))
-            } else if sec == render::Section::All {
+            } else if has(render::Section::All) {
                 let c = report::consolidate(reports);
                 write_output(output, &render::render_consolidated_text(&c))
             } else {
-                write_output(output, &render::render_sections(&reports[0], sec))
+                write_output(output, &render::render_sections(&reports[0], &secs))
             }
         }
         Format::Json => {
@@ -290,7 +302,7 @@ fn main() -> Result<()> {
             output,
             compact,
             section,
-        } => cmd_analyze(&bundles, format, output.as_deref(), compact, section.as_deref()),
+        } => cmd_analyze(&bundles, format, output.as_deref(), compact, section),
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
         Commands::VmDisplay { bundle, uuid } => cmd_vm_display(&bundle, &uuid),
