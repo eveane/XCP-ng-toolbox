@@ -15,6 +15,28 @@ fn mib(bytes: u64) -> String {
     format!("{:.0} MiB", bytes as f64 / 1024.0 / 1024.0)
 }
 
+/// Format a unix timestamp as "YYYY-MM-DD HH:MM UTC" (no external crates:
+/// inverse civil-from-days conversion, Howard Hinnant's algorithm).
+fn utc_timestamp(epoch: u64) -> String {
+    let days = epoch / 86400;
+    let secs = epoch % 86400;
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02} UTC",
+        secs / 3600,
+        (secs % 3600) / 60
+    )
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Section {
     All,
@@ -191,10 +213,15 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
             let mins = (up % 3600) / 60;
             let _ = writeln!(
                 out,
-                "  uptime: {days}d {hrs}h {mins}m (booted at unix {boot})"
+                "  uptime: {days}d {hrs}h {mins}m (booted at {}, unix {boot})",
+                utc_timestamp(boot)
             );
         } else if let Some(boot) = h.boot_time {
-            let _ = writeln!(out, "  boot time: unix {boot} (uptime unknown)");
+            let _ = writeln!(
+                out,
+                "  boot time: {} (unix {boot}, dump time unknown so no uptime)",
+                utc_timestamp(boot)
+            );
         }
         let _ = writeln!(
             out,
@@ -895,7 +922,7 @@ fill('hosts', ['Name','UUID','Address','Product','Xen','CPU','Cores/socket','Mem
     `<td>${h.cores_per_socket}</td>`,`<td>${fmtGib(h.memory_total_bytes)}</td>`,
     `<td>${fmtGib(h.memory_free_bytes)}${h.mem_free_stale?' <span class="badge warn">n/a</span>':''}</td>`,
     `<td>${(h.dom0_memory_config_mib ?? (h.dom0_memory_live_bytes ? Math.round(h.dom0_memory_live_bytes/1024**2) : '-'))} MiB</td>`,
-    `<td>${h.uptime_seconds!=null ? Math.floor(h.uptime_seconds/86400)+'d '+Math.floor(h.uptime_seconds%86400/3600)+'h' : '-'}</td>`,
+    `<td>${h.uptime_seconds!=null ? Math.floor(h.uptime_seconds/86400)+'d '+Math.floor(h.uptime_seconds%86400/3600)+'h' : '-'}${h.boot_time!=null ? '<br><span class="muted">boot '+new Date(h.boot_time*1000).toISOString().replace('T',' ').slice(0,16)+' UTC</span>' : ''}</td>`,
     `<td>${h.vms_running} run / ${h.vms_resident}</td>`,`<td>${h.vcpus_in_use}</td>`,`<td>${h.pbd_count}</td>`,`<td>${h.pif_count}</td>`,
     `<td>${h.is_bundle_origin?'this bundle was collected here':''}</td>`]));
 fill('srs', ['Name','UUID','Type','Shared','Size','Used','PBDs','VDIs','auto-scan-interval','Attached hosts'],
@@ -1224,5 +1251,35 @@ mod vm_display_tests {
         assert!(snap.contains("snapshot of:     vm-uuid-1 (vm1)"));
         // unknown uuid -> error
         assert!(render_vm_display(&db, "no-such-uuid").is_err());
+    }
+}
+
+#[cfg(test)]
+mod uptime_utc_tests {
+    use super::*;
+
+    #[test]
+    fn formats_utc_timestamps() {
+        assert_eq!(utc_timestamp(0), "1970-01-01 00:00 UTC");
+        assert_eq!(utc_timestamp(1781524800), "2026-06-15 12:00 UTC");
+        assert_eq!(utc_timestamp(1343135041), "2012-07-24 13:04 UTC");
+        // leap-year day
+        assert_eq!(utc_timestamp(951782400), "2000-02-29 00:00 UTC");
+    }
+
+    #[test]
+    fn hosts_section_shows_boot_time_utc() {
+        let xml = include_str!("../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let inv = crate::inventory::Inventory::default();
+        let r = crate::report::build_report(&db, &inv, "test");
+        let text = render_sections(&r, &[Section::Hosts]);
+        // host1: boot_time 1750000000 = 2025-06-15 15:06:40 UTC, dump at
+        // 2026-06-15T12:00:00Z -> uptime ~365 days
+        assert!(text.contains("booted at 2025-06-15 15:06 UTC"), "{text}");
+        assert!(text.contains("uptime: 364d"), "{text}");
+        // host2: last_updated now set in the fixture, boot_time still absent ->
+        // no uptime line, and nothing wrong should render
+        assert!(text.contains("host2.example.com"), "{text}");
     }
 }

@@ -39,13 +39,10 @@ self-contained HTML dashboard (XO-like single page, no external assets).
 - Cores per socket is derived from cpu_count / socket_count when the dump only
   reports those; hosts whose free-memory metric is missing are flagged.
 - Host uptime and boot time are derived from `host.other_config:boot_time` and
-  `host_metrics.last_updated` (dump time). Note: `__ctime`/`__mtime` on rows is a
-  xapi database generation counter, not a timestamp.
-- Live dom0 memory comes from the control-domain VM row (`domid=0`,
-  `is_control_domain=true`) when `xensource-inventory` is unavailable.
-- Host uptime and boot time are derived from `host.other_config:boot_time` and
-  `host_metrics.last_updated` (dump time). Note: `__ctime`/`__mtime` on rows is a
-  xapi database generation counter, not a timestamp.
+  `host_metrics.last_updated` (the dump time stored in xapi-db.xml). The boot
+  time is rendered in UTC (`booted at YYYY-MM-DD HH:MM UTC`), alongside the
+  raw unix timestamp. Note: `__ctime`/`__mtime` on rows is a xapi database
+  generation counter, not a timestamp.
 - Live dom0 memory comes from the control-domain VM row (`domid=0`,
   `is_control_domain=true`) when `xensource-inventory` is unavailable.
 - Grouped, sorted report sections:

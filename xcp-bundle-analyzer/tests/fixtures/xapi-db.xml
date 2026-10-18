@@ -9,7 +9,7 @@
 </table>
 <table name="host_metrics">
 <row ref="OpaqueRef:hm1" memory__total="34359738368" memory__free="8589934592" last_updated="20260615T12:00:00Z"/>
-<row ref="OpaqueRef:hm2" memory__total="34359738368" memory__free="12884901888"/>
+<row ref="OpaqueRef:hm2" memory__total="34359738368" memory__free="12884901888" last_updated="20260615T11:30:00Z"/>
 </table>
 <table name="SR">
 <row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local storage" type="lvm" shared="false" physical_size="21474836480" physical_utilisation="19327352832" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2')" VDIs="('OpaqueRef:vdi2')"/>
