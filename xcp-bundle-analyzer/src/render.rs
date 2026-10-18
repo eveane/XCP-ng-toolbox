@@ -29,6 +29,7 @@ pub enum Section {
     PIFs,
     Network,
     Storage,
+    Anomalies,
 }
 
 impl Section {
@@ -46,6 +47,7 @@ impl Section {
             "pifs" | "pif" => Section::PIFs,
             "network" | "networks" | "net" => Section::Network,
             "storage" => Section::Storage,
+            "anomalies" | "anomaly" | "attention" | "findings" => Section::Anomalies,
             _ => None?,
         })
     }
@@ -85,6 +87,10 @@ pub fn render_sections(r: &BundleReport, section: Section) -> String {
     }
     if show(Section::VBDs) {
         render_vbds(r, &mut out);
+    }
+    // The anomalies section is opt-in only: it is never part of Section::All.
+    if section == Section::Anomalies {
+        render_anomalies(r, &mut out);
     }
     if section == Section::All {
         for w in &r.warnings {
@@ -599,6 +605,109 @@ fn render_network(r: &BundleReport, out: &mut String) {
     }
 }
 
+fn print_anomalies_header(out: &mut String, count: usize) {
+    let _ = writeln!(
+        out,
+        "\n=== SETTINGS NEEDING ATTENTION ({}) ===",
+        count
+    );
+    let _ = writeln!(
+        out,
+        "Heuristic findings: each entry is probably abnormal or worth reviewing, but not necessarily a fault."
+    );
+}
+
+/// Merge per-bundle reports (dedup by uuid) into one report on which the
+/// pool-wide anomaly checks can run.
+fn merge_for_anomalies(c: &ConsolidatedReport) -> BundleReport {
+    let mut merged = c
+        .bundles
+        .first()
+        .cloned()
+        .unwrap_or_default();
+    merged.pool.host_count = c.hosts.len();
+    merged.hosts = c.hosts.clone();
+    merged.srs = c.srs.clone();
+    merged.vdis.clear();
+    merged.vbds.clear();
+    merged.pbd_inconsistencies.clear();
+    let mut seen_vdi = std::collections::BTreeSet::new();
+    let mut seen_vbd = std::collections::BTreeSet::new();
+    let mut seen_inc = std::collections::BTreeSet::new();
+    for b in &c.bundles {
+        for d in &b.vdis {
+            if seen_vdi.insert(d.uuid.clone()) {
+                merged.vdis.push(d.clone());
+            }
+        }
+        for v in &b.vbds {
+            if seen_vbd.insert(v.uuid.clone()) {
+                merged.vbds.push(v.clone());
+            }
+        }
+        for i in &b.pbd_inconsistencies {
+            if seen_inc.insert(format!("{}|{}", i.sr_uuid, i.detail)) {
+                merged.pbd_inconsistencies.push(i.clone());
+            }
+        }
+    }
+    merged
+}
+
+/// Anomalies-only view of a consolidated (multi-bundle) pool report.
+pub fn render_consolidated_anomalies(c: &ConsolidatedReport) -> String {
+    let merged = merge_for_anomalies(c);
+    let anomalies = crate::report::compute_anomalies(&merged);
+    let mut out = String::new();
+    print_anomalies_header(&mut out, anomalies.len());
+    if anomalies.is_empty() {
+        let _ = writeln!(out, "nothing abnormal detected");
+    } else {
+        for a in &anomalies {
+            let _ = writeln!(
+                out,
+                "  [{}] {}{}",
+                if a.severity == "warning" { "PROBABLY ABNORMAL" } else { "review" },
+                if a.subject.is_empty() { String::new() } else { format!("{}: ", a.subject) },
+                a.detail
+            );
+        }
+    }
+    out
+}
+
+fn render_anomalies(r: &BundleReport, out: &mut String) {
+    let _ = writeln!(
+        out,
+        "\n=== SETTINGS NEEDING ATTENTION ({}) ===",
+        r.anomalies.len()
+    );
+    let _ = writeln!(
+        out,
+        "Heuristic findings: each entry is probably abnormal or worth reviewing, but not necessarily a fault."
+    );
+    if r.anomalies.is_empty() {
+        let _ = writeln!(out, "nothing abnormal detected");
+        return;
+    }
+    let mut by_category: BTreeMap<String, Vec<&crate::report::Anomaly>> = BTreeMap::new();
+    for a in &r.anomalies {
+        by_category.entry(a.category.clone()).or_default().push(a);
+    }
+    for (category, group) in &by_category {
+        let _ = writeln!(out, "\n--- {} ({}) ---", category, group.len());
+        for a in group {
+            let _ = writeln!(
+                out,
+                "  [{}] {}{}",
+                if a.severity == "warning" { "PROBABLY ABNORMAL" } else { "review" },
+                if a.subject.is_empty() { String::new() } else { format!("{}: ", a.subject) },
+                a.detail
+            );
+        }
+    }
+}
+
 pub fn render_consolidated_text(c: &ConsolidatedReport) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "=== Consolidated pool view ({} bundles) ===", c.bundles.len());
@@ -645,6 +754,26 @@ pub fn render_consolidated_text(c: &ConsolidatedReport) -> String {
                 .unwrap_or_else(|| "n/a".into()),
             h.pbd_count
         );
+    }
+    // Anomalies across the consolidated view: merge the per-bundle reports
+    // (dedup by uuid) and recompute the pool-wide checks on merged data.
+    if !c.bundles.is_empty() {
+        let merged = merge_for_anomalies(c);
+        let anomalies = crate::report::compute_anomalies(&merged);
+        print_anomalies_header(&mut out, anomalies.len());
+        if anomalies.is_empty() {
+            let _ = writeln!(out, "nothing abnormal detected");
+        } else {
+            for a in &anomalies {
+                let _ = writeln!(
+                    out,
+                    "  [{}] {}{}",
+                    if a.severity == "warning" { "PROBABLY ABNORMAL" } else { "review" },
+                    if a.subject.is_empty() { String::new() } else { format!("{}: ", a.subject) },
+                    a.detail
+                );
+            }
+        }
     }
     out
 }
