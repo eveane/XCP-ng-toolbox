@@ -15,6 +15,7 @@
 <row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local storage" type="lvm" shared="false" physical_size="21474836480" physical_utilisation="19327352832" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2')" VDIs="('OpaqueRef:vdi2')"/>
 <row ref="OpaqueRef:sr-nfs" uuid="sr-uuid-nfs" name__label="NFS repo" type="nfs" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" PBDs="('OpaqueRef:pbd3' 'OpaqueRef:pbd4')" VDIs="('OpaqueRef:vdi1')" other_config="(('auto-scan-interval' '300'))"/>
 <row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI shared" type="lvmoiscsi" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd5' 'OpaqueRef:pbd6')" VDIs="()"/>
+<row ref="OpaqueRef:sr-dvd" uuid="sr-uuid-dvd" name__label="DVD drives" type="udev" shared="false" physical_size="1073741824" physical_utilisation="1073741824" PBDs="()" VDIs="('OpaqueRef:vdi-dvd2')"/>
 </table>
 <table name="PBD">
 <row ref="OpaqueRef:pbd1" uuid="pbd-uuid-1" host="OpaqueRef:host1" SR="OpaqueRef:sr-local" currently_attached="true"/>
@@ -32,12 +33,14 @@
 <row ref="OpaqueRef:vdi-orphan" uuid="vdi-uuid-orphan" name__label="orphaned snapshot" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi-gone"/>
 <row ref="OpaqueRef:vdi-dom0" uuid="vdi-uuid-dom0" name__label="dom0 extra disk" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd-dom0')"/>
 <row ref="OpaqueRef:vdi-dvd" uuid="vdi-uuid-dvd" name__label="XCP-ng tools DVD" type="user" virtual_size="629145600" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd-cd')"/>
+<row ref="OpaqueRef:vdi-dvd2" uuid="vdi-uuid-dvd2" name__label="disk on dvd sr" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-dvd" VBDs="('OpaqueRef:vbd-dvd2')"/>
 </table>
 <table name="VBD">
 <row ref="OpaqueRef:vbd1" uuid="vbd-uuid-1" VDI="OpaqueRef:vdi1" VM="OpaqueRef:vm1" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="true"/>
 <row ref="OpaqueRef:vbd-cd" uuid="vbd-uuid-cd" VDI="OpaqueRef:vdi-dvd" VM="OpaqueRef:vm2" device="xvdd" type="CD" mode="RO" bootable="false" currently_attached="true"/>
 <row ref="OpaqueRef:vbd2" uuid="vbd-uuid-2" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="false"/>
 <row ref="OpaqueRef:vbd-dom0" uuid="vbd-uuid-dom0" VDI="OpaqueRef:vdi-dom0" VM="OpaqueRef:dom0" device="xvda" type="Disk" mode="RW" bootable="false" currently_attached="true"/>
+<row ref="OpaqueRef:vbd-dvd2" uuid="vbd-uuid-dvd2" VDI="OpaqueRef:vdi-dvd2" VM="OpaqueRef:vm2" device="xvdb" type="Disk" mode="RW" bootable="false" currently_attached="true"/>
 </table>
 <table name="VM">
 <row ref="OpaqueRef:vm1" uuid="vm-uuid-1" name__label="vm1" power_state="Running" is_a_template="false" is_a_snapshot="false" is_control_domain="false" domid="7" resident_on="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__static_max="4294967296" memory__target="4294967296" VCPUs__max="4" VCPUs__at_startup="4" VIFs="('OpaqueRef:vif1')" VBDs="('OpaqueRef:vbd1')" snapshots="('OpaqueRef:snap1')" guest_metrics="OpaqueRef:gm1"/>
