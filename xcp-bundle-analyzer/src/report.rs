@@ -126,6 +126,8 @@ pub struct VbdReport {
     pub uuid: String,
     pub opaque_ref: String,
     pub vm: String,
+    /// VM UUID (full) — unique, unlike the VM name.
+    pub vm_uuid: String,
     /// True when the VM this VBD belongs to is a control domain (dom0).
     pub vm_is_control_domain: bool,
     pub vdi: String,
@@ -206,6 +208,8 @@ pub struct VifReport {
     pub uuid: String,
     pub opaque_ref: String,
     pub vm: String,
+    /// VM UUID (full) — unique, unlike the VM name.
+    pub vm_uuid: String,
     pub network: String,
     pub device: String,
     pub mac: String,
@@ -1144,6 +1148,11 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             uuid,
             opaque_ref: format!("OpaqueRef:{r}"),
             vm: ref_label(db, "VM", &vm_ref, "name__label"),
+            vm_uuid: db
+                .table("VM")
+                .and_then(|t| t.get(&vm_ref))
+                .map(|vm| get(vm, "uuid").to_string())
+            .unwrap_or_default(),
             vm_is_control_domain,
             vdi: ref_label(db, "VDI", &ref_of(vbd, "VDI"), "name__label"),
             vdi_uuid: db
@@ -1324,6 +1333,11 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             uuid,
             opaque_ref: format!("OpaqueRef:{r}"),
             vm: ref_label(db, "VM", &ref_of(vif, "VM"), "name__label"),
+            vm_uuid: db
+                .table("VM")
+                .and_then(|t| t.get(&ref_of(vif, "VM")))
+                .map(|vm| get(vm, "uuid").to_string())
+                .unwrap_or_default(),
             network: ref_label(db, "network", &ref_of(vif, "network"), "name__label"),
             device: get(vif, "device").to_string(),
             mac: get(vif, "MAC").to_string(),
