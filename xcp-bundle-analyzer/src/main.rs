@@ -33,6 +33,10 @@ const EXAMPLES: &str = r#"EXAMPLES:
   xcp-bundle-analyzer analyze xapi-db.xml
   xcp-bundle-analyzer vm-display xapi-db.xml uuid=<uuid>
 
+  # VDI snapshot trees: all of them, or just the tree containing one VDI
+  xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2
+  xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2 uuid=<vdi-uuid>
+
   # One or several sections (comma-separated list): pool, hosts, vms,
   # network (pifs+vifs), storage (srs+vdis+pbds), or the finer-grained
   # srs, vdis, vbds, vifs, pbds, pifs
@@ -133,6 +137,14 @@ enum Commands {
         bundle: PathBuf,
         /// VM UUID, given as uuid=<uuid> or just <uuid>
         uuid: String,
+    },
+    /// Print VDI snapshot trees (all VDIs, or one tree for the given VDI uuid)
+    VdiTree {
+        bundle: PathBuf,
+        /// VDI UUID (uuid=<uuid> or bare). When omitted, a tree is printed
+        /// for every root VDI in the dump.
+        #[arg(requires = "bundle")]
+        uuid: Option<String>,
     },
 }
 
@@ -306,7 +318,23 @@ fn main() -> Result<()> {
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
         Commands::VmDisplay { bundle, uuid } => cmd_vm_display(&bundle, &uuid),
+        Commands::VdiTree { bundle, uuid } => cmd_vdi_tree(&bundle, uuid.as_deref()),
     }
+}
+
+fn cmd_vdi_tree(bundle_path: &Path, uuid: Option<&str>) -> Result<()> {
+    // Accept uuid= prefix, and the argument in either position.
+    let bp = bundle_path.display().to_string();
+    let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
+    let (bundle_path, uuid): (&Path, Option<&str>) = match uuid {
+        Some(u) if looks_like_uuid(&bp) && !looks_like_uuid(u) => (Path::new(u), Some(bp.as_str())),
+        other => (bundle_path, other),
+    };
+    let uuid = uuid.map(|u| u.strip_prefix("uuid=").unwrap_or(u));
+    let rep = analyze_one(bundle_path)?;
+    let text = render::render_vdi_tree(&rep, uuid)?;
+    print!("{text}");
+    Ok(())
 }
 
 fn cmd_vm_display(bundle_path: &Path, uuid: &str) -> Result<()> {
