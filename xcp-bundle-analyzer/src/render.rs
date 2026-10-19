@@ -250,11 +250,17 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
 
 fn render_storage(r: &BundleReport, out: &mut String) {
     let _ = writeln!(out, "\n=== STORAGE ===");
+    let vdi_base = r.vdis.iter().filter(|d| !d.is_snapshot).count();
+    let vdi_snap = r.vdis.iter().filter(|d| d.is_snapshot).count();
+    let vdi_orphan = r.vdis.iter().filter(|d| d.orphaned).count();
     let _ = writeln!(
         out,
-        "SRs: {}   VDIs: {}   PBDs: {}   inconsistencies: {}",
+        "SRs: {}   VDIs: {} ({} base, {} snapshots, {} orphaned)   PBDs: {}   inconsistencies: {}",
         r.srs.len(),
         r.vdis.len(),
+        vdi_base,
+        vdi_snap,
+        vdi_orphan,
         r.pbds.len(),
         r.pbd_inconsistencies.len()
     );
@@ -442,7 +448,17 @@ fn render_vdis_body(r: &BundleReport, out: &mut String) {
     let mut normal: Vec<_> = r.vdis.iter().filter(|d| !d.is_ha_statefile).collect();
     normal.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
-    let _ = writeln!(out, "\n--- VDIs ({}) ---", r.vdis.len());
+    let vdi_base = r.vdis.iter().filter(|d| !d.is_snapshot).count();
+    let vdi_snap = r.vdis.iter().filter(|d| d.is_snapshot).count();
+    let vdi_orphan = r.vdis.iter().filter(|d| d.orphaned).count();
+    let _ = writeln!(
+        out,
+        "\n--- VDIs ({}) — {} base, {} snapshots, {} orphaned ---",
+        r.vdis.len(),
+        vdi_base,
+        vdi_snap,
+        vdi_orphan
+    );
     if !statefiles.is_empty() {
         let _ = writeln!(out, "\n  *** HA STATEFILES ({}) ***", statefiles.len());
         for d in &statefiles {
@@ -473,6 +489,9 @@ fn render_vdis_body(r: &BundleReport, out: &mut String) {
             }
             if d.broken_parent {
                 flags.push_str(" *** BROKEN PARENT (snapshot_of points to a missing VDI) ***");
+            }
+            if d.orphaned {
+                flags.push_str(" ORPHANED (not attached to any VM)");
             }
             let _ = writeln!(
                 out,
@@ -1505,5 +1524,29 @@ mod vdi_tree_tests {
     fn vdi_tree_unknown_uuid_errors() {
         let r = report();
         assert!(render_vdi_tree(&r, Some("no-such-vdi")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod vdi_counts_tests {
+    use super::*;
+
+    #[test]
+    fn storage_and_vdi_headers_show_base_snapshot_orphan_counts() {
+        let xml = include_str!("../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
+        let text = render_sections(&r, &[Section::Storage]);
+        // 8 VDIs: 6 base, 2 snapshots, 3 orphaned (HA statefile + 2 unattached snapshots)
+        assert!(
+            text.contains("VDIs: 8 (6 base, 2 snapshots, 3 orphaned)"),
+            "{text}"
+        );
+        let vdis = render_sections(&r, &[Section::VDIs]);
+        assert!(
+            vdis.contains("--- VDIs (8) — 6 base, 2 snapshots, 3 orphaned ---"),
+            "{vdis}"
+        );
+        assert!(vdis.contains("ORPHANED (not attached to any VM)"), "{vdis}");
     }
 }

@@ -61,7 +61,9 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     statefile disks ("Statefile for HA", type ha_statefile) are listed
     separately on top; each VDI is flagged `SNAPSHOT`, `HAS-SNAPSHOTS`,
     or `*** BROKEN PARENT ***` when its `snapshot_of` points to a VDI that
-    no longer exists in the dump.
+    no longer exists in the dump, and `ORPHANED` when it is not attached to
+    any VM. The STORAGE and VDI headers show the breakdown: total VDIs,
+    base VDIs, snapshot VDIs and orphaned VDIs.
   - **VBDs** are grouped per VM UUID (names are not unique), devices sorted
     inside each group; groups ordered by VM name, displayed as
     `vm: <name> - <uuid>`, with the count of attached CD devices summarized
