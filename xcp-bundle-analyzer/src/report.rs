@@ -106,6 +106,20 @@ pub struct VdiReport {
     pub opaque_ref: String,
     pub sr: String,
     pub sr_uuid: String,
+    /// Coarse storage family of the owning SR (nfs / iscsi / local / iso / ...).
+    pub sr_category: String,
+    /// Raw type of the owning SR (nfs / lvmoiscsi / udev / iso / ...).
+    pub sr_type: String,
+    /// Disk image format from sm_config:image-format (vhd / qcow2 / raw / ...).
+    /// Empty when not set.
+    pub image_format: String,
+    /// VDI physical usage in bytes (physical_utilisation).
+    pub utilisation_bytes: u64,
+    /// True when cbt-enabled is set on the VDI (changed block tracking).
+    pub cbt_enabled: bool,
+    /// True when the VDI is sharable (multiple VMs may attach it read-write).
+    pub sharable: bool,
+    #[allow(dead_code)]
     pub vdi_type: String,
     pub size_bytes: u64,
     pub vm: String,
@@ -1143,6 +1157,23 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .is_none();
         let is_ha_statefile = get(vdi, "type") == "ha_statefile"
             || get(vdi, "name__label") == "Statefile for HA";
+        let sm_config = decode_map(get(vdi, "sm_config"));
+        let image_format = map_get(&sm_config, "image-format")
+            .or_else(|| map_get(&sm_config, "vdi_type"))
+            .unwrap_or_default()
+            .to_string();
+        let utilisation = as_u64(get(vdi, "physical_utilisation")).unwrap_or(0);
+        let cbt_enabled = get(vdi, "cbt-enabled") == "true"
+            || map_get(&sm_config, "cbt-enabled") == Some("true");
+        let sharable = as_bool(get(vdi, "sharable")).unwrap_or(false);
+        let sr_category = db
+            .table("SR")
+            .and_then(|t| t.get(&sr_ref))
+            .map(|sr| {
+                let dc: Vec<(String, String)> = decode_map(get(sr, "device_config"));
+                classify_sr(get(sr, "type"), &dc)
+            })
+            .unwrap_or_default();
         report.vdis.push(VdiReport {
             name: get2(vdi, "name__label").to_string(),
             uuid,
@@ -1153,6 +1184,16 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .and_then(|t| t.get(&sr_ref))
                 .map(|sr| get(sr, "uuid").to_string())
                 .unwrap_or_default(),
+            sr_category,
+            sr_type: db
+                .table("SR")
+                .and_then(|t| t.get(&sr_ref))
+                .map(|sr| get(sr, "type").to_string())
+                .unwrap_or_default(),
+            image_format,
+            utilisation_bytes: utilisation,
+            cbt_enabled,
+            sharable,
             vdi_type: get(vdi, "type").to_string(),
             size_bytes: size,
             vm: ref_label(db, "VM", &vm_ref, "name__label"),

@@ -57,10 +57,14 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     group), with a per-host header line showing running count and vCPUs in
     use; templates and snapshots are listed in separate, alphabetically
     sorted sections.
-  - **VDIs** are grouped per SR (alphabetical inside each group); HA
-    statefile disks ("Statefile for HA", type ha_statefile) are listed
-    separately on top; each VDI is flagged `SNAPSHOT`, `HAS-SNAPSHOTS`,
-    or `*** BROKEN PARENT ***` when its `snapshot_of` points to a VDI that
+  - **VDIs** are grouped per SR (alphabetical inside each group); VDIs on
+    ISO and removable-media SRs (types `iso`/`udev`, e.g. DVD drives) are
+    excluded (the header shows how many were skipped); HA statefile disks
+    ("Statefile for HA", type ha_statefile) are listed separately on top;
+    each VDI shows its image format (`sm_config:image-format`, e.g.
+    vhd/qcow2), its physical utilisation, and is flagged `SNAPSHOT`,
+    `HAS-SNAPSHOTS`, `cbt` (changed block tracking enabled), `sharable`,
+    `*** BROKEN PARENT ***` when its `snapshot_of` points to a VDI that
     no longer exists in the dump, and `ORPHANED` when it is not attached to
     any VM. The STORAGE and VDI headers show the breakdown: total VDIs,
     base VDIs, snapshot VDIs and orphaned VDIs.
