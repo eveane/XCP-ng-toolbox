@@ -121,6 +121,9 @@ pub struct VdiReport {
     pub broken_parent: bool,
     /// True for HA statefile disks (type=ha_statefile, "Statefile for HA").
     pub is_ha_statefile: bool,
+    /// True when this VDI is not attached to any VM (no VBD, or VBDs
+    /// pointing to VM rows that no longer exist in the dump).
+    pub orphaned: bool,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -1097,6 +1100,26 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                     .find(|vm| !vm.is_empty())
             })
             .unwrap_or_default();
+        // Orphaned: no VBD at all, or no VBD whose VM still exists in the
+        // dump. The VBD link is looked up both ways: through this VDI's VBDs
+        // set (real dumps) and by scanning the VBD table for rows pointing
+        // back at this VDI (older formats store no set on the VDI row).
+        let vbd_keys: Vec<String> = vbd_refs
+            .iter()
+            .map(|v| v.strip_prefix("OpaqueRef:").unwrap_or(v).to_string())
+            .collect();
+        let has_live_vbd = |vbd: &Row| {
+            let vmr = ref_of(vbd, "VM");
+            !vmr.is_empty() && db.table("VM").and_then(|t| t.get(&vmr)).is_some()
+        };
+        let orphaned = !vbd_keys.iter().any(|k| {
+            db.table("VBD")
+                .and_then(|t| t.get(k))
+                .map(has_live_vbd)
+                .unwrap_or(false)
+        }) && !db.rows("VBD").any(|(br, vbd)| {
+            br == r && has_live_vbd(&vbd)
+        });
         let size = as_u64(get(vdi, "virtual_size")).unwrap_or(0);
         report.pool.vdi_total_size_bytes = report
             .pool
@@ -1138,6 +1161,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             snapshot_of_uuid: snap_of_uuid,
             broken_parent,
             is_ha_statefile,
+            orphaned,
         });
     }
 
@@ -1766,6 +1790,14 @@ mod tests {
         assert!(orphan.broken_parent);
         let base = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-1").unwrap();
         assert!(base.has_snapshots);
+        // orphan detection: attached VDIs are not orphaned, unattached ones are
+        assert!(!base.orphaned, "vm1-disk is attached via vbd1");
+        let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
+        assert!(ha.orphaned, "HA statefile has no VBD");
+        let snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-snap").unwrap();
+        assert!(snap.orphaned, "snapshot has no VBD");
+        let vm2 = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-2").unwrap();
+        assert!(!vm2.orphaned, "vm2-disk is attached via vbd2");
         // auto-scan-interval surfaced on the SR, with attached hosts
         let nfs = r.srs.iter().find(|s| s.name == "NFS repo").unwrap();
         assert_eq!(nfs.auto_scan_interval, Some(300));
