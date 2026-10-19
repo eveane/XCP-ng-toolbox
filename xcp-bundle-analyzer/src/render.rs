@@ -443,21 +443,33 @@ fn render_vms(r: &BundleReport, out: &mut String) {
 }
 
 fn render_vdis_body(r: &BundleReport, out: &mut String) {
+    // ISO SRs and removable media (udev optical drives) are excluded from the
+    // VDI listing: their VDIs are just passthrough ISO/DVD images.
+    let sr_t = |d: &VdiReport| d.sr_type.trim().to_lowercase();
+    let is_excluded =
+        |d: &VdiReport| sr_t(d) == "iso" || sr_t(d) == "udev" || d.sr_category == "iso";
+    let listed: Vec<&VdiReport> = r.vdis.iter().filter(|d| !is_excluded(d)).collect();
     // HA statefiles listed separately, on top
-    let statefiles: Vec<_> = r.vdis.iter().filter(|d| d.is_ha_statefile).collect();
-    let mut normal: Vec<_> = r.vdis.iter().filter(|d| !d.is_ha_statefile).collect();
+    let statefiles: Vec<_> = listed.iter().filter(|d| d.is_ha_statefile).collect();
+    let mut normal: Vec<_> = listed.iter().filter(|d| !d.is_ha_statefile).collect();
     normal.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
-    let vdi_base = r.vdis.iter().filter(|d| !d.is_snapshot).count();
-    let vdi_snap = r.vdis.iter().filter(|d| d.is_snapshot).count();
-    let vdi_orphan = r.vdis.iter().filter(|d| d.orphaned).count();
+    let vdi_base = listed.iter().filter(|d| !d.is_snapshot).count();
+    let vdi_snap = listed.iter().filter(|d| d.is_snapshot).count();
+    let vdi_orphan = listed.iter().filter(|d| d.orphaned).count();
+    let excluded = r.vdis.len() - listed.len();
     let _ = writeln!(
         out,
-        "\n--- VDIs ({}) — {} base, {} snapshots, {} orphaned ---",
-        r.vdis.len(),
+        "\n--- VDIs ({}) — {} base, {} snapshots, {} orphaned{} ---",
+        listed.len(),
         vdi_base,
         vdi_snap,
-        vdi_orphan
+        vdi_orphan,
+        if excluded > 0 {
+            format!(", {excluded} on ISO/removable SRs not shown")
+        } else {
+            String::new()
+        }
     );
     if !statefiles.is_empty() {
         let _ = writeln!(out, "\n  *** HA STATEFILES ({}) ***", statefiles.len());
@@ -493,10 +505,25 @@ fn render_vdis_body(r: &BundleReport, out: &mut String) {
             if d.orphaned {
                 flags.push_str(" ORPHANED (not attached to any VM)");
             }
+            let mut extra = String::new();
+            if d.cbt_enabled {
+                extra.push_str(" cbt");
+            }
+            if d.sharable {
+                extra.push_str(" sharable");
+            }
+            if d.utilisation_bytes > 0 {
+                extra.push_str(&format!(" used={}", gib(d.utilisation_bytes)));
+            }
+            let fmt = if d.image_format.is_empty() {
+                "-".to_string()
+            } else {
+                d.image_format.clone()
+            };
             let _ = writeln!(
                 out,
-                "    {} [{}] type={} size={}{}",
-                d.name, d.uuid, d.vdi_type, gib(d.size_bytes), flags
+                "    {} [{}] format={} size={}{}{}",
+                d.name, d.uuid, fmt, gib(d.size_bytes), flags, extra
             );
         }
     }
@@ -1464,13 +1491,13 @@ fn print_vdi_node(
     }
     let _ = writeln!(
         out,
-        "{}{}{} [{}]{} type={} size={} sr={}{}",
+        "{}{}{} [{}]{} format={} size={} sr={}{}",
         prefix,
         connector,
         d.name,
         d.uuid,
         flags,
-        d.vdi_type,
+        if d.image_format.is_empty() { "-".to_string() } else { d.image_format.clone() },
         gib(d.size_bytes),
         if d.sr.is_empty() { "-" } else { &d.sr },
         if d.vm.is_empty() { String::new() } else { format!("  vm={}", d.vm) }
@@ -1537,16 +1564,21 @@ mod vdi_counts_tests {
         let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
         let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
         let text = render_sections(&r, &[Section::Storage]);
-        // 8 VDIs: 6 base, 2 snapshots, 3 orphaned (HA statefile + 2 unattached snapshots)
+        // STORAGE header counts all 8 VDIs: 6 base, 2 snapshots, 3 orphaned
         assert!(
             text.contains("VDIs: 8 (6 base, 2 snapshots, 3 orphaned)"),
             "{text}"
         );
+        // VDI section excludes the VDI on the udev optical SR: 7 listed
         let vdis = render_sections(&r, &[Section::VDIs]);
         assert!(
-            vdis.contains("--- VDIs (8) — 6 base, 2 snapshots, 3 orphaned ---"),
+            vdis.contains("--- VDIs (7) — 5 base, 2 snapshots, 3 orphaned, 1 on ISO/removable SRs not shown ---"),
             "{vdis}"
         );
         assert!(vdis.contains("ORPHANED (not attached to any VM)"), "{vdis}");
+        // new fields: image format, cbt, sharable, utilisation; no raw type=
+        assert!(vdis.contains("vm1-disk [vdi-uuid-1] format=vhd size=20.00 GiB HAS-SNAPSHOTS cbt used=12.00 GiB"), "{vdis}");
+        assert!(vdis.contains("vm2-disk [vdi-uuid-2] format=qcow2 size=10.00 GiB sharable used=7.00 GiB"), "{vdis}");
+        assert!(!vdis.contains("type=user"), "{vdis}");
     }
 }
