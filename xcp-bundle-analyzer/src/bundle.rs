@@ -1,3 +1,4 @@
+use crate::xapidb::XapiDb;
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,7 +31,7 @@ impl Source {
                     .with_context(|| format!("parsing {}", path.display()))?;
                 return Ok(Source::DbFile(DbFileBundle {
                     path: path.to_path_buf(),
-                    db,
+                    db: Arc::new(db),
                     raw_xml: xml,
                 }));
             }
@@ -139,15 +140,17 @@ fn walk(dir: &Path, out: &mut Vec<(PathBuf, u64)>) -> Result<()> {
 /// A bare xapi-db.xml file: the DB is already parsed; nothing else available.
 pub struct DbFileBundle {
     pub path: PathBuf,
-    pub db: crate::xapidb::XapiDb,
+    db: std::sync::Arc<crate::xapidb::XapiDb>,
     pub raw_xml: Vec<u8>,
 }
 
 impl Source {
     /// Parsed xapi database for this source (None when no xapi-db.xml exists).
+    /// The DbFile variant shares the already-parsed DB via Arc instead of
+    /// cloning the whole table set (large dumps).
     pub fn xapi_db(&self) -> Option<Result<crate::xapidb::XapiDb>> {
         match self {
-            Source::DbFile(d) => Some(Ok(d.db.clone())),
+            Source::DbFile(d) => Some(Ok(XapiDb::clone(&d.db))),
             _ => self
                 .read_best("xapi-db.xml")
                 .map(|r| r.and_then(|b| crate::xapidb::XapiDb::from_bytes(&b))),
