@@ -25,8 +25,7 @@ impl Source {
                 .unwrap_or_default()
                 .to_lowercase();
             if name == "xapi-db.xml" || name.ends_with(".xml") {
-                let xml = fs::read(path)
-                    .with_context(|| format!("reading {}", path.display()))?;
+                let xml = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
                 let db = crate::xapidb::XapiDb::from_bytes(&xml)
                     .with_context(|| format!("parsing {}", path.display()))?;
                 return Ok(Source::DbFile(DbFileBundle {
@@ -122,8 +121,8 @@ impl DirBundle {
 }
 
 fn walk(dir: &Path, out: &mut Vec<(PathBuf, u64)>) -> Result<()> {
-    for entry in fs::read_dir(dir)
-        .with_context(|| format!("reading directory {}", dir.display()))?
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("reading directory {}", dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -166,10 +165,12 @@ impl ContextMsg for std::result::Result<Vec<u8>, std::io::Error> {
     }
 }
 
+type EntryReader = Box<dyn Fn(&str) -> Result<Vec<u8>>>;
+
 pub struct Bundle {
     pub path: Arc<PathBuf>,
     files: Vec<(String, u64)>,
-    reader: Box<dyn Fn(&str) -> Result<Vec<u8>>>,
+    reader: EntryReader,
 }
 
 impl Bundle {
@@ -181,11 +182,11 @@ impl Bundle {
             .unwrap_or("bundle")
             .to_string();
         let lower = name.to_lowercase();
-        let file = fs::File::open(path.as_ref())
-            .with_context(|| format!("opening {}", path.display()))?;
+        let file =
+            fs::File::open(path.as_ref()).with_context(|| format!("opening {}", path.display()))?;
         let mut files = Vec::new();
 
-        let make_reader: Box<dyn Fn(&str) -> Result<Vec<u8>>> = if lower.ends_with(".zip") {
+        let make_reader: EntryReader = if lower.ends_with(".zip") {
             let p = path.clone();
             let mut zip = zip::ZipArchive::new(file).context("reading zip bundle")?;
             for i in 0..zip.len() {
@@ -211,13 +212,19 @@ impl Bundle {
             let p = path.clone();
             collect_tar(bzip2::read::BzDecoder::new(file), &mut files)?;
             Box::new(move |needle: &str| -> Result<Vec<u8>> {
-                read_tar(bzip2::read::BzDecoder::new(fs::File::open(p.as_ref())?), needle)
+                read_tar(
+                    bzip2::read::BzDecoder::new(fs::File::open(p.as_ref())?),
+                    needle,
+                )
             })
         } else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
             let p = path.clone();
             collect_tar(flate2::read::GzDecoder::new(file), &mut files)?;
             Box::new(move |needle: &str| -> Result<Vec<u8>> {
-                read_tar(flate2::read::GzDecoder::new(fs::File::open(p.as_ref())?), needle)
+                read_tar(
+                    flate2::read::GzDecoder::new(fs::File::open(p.as_ref())?),
+                    needle,
+                )
             })
         } else if lower.ends_with(".tar") {
             let p = path.clone();
@@ -313,8 +320,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("host1");
         fs::create_dir_all(dst.join("etc")).unwrap();
-        fs::write(dst.join("xapi-db.xml"), fs::read("tests/fixtures/xapi-db.xml").unwrap()).unwrap();
-        fs::write(dst.join("etc/xensource-inventory"), "CONTROL_DOMAIN_MEMORY='2048'\n").unwrap();
+        fs::write(
+            dst.join("xapi-db.xml"),
+            fs::read("tests/fixtures/xapi-db.xml").unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            dst.join("etc/xensource-inventory"),
+            "CONTROL_DOMAIN_MEMORY='2048'\n",
+        )
+        .unwrap();
         let src = Source::open(dir.path()).unwrap();
         assert!(matches!(src, Source::Dir(_)));
         assert!(src.xapi_db().unwrap().is_ok());

@@ -21,9 +21,7 @@ impl Inventory {
             let val = val
                 .strip_prefix('"')
                 .and_then(|v| v.strip_suffix('"'))
-                .or_else(|| {
-                    val.strip_prefix('\'').and_then(|v| v.strip_suffix('\''))
-                })
+                .or_else(|| val.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
                 .unwrap_or(val);
             map.insert(key.trim().to_string(), val.to_string());
         }
@@ -41,7 +39,8 @@ impl Inventory {
 
     /// Dom0 configured memory in MiB.
     pub fn dom0_memory_mib(&self) -> Option<u64> {
-        self.get("CONTROL_DOMAIN_MEMORY").and_then(|v| v.parse().ok())
+        self.get("CONTROL_DOMAIN_MEMORY")
+            .and_then(|v| v.parse().ok())
     }
 
     pub fn dom0_cpus(&self) -> Option<u32> {

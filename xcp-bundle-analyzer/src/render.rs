@@ -1,8 +1,11 @@
-use anyhow::Context as _;
 use crate::build_info::VERSION;
-use crate::report::{BundleReport, ConsolidatedReport, VbdReport, VdiReport, PbdReport, PifReport, VifReport, VmReport};
-use std::collections::BTreeMap;
+use crate::report::{
+    BundleReport, ConsolidatedReport, PbdReport, PifReport, VbdReport, VdiReport, VifReport,
+    VmReport,
+};
+use anyhow::Context as _;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 fn gib(bytes: u64) -> String {
@@ -99,7 +102,7 @@ pub fn render_text(r: &BundleReport) -> String {
 
 pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
     let mut out = String::new();
-    let has = |sec: Section| sections.iter().any(|s| *s == sec);
+    let has = |sec: Section| sections.contains(&sec);
     let show = |want: Section| {
         has(Section::All)
             || has(want)
@@ -179,8 +182,13 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
             "{} [{}] {}{}{}",
             h.hostname,
             h.uuid,
-            if h.enabled { "enabled" } else { "disabled" },            if h.is_master { "  <== POOL MASTER" } else { "" },
-            if h.is_bundle_origin { "  <<< THIS BUNDLE" } else { "" }
+            if h.enabled { "enabled" } else { "disabled" },
+            if h.is_master { "  <== POOL MASTER" } else { "" },
+            if h.is_bundle_origin {
+                "  <<< THIS BUNDLE"
+            } else {
+                ""
+            }
         );
         let _ = writeln!(
             out,
@@ -202,13 +210,17 @@ fn render_hosts(r: &BundleReport, out: &mut String) {
             "  memory: {} total / {} free{}   dom0: {} (live: {})",
             gib(h.memory_total_bytes),
             gib(h.memory_free_bytes),
-            if h.mem_free_stale { " (free memory unknown/unavailable in dump)" } else { "" },
+            if h.mem_free_stale {
+                " (free memory unknown/unavailable in dump)"
+            } else {
+                ""
+            },
             h.dom0_memory_config_mib
                 .map(|m| format!("{m} MiB"))
-                .or_else(|| h.dom0_memory_live_bytes.map(|b| mib(b)))
+                .or_else(|| h.dom0_memory_live_bytes.map(mib))
                 .unwrap_or_else(|| "n/a".into()),
             h.dom0_memory_live_bytes
-                .map(|b| mib(b))
+                .map(mib)
                 .unwrap_or_else(|| "n/a".into())
         );
         if let (Some(up), Some(boot)) = (h.uptime_seconds, h.boot_time) {
@@ -273,13 +285,14 @@ fn render_storage(r: &BundleReport, out: &mut String) {
             if h.storage_adapters.is_empty() {
                 continue;
             }
-            let _ = writeln!(out, "\n  host: {} ({} adapters)", h.hostname, h.storage_adapters.len());
+            let _ = writeln!(
+                out,
+                "\n  host: {} ({} adapters)",
+                h.hostname,
+                h.storage_adapters.len()
+            );
             for a in &h.storage_adapters {
-                let _ = writeln!(
-                    out,
-                    "    [{}] {} {}",
-                    a.kind, a.id, a.description
-                );
+                let _ = writeln!(out, "    [{}] {} {}", a.kind, a.id, a.description);
             }
         }
     }
@@ -343,10 +356,7 @@ fn render_srs_body(r: &BundleReport, out: &mut String) {
                 );
             }
             if s.multipath_mismatch {
-                let _ = writeln!(
-                    out,
-                    "  *** MULTIPATH PATH COUNT MISMATCH between hosts ***"
-                );
+                let _ = writeln!(out, "  *** MULTIPATH PATH COUNT MISMATCH between hosts ***");
             }
         }
     }
@@ -358,29 +368,29 @@ fn render_vms(r: &BundleReport, out: &mut String) {
         .iter()
         .filter(|v| !v.is_template && !v.is_snapshot && !v.is_vmss_snapshot && !v.is_control_domain)
         .collect();
-    let mut templates: Vec<_> = r
-        .vms
-        .iter()
-        .filter(|v| v.is_template)
-        .collect();
+    let mut templates: Vec<_> = r.vms.iter().filter(|v| v.is_template).collect();
     let mut snapshots: Vec<_> = r
         .vms
         .iter()
         .filter(|v| v.is_snapshot || v.is_vmss_snapshot)
         .collect();
-    templates.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    snapshots.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    templates.sort_by_key(|a| a.name.to_lowercase());
+    snapshots.sort_by_key(|a| a.name.to_lowercase());
 
     // Group real VMs per resident host, alphabetical within each group.
     let mut by_host: BTreeMap<String, Vec<&VmReport>> = BTreeMap::new();
     for v in &real_vms {
         by_host
-            .entry(if v.resident_host.is_empty() { "(not running)".to_string() } else { v.resident_host.clone() })
+            .entry(if v.resident_host.is_empty() {
+                "(not running)".to_string()
+            } else {
+                v.resident_host.clone()
+            })
             .or_default()
             .push(v);
     }
-    for (_, group) in by_host.iter_mut() {
-        group.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    for group in by_host.values_mut() {
+        group.sort_by_key(|a| a.name.to_lowercase());
     }
 
     let _ = writeln!(out, "\n--- VIRTUAL MACHINES ({}) ---", real_vms.len());
@@ -394,9 +404,7 @@ fn render_vms(r: &BundleReport, out: &mut String) {
         let _ = writeln!(
             out,
             "\n  host: {} ({} running, {} vCPUs in use)",
-            host,
-            running,
-            vcpus
+            host, running, vcpus
         );
         for v in group {
             let _ = writeln!(
@@ -423,7 +431,11 @@ fn render_vms(r: &BundleReport, out: &mut String) {
             "{} [{}] {} vCPUs={} mem={}",
             v.name,
             v.uuid,
-            if v.is_default_template { "(default)" } else { "" },
+            if v.is_default_template {
+                "(default)"
+            } else {
+                ""
+            },
             v.vcpus_max,
             mib(v.memory_static_max_bytes)
         );
@@ -452,7 +464,7 @@ fn render_vdis_body(r: &BundleReport, out: &mut String) {
     // HA statefiles listed separately, on top
     let statefiles: Vec<_> = listed.iter().filter(|d| d.is_ha_statefile).collect();
     let mut normal: Vec<_> = listed.iter().filter(|d| !d.is_ha_statefile).collect();
-    normal.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    normal.sort_by_key(|a| a.name.to_lowercase());
 
     let vdi_base = listed.iter().filter(|d| !d.is_snapshot).count();
     let vdi_snap = listed.iter().filter(|d| d.is_snapshot).count();
@@ -477,7 +489,10 @@ fn render_vdis_body(r: &BundleReport, out: &mut String) {
             let _ = writeln!(
                 out,
                 "  {} [{}] sr={} size={}",
-                d.name, d.uuid, d.sr, gib(d.size_bytes)
+                d.name,
+                d.uuid,
+                d.sr,
+                gib(d.size_bytes)
             );
         }
     }
@@ -485,12 +500,22 @@ fn render_vdis_body(r: &BundleReport, out: &mut String) {
     // group per SR, alphabetical inside each group
     let mut by_sr: BTreeMap<String, Vec<&VdiReport>> = BTreeMap::new();
     for d in &normal {
-        let key = if d.sr.is_empty() { "(no SR)".to_string() } else { d.sr.clone() };
+        let key = if d.sr.is_empty() {
+            "(no SR)".to_string()
+        } else {
+            d.sr.clone()
+        };
         by_sr.entry(key).or_default().push(d);
     }
     for (sr, group) in &by_sr {
         let total: u64 = group.iter().map(|d| d.size_bytes).sum();
-        let _ = writeln!(out, "\n  SR: {} ({} VDIs, {} total)", sr, group.len(), gib(total));
+        let _ = writeln!(
+            out,
+            "\n  SR: {} ({} VDIs, {} total)",
+            sr,
+            group.len(),
+            gib(total)
+        );
         for d in group {
             let mut flags = String::new();
             if d.is_snapshot {
@@ -523,7 +548,12 @@ fn render_vdis_body(r: &BundleReport, out: &mut String) {
             let _ = writeln!(
                 out,
                 "    {} [{}] format={} size={}{}{}",
-                d.name, d.uuid, fmt, gib(d.size_bytes), flags, extra
+                d.name,
+                d.uuid,
+                fmt,
+                gib(d.size_bytes),
+                flags,
+                extra
             );
         }
     }
@@ -548,7 +578,7 @@ fn render_vbds(r: &BundleReport, out: &mut String) {
     }
     let mut groups: Vec<(&String, &mut Vec<&VbdReport>)> = by_vm.iter_mut().collect();
     for (_, g) in groups.iter_mut() {
-        g.sort_by(|a, b| a.device.to_lowercase().cmp(&b.device.to_lowercase()));
+        g.sort_by_key(|a| a.device.to_lowercase());
     }
     groups.sort_by(|(_, a), (_, b)| {
         let an = a.first().map(|b| b.vm.to_lowercase()).unwrap_or_default();
@@ -564,21 +594,18 @@ fn render_vbds(r: &BundleReport, out: &mut String) {
         } else {
             format!("{} - {}", b.vm, b.vm_uuid)
         };
-        let _ = if key.starts_with("(no VM)|") { writeln!(out, "\n  vm: {}", b.vm) } else { writeln!(out, "\n  vm: {}", label) };
+        let _ = if key.starts_with("(no VM)|") {
+            writeln!(out, "\n  vm: {}", b.vm)
+        } else {
+            writeln!(out, "\n  vm: {}", label)
+        };
         for b in group.iter() {
-        let vdi_short: String = b.vdi_uuid.chars().take(8).collect();
-        let _ = writeln!(
-            out,
-            "    dev={} vdi={} [{}] type={} mode={} attached={} bootable={} uuid={}",
-            b.device,
-            b.vdi,
-            vdi_short,
-            b.vbd_type,
-            b.mode,
-            b.attached,
-            b.bootable,
-            b.uuid
-        );
+            let vdi_short: String = b.vdi_uuid.chars().take(8).collect();
+            let _ = writeln!(
+                out,
+                "    dev={} vdi={} [{}] type={} mode={} attached={} bootable={} uuid={}",
+                b.device, b.vdi, vdi_short, b.vbd_type, b.mode, b.attached, b.bootable, b.uuid
+            );
         }
     }
 }
@@ -588,7 +615,11 @@ fn render_pbds_body(r: &BundleReport, out: &mut String) {
 
     // inconsistencies on top
     if !r.pbd_inconsistencies.is_empty() {
-        let _ = writeln!(out, "\n  *** PBD INCONSISTENCIES ({}) ***", r.pbd_inconsistencies.len());
+        let _ = writeln!(
+            out,
+            "\n  *** PBD INCONSISTENCIES ({}) ***",
+            r.pbd_inconsistencies.len()
+        );
         for inc in &r.pbd_inconsistencies {
             let _ = writeln!(
                 out,
@@ -619,7 +650,11 @@ fn render_pbds_body(r: &BundleReport, out: &mut String) {
                 p.host,
                 p.attached,
                 p.uuid,
-                if p.preferred_formats.is_empty() { "-".to_string() } else { p.preferred_formats.join(" > ") }
+                if p.preferred_formats.is_empty() {
+                    "-".to_string()
+                } else {
+                    p.preferred_formats.join(" > ")
+                }
             );
         }
     }
@@ -642,19 +677,35 @@ fn render_network(r: &BundleReport, out: &mut String) {
     // Migration / backup networks highlighted on top
     let mig = r.network_details.iter().find(|n| n.is_migration);
     if let Some(n) = mig {
-        let _ = writeln!(out, "  *** LIVE MIGRATION NETWORK: {} [{}] bridge={} mtu={} ***", n.name, n.uuid, n.bridge, n.mtu);
+        let _ = writeln!(
+            out,
+            "  *** LIVE MIGRATION NETWORK: {} [{}] bridge={} mtu={} ***",
+            n.name, n.uuid, n.bridge, n.mtu
+        );
     }
     let bak = r.network_details.iter().find(|n| n.is_backup);
     if let Some(n) = bak {
-        let _ = writeln!(out, "  *** BACKUP NETWORK: {} [{}] bridge={} mtu={} ***", n.name, n.uuid, n.bridge, n.mtu);
+        let _ = writeln!(
+            out,
+            "  *** BACKUP NETWORK: {} [{}] bridge={} mtu={} ***",
+            n.name, n.uuid, n.bridge, n.mtu
+        );
     }
     if nbd_nets > 0 {
-        let _ = writeln!(out, "  *** NBD: {} network(s) dedicated to Network Block Device traffic ***", nbd_nets);
+        let _ = writeln!(
+            out,
+            "  *** NBD: {} network(s) dedicated to Network Block Device traffic ***",
+            nbd_nets
+        );
         for n in r.network_details.iter().filter(|n| n.is_nbd) {
             let _ = writeln!(
                 out,
                 "      {} [{}] bridge={} mtu={} purposes={}",
-                n.name, n.uuid, n.bridge, n.mtu, n.purposes.join(", ")
+                n.name,
+                n.uuid,
+                n.bridge,
+                n.mtu,
+                n.purposes.join(", ")
             );
         }
     }
@@ -664,19 +715,35 @@ fn render_network(r: &BundleReport, out: &mut String) {
     let mut by_host: BTreeMap<String, Vec<&PifReport>> = BTreeMap::new();
     for p in &r.pifs {
         by_host
-            .entry(if p.host.is_empty() { "(no host)".to_string() } else { p.host.clone() })
+            .entry(if p.host.is_empty() {
+                "(no host)".to_string()
+            } else {
+                p.host.clone()
+            })
             .or_default()
             .push(p);
     }
     for (host, group) in &by_host {
         let mut group = group.clone();
-        group.sort_by(|a, b| a.device.to_lowercase().cmp(&b.device.to_lowercase()));
+        group.sort_by_key(|a| a.device.to_lowercase());
         let mgmt = group.iter().filter(|p| p.management).count();
-        let _ = writeln!(out, "\n  host: {} ({} PIFs, {} management)", host, group.len(), mgmt);
+        let _ = writeln!(
+            out,
+            "\n  host: {} ({} PIFs, {} management)",
+            host,
+            group.len(),
+            mgmt
+        );
         for p in &group {
             let speed = p
                 .speed
-                .map(|s| if s >= 65535 { "-".to_string() } else { format!("{s} Mb/s") })
+                .map(|s| {
+                    if s >= 65535 {
+                        "-".to_string()
+                    } else {
+                        format!("{s} Mb/s")
+                    }
+                })
                 .unwrap_or_else(|| "-".into());
             let mut extra = String::new();
             if p.is_bond_master {
@@ -719,7 +786,7 @@ fn render_network(r: &BundleReport, out: &mut String) {
     }
     let mut groups: Vec<(&String, &mut Vec<&VifReport>)> = by_vm.iter_mut().collect();
     for (_, g) in groups.iter_mut() {
-        g.sort_by(|a, b| a.device.to_lowercase().cmp(&b.device.to_lowercase()));
+        g.sort_by_key(|a| a.device.to_lowercase());
     }
     groups.sort_by(|(_, a), (_, b)| {
         let an = a.first().map(|v| v.vm.to_lowercase()).unwrap_or_default();
@@ -735,21 +802,17 @@ fn render_network(r: &BundleReport, out: &mut String) {
         };
         let _ = writeln!(out, "\n  vm: {}", label);
         for v in group.iter() {
-        let _ = writeln!(
-            out,
-            "    dev={} mac={} net={} attached={}",
-            v.device, v.mac, v.network, v.attached
-        );
+            let _ = writeln!(
+                out,
+                "    dev={} mac={} net={} attached={}",
+                v.device, v.mac, v.network, v.attached
+            );
         }
     }
 }
 
 fn print_anomalies_header(out: &mut String, count: usize) {
-    let _ = writeln!(
-        out,
-        "\n=== SETTINGS NEEDING ATTENTION ({}) ===",
-        count
-    );
+    let _ = writeln!(out, "\n=== SETTINGS NEEDING ATTENTION ({}) ===", count);
     let _ = writeln!(
         out,
         "Heuristic findings: each entry is probably abnormal or worth reviewing, but not necessarily a fault."
@@ -759,11 +822,7 @@ fn print_anomalies_header(out: &mut String, count: usize) {
 /// Merge per-bundle reports (dedup by uuid) into one report on which the
 /// pool-wide anomaly checks can run.
 fn merge_for_anomalies(c: &ConsolidatedReport) -> BundleReport {
-    let mut merged = c
-        .bundles
-        .first()
-        .cloned()
-        .unwrap_or_default();
+    let mut merged = c.bundles.first().cloned().unwrap_or_default();
     merged.pool.host_count = c.hosts.len();
     merged.hosts = c.hosts.clone();
     merged.srs = c.srs.clone();
@@ -806,8 +865,16 @@ pub fn render_consolidated_anomalies(c: &ConsolidatedReport) -> String {
             let _ = writeln!(
                 out,
                 "  [{}] {}{}",
-                if a.severity == "warning" { "PROBABLY ABNORMAL" } else { "review" },
-                if a.subject.is_empty() { String::new() } else { format!("{}: ", a.subject) },
+                if a.severity == "warning" {
+                    "PROBABLY ABNORMAL"
+                } else {
+                    "review"
+                },
+                if a.subject.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}: ", a.subject)
+                },
                 a.detail
             );
         }
@@ -839,8 +906,16 @@ fn render_anomalies(r: &BundleReport, out: &mut String) {
             let _ = writeln!(
                 out,
                 "  [{}] {}{}",
-                if a.severity == "warning" { "PROBABLY ABNORMAL" } else { "review" },
-                if a.subject.is_empty() { String::new() } else { format!("{}: ", a.subject) },
+                if a.severity == "warning" {
+                    "PROBABLY ABNORMAL"
+                } else {
+                    "review"
+                },
+                if a.subject.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}: ", a.subject)
+                },
                 a.detail
             );
         }
@@ -849,7 +924,11 @@ fn render_anomalies(r: &BundleReport, out: &mut String) {
 
 pub fn render_consolidated_text(c: &ConsolidatedReport) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "=== Consolidated pool view ({} bundles) ===", c.bundles.len());
+    let _ = writeln!(
+        out,
+        "=== Consolidated pool view ({} bundles) ===",
+        c.bundles.len()
+    );
     let _ = writeln!(out, "generated by xcp-bundle-analyzer {VERSION}");
     let _ = writeln!(
         out,
@@ -907,8 +986,16 @@ pub fn render_consolidated_text(c: &ConsolidatedReport) -> String {
                 let _ = writeln!(
                     out,
                     "  [{}] {}{}",
-                    if a.severity == "warning" { "PROBABLY ABNORMAL" } else { "review" },
-                    if a.subject.is_empty() { String::new() } else { format!("{}: ", a.subject) },
+                    if a.severity == "warning" {
+                        "PROBABLY ABNORMAL"
+                    } else {
+                        "review"
+                    },
+                    if a.subject.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}: ", a.subject)
+                    },
                     a.detail
                 );
             }
@@ -1141,7 +1228,11 @@ pub fn render_vm_display(db: &XapiDb, uuid: &str) -> anyhow::Result<String> {
     let _ = writeln!(out, "resident-on:    {host_label}");
     let affinity = as_ref(g("affinity")).unwrap_or_default();
     if !affinity.is_empty() {
-        let _ = writeln!(out, "affinity:        {}", label(db, "host", &affinity, "hostname"));
+        let _ = writeln!(
+            out,
+            "affinity:        {}",
+            label(db, "host", &affinity, "hostname")
+        );
     }
     let _ = writeln!(
         out,
@@ -1169,7 +1260,14 @@ pub fn render_vm_display(db: &XapiDb, uuid: &str) -> anyhow::Result<String> {
         }
         let nets = decode_map(gm.get("networks").map(|s| s.as_str()).unwrap_or(""));
         if !nets.is_empty() {
-            let _ = writeln!(out, "guest IPs:       {}", nets.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" "));
+            let _ = writeln!(
+                out,
+                "guest IPs:       {}",
+                nets.iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
         }
     }
 
@@ -1181,13 +1279,20 @@ pub fn render_vm_display(db: &XapiDb, uuid: &str) -> anyhow::Result<String> {
     // find template VM whose snapshots/children include us, or same name
     for (_r, t) in db.rows("VM") {
         if t.get("is_a_template").map(|v| v == "true").unwrap_or(false) {
-            let children = crate::xapidb::decode_set(t.get("children").map(|s| s.as_str()).unwrap_or(""));
-            if children.iter().any(|c| as_ref(c).as_deref() == Some(vm_ref)) {
+            let children =
+                crate::xapidb::decode_set(t.get("children").map(|s| s.as_str()).unwrap_or(""));
+            if children
+                .iter()
+                .any(|c| as_ref(c).as_deref() == Some(vm_ref))
+            {
                 let _ = writeln!(
                     out,
                     "template uuid:  {} ({})",
                     t.get("uuid").cloned().unwrap_or_default(),
-                    t.get("name__label").or_else(|| t.get("name_label")).cloned().unwrap_or_default()
+                    t.get("name__label")
+                        .or_else(|| t.get("name_label"))
+                        .cloned()
+                        .unwrap_or_default()
                 );
             }
         }
@@ -1232,7 +1337,13 @@ pub fn render_vm_display(db: &XapiDb, uuid: &str) -> anyhow::Result<String> {
         let vg = |k: &str| vbd.get(k).map(|s| s.as_str()).unwrap_or("");
         let vdi_ref = as_ref(vg("VDI")).unwrap_or_default();
         let (vdi_uuid, vdi_size, vdi_type, vdi_fmt, vdi_sr) = if vdi_ref.is_empty() {
-            (String::new(), String::new(), String::new(), String::new(), String::new())
+            (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+            )
         } else {
             let vdi = rget(db, "VDI", &vdi_ref);
             match vdi {
@@ -1243,19 +1354,26 @@ pub fn render_vm_display(db: &XapiDb, uuid: &str) -> anyhow::Result<String> {
                         .find(|(k, _)| k == "vdi_type")
                         .map(|(_, v)| v.clone())
                         .unwrap_or_else(|| "?".into());
-                    let sr_ref = as_ref(vdi.get("SR").map(|s| s.as_str()).unwrap_or("")).unwrap_or_default();
+                    let sr_ref =
+                        as_ref(vdi.get("SR").map(|s| s.as_str()).unwrap_or("")).unwrap_or_default();
                     (
                         vdi.get("uuid").cloned().unwrap_or_default(),
                         vdi.get("virtual_size")
                             .and_then(|s| as_u64(s))
-                            .map(|b| gib(b))
+                            .map(gib)
                             .unwrap_or_default(),
                         vdi.get("type").cloned().unwrap_or_default(),
                         fmt,
                         label(db, "SR", &sr_ref, "name__label"),
                     )
                 }
-                None => (vdi_ref.clone(), String::new(), String::new(), String::new(), String::new()),
+                None => (
+                    vdi_ref.clone(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ),
             }
         };
         let _ = writeln!(
@@ -1314,7 +1432,9 @@ pub fn render_vm_display(db: &XapiDb, uuid: &str) -> anyhow::Result<String> {
 }
 
 fn mib_or(v: &str) -> String {
-    as_u64(v).map(fmt_mib_str).unwrap_or_else(|| "n/a".to_string())
+    as_u64(v)
+        .map(fmt_mib_str)
+        .unwrap_or_else(|| "n/a".to_string())
 }
 
 fn fmt_mib_str(b: u64) -> String {
@@ -1418,7 +1538,7 @@ pub fn render_vdi_tree(r: &BundleReport, uuid: Option<&str>) -> anyhow::Result<S
         }
     }
     for group in children.values_mut() {
-        group.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        group.sort_by_key(|a| a.name.to_lowercase());
     }
 
     let mut out = String::new();
@@ -1441,7 +1561,7 @@ pub fn render_vdi_tree(r: &BundleReport, uuid: Option<&str>) -> anyhow::Result<S
                 }
             }
             let _ = writeln!(out, "VDI snapshot tree: {}", root.uuid);
-            print_vdi_node(r, &children, root, "", true, &mut out);
+            print_vdi_node(&children, root, "", true, &mut out);
         }
         None => {
             // roots = VDIs with no parent (or a broken parent)
@@ -1450,14 +1570,14 @@ pub fn render_vdi_tree(r: &BundleReport, uuid: Option<&str>) -> anyhow::Result<S
                 .iter()
                 .filter(|d| d.snapshot_of_uuid.is_empty() || d.broken_parent)
                 .collect();
-            roots.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            roots.sort_by_key(|a| a.name.to_lowercase());
             if roots.is_empty() {
                 let _ = writeln!(out, "no VDIs in this dump");
                 return Ok(out);
             }
             for root in roots {
                 let _ = writeln!(out, "\nVDI snapshot tree: {}", root.uuid);
-                print_vdi_node(r, &children, root, "", true, &mut out);
+                print_vdi_node(&children, root, "", true, &mut out);
             }
         }
     }
@@ -1465,7 +1585,6 @@ pub fn render_vdi_tree(r: &BundleReport, uuid: Option<&str>) -> anyhow::Result<S
 }
 
 fn print_vdi_node(
-    r: &BundleReport,
     children: &BTreeMap<String, Vec<&VdiReport>>,
     d: &VdiReport,
     prefix: &str,
@@ -1497,10 +1616,18 @@ fn print_vdi_node(
         d.name,
         d.uuid,
         flags,
-        if d.image_format.is_empty() { "-".to_string() } else { d.image_format.clone() },
+        if d.image_format.is_empty() {
+            "-".to_string()
+        } else {
+            d.image_format.clone()
+        },
         gib(d.size_bytes),
         if d.sr.is_empty() { "-" } else { &d.sr },
-        if d.vm.is_empty() { String::new() } else { format!("  vm={}", d.vm) }
+        if d.vm.is_empty() {
+            String::new()
+        } else {
+            format!("  vm={}", d.vm)
+        }
     );
     let kids = children.get(&d.uuid).cloned().unwrap_or_default();
     let child_prefix = if prefix.is_empty() {
@@ -1509,7 +1636,7 @@ fn print_vdi_node(
         format!("{}{}", prefix, if is_last { "    " } else { "|   " })
     };
     for (i, kid) in kids.iter().enumerate() {
-        print_vdi_node(r, children, kid, &child_prefix, i == kids.len() - 1, out);
+        print_vdi_node(children, kid, &child_prefix, i == kids.len() - 1, out);
     }
 }
 
@@ -1530,7 +1657,10 @@ mod vdi_tree_tests {
         let out = render_vdi_tree(&r, Some("vdi-uuid-snap")).unwrap();
         assert!(out.contains("VDI snapshot tree: vdi-uuid-1"), "{out}");
         assert!(out.contains("vm1-disk [vdi-uuid-1]"), "{out}");
-        assert!(out.contains("`-- vm1-disk snapshot [vdi-uuid-snap] SNAPSHOT"), "{out}");
+        assert!(
+            out.contains("`-- vm1-disk snapshot [vdi-uuid-snap] SNAPSHOT"),
+            "{out}"
+        );
     }
 
     #[test]
@@ -1577,8 +1707,18 @@ mod vdi_counts_tests {
         );
         assert!(vdis.contains("ORPHANED (not attached to any VM)"), "{vdis}");
         // new fields: image format, cbt, sharable, utilisation; no raw type=
-        assert!(vdis.contains("vm1-disk [vdi-uuid-1] format=vhd size=20.00 GiB HAS-SNAPSHOTS cbt used=12.00 GiB"), "{vdis}");
-        assert!(vdis.contains("vm2-disk [vdi-uuid-2] format=qcow2 size=10.00 GiB sharable used=7.00 GiB"), "{vdis}");
+        assert!(
+            vdis.contains(
+                "vm1-disk [vdi-uuid-1] format=vhd size=20.00 GiB HAS-SNAPSHOTS cbt used=12.00 GiB"
+            ),
+            "{vdis}"
+        );
+        assert!(
+            vdis.contains(
+                "vm2-disk [vdi-uuid-2] format=qcow2 size=10.00 GiB sharable used=7.00 GiB"
+            ),
+            "{vdis}"
+        );
         assert!(!vdis.contains("type=user"), "{vdis}");
     }
 }

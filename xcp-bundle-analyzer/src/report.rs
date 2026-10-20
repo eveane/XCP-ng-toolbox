@@ -392,7 +392,6 @@ fn ref_set(v: &str) -> Vec<String> {
         .collect()
 }
 
-
 /// Coarse storage family from SR type + device_config keys.
 fn classify_sr(sr_type: &str, device_config: &[(String, String)]) -> String {
     let t = sr_type.trim().to_lowercase();
@@ -421,7 +420,10 @@ fn classify_sr(sr_type: &str, device_config: &[(String, String)]) -> String {
 }
 
 fn map_get<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
-    pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    pairs
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.as_str())
 }
 
 fn warn(category: &str, subject: String, detail: String) -> Anomaly {
@@ -455,10 +457,7 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         .map(|p| p.network.as_str())
         .collect();
     for net in &r.network_details {
-        if mgmt_network_uuids.iter().any(|n| *n == net.name)
-            && net.mtu != 0
-            && net.mtu != 1500
-        {
+        if mgmt_network_uuids.iter().any(|n| *n == net.name) && net.mtu != 0 && net.mtu != 1500 {
             out.push(warn(
                 "management-mtu",
                 net.name.clone(),
@@ -662,7 +661,11 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                     ),
                     None => "differs from the master (which has none): a master failover to this host would apply this setting".to_string(),
                 };
-                let sev = if master_interval.is_some() { "info" } else { "warning" };
+                let sev = if master_interval.is_some() {
+                    "info"
+                } else {
+                    "warning"
+                };
                 let a = if sev == "info" {
                     info(
                         "auto-scan-interval",
@@ -739,7 +742,13 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         let versions: Vec<(String, String, String)> = r
             .hosts
             .iter()
-            .map(|h| (h.hostname.clone(), h.product_version.clone(), h.xen_version.clone()))
+            .map(|h| {
+                (
+                    h.hostname.clone(),
+                    h.product_version.clone(),
+                    h.xen_version.clone(),
+                )
+            })
             .collect();
         let uniq_products: Vec<&str> = {
             let mut v: Vec<&str> = versions.iter().map(|(_, p, _)| p.as_str()).collect();
@@ -891,8 +900,8 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let is_bundle_origin = (!inv_uuid.is_empty() && uuid == inv_uuid)
             || (!inv_host.is_empty() && hostname == inv_host);
         let host_other = decode_map(get(host, "other_config"));
-        let boot_time = map_get(&host_other, "boot_time")
-            .and_then(|v| v.trim_end_matches('.').parse().ok());
+        let boot_time =
+            map_get(&host_other, "boot_time").and_then(|v| v.trim_end_matches('.').parse().ok());
         let host_auto_scan = map_get(&host_other, "auto-scan-interval").and_then(as_u64);
         if is_bundle_origin {
             report.bundle_origin_host = hostname.clone();
@@ -942,7 +951,9 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             .and_then(as_u64)
             .or_else(|| map_get(&cpu_info, "sockets").and_then(as_u64))
             .unwrap_or(0);
-        let cpu_count = map_get(&cpu_info, "cpu_count").and_then(as_u64).unwrap_or(0);
+        let cpu_count = map_get(&cpu_info, "cpu_count")
+            .and_then(as_u64)
+            .unwrap_or(0);
         let cores_per_socket = map_get(&cpu_info, "cores_per_socket")
             .and_then(as_u64)
             .unwrap_or_else(|| {
@@ -1010,8 +1021,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let size = as_u64(get(sr, "physical_size")).unwrap_or(0);
         let used = as_u64(get(sr, "physical_utilisation")).unwrap_or(0);
         let other_config = decode_map(get(sr, "other_config"));
-        let auto_scan_interval = map_get(&other_config, "auto-scan-interval")
-            .and_then(as_u64);
+        let auto_scan_interval = map_get(&other_config, "auto-scan-interval").and_then(as_u64);
 
         // device_config + multipath info merged across this SR's PBDs.
         let mut device_config: Vec<(String, String)> = Vec::new();
@@ -1077,8 +1087,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let sr_hosts = sr_pbds
             .get(r)
             .map(|pbds| {
-                pbds
-                    .iter()
+                pbds.iter()
                     .filter_map(|p| db.table("PBD").and_then(|t| t.get(p)))
                     .filter_map(|pbd| as_ref(get(pbd, "host")))
                     .filter_map(|h| db.table("host").and_then(|t| t.get(&h)))
@@ -1151,14 +1160,9 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .and_then(|t| t.get(k))
                 .map(has_live_vbd)
                 .unwrap_or(false)
-        }) && !db.rows("VBD").any(|(br, vbd)| {
-            br == r && has_live_vbd(&vbd)
-        });
+        }) && !db.rows("VBD").any(|(br, vbd)| br == r && has_live_vbd(vbd));
         let size = as_u64(get(vdi, "virtual_size")).unwrap_or(0);
-        report.pool.vdi_total_size_bytes = report
-            .pool
-            .vdi_total_size_bytes
-            .saturating_add(size);
+        report.pool.vdi_total_size_bytes = report.pool.vdi_total_size_bytes.saturating_add(size);
         let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
         let has_snapshots = !decode_set(get(vdi, "snapshots")).is_empty();
         let snap_of = ref_of(vdi, "snapshot_of");
@@ -1170,13 +1174,10 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .map(|p| get(p, "uuid").to_string())
                 .unwrap_or_default()
         };
-        let broken_parent = !snap_of.is_empty()
-            && db
-                .table("VDI")
-                .and_then(|t| t.get(&snap_of))
-                .is_none();
-        let is_ha_statefile = get(vdi, "type") == "ha_statefile"
-            || get(vdi, "name__label") == "Statefile for HA";
+        let broken_parent =
+            !snap_of.is_empty() && db.table("VDI").and_then(|t| t.get(&snap_of)).is_none();
+        let is_ha_statefile =
+            get(vdi, "type") == "ha_statefile" || get(vdi, "name__label") == "Statefile for HA";
         let vdi_other = decode_map(get(vdi, "other_config"));
         let leaf_coalesce_disabled = map_get(&vdi_other, "leaf-coalesce") == Some("false");
         let sm_config = decode_map(get(vdi, "sm_config"));
@@ -1185,8 +1186,8 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             .unwrap_or_default()
             .to_string();
         let utilisation = as_u64(get(vdi, "physical_utilisation")).unwrap_or(0);
-        let cbt_enabled = get(vdi, "cbt-enabled") == "true"
-            || map_get(&sm_config, "cbt-enabled") == Some("true");
+        let cbt_enabled =
+            get(vdi, "cbt-enabled") == "true" || map_get(&sm_config, "cbt-enabled") == Some("true");
         let sharable = as_bool(get(vdi, "sharable")).unwrap_or(false);
         let sr_category = db
             .table("SR")
@@ -1239,9 +1240,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let vm_is_control_domain = db
             .table("VM")
             .and_then(|t| t.get(&vm_ref))
-            .map(|vm| {
-                get(vm, "is_control_domain") == "true" || get(vm, "domid") == "0"
-            })
+            .map(|vm| get(vm, "is_control_domain") == "true" || get(vm, "domid") == "0")
             .unwrap_or(false);
         report.vbds.push(VbdReport {
             uuid,
@@ -1251,7 +1250,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .table("VM")
                 .and_then(|t| t.get(&vm_ref))
                 .map(|vm| get(vm, "uuid").to_string())
-            .unwrap_or_default(),
+                .unwrap_or_default(),
             vm_is_control_domain,
             vdi: ref_label(db, "VDI", &ref_of(vbd, "VDI"), "name__label"),
             vdi_uuid: db
@@ -1320,7 +1319,11 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         });
     }
     // Fallback for older dumps without VIFs/VBDs sets on the VM row.
-    if report.vms.iter().all(|v| v.vif_count == 0 && v.vbd_count == 0) {
+    if report
+        .vms
+        .iter()
+        .all(|v| v.vif_count == 0 && v.vbd_count == 0)
+    {
         let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
         for (_, vif) in db.rows("VIF") {
             counts.entry(ref_of(vif, "VM")).or_default().0 += 1;
@@ -1368,7 +1371,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             let other = decode_map(get(pbd, "other_config"));
             let preferred = map_get(&other, "preferred-image-formats")
                 .map(|v| {
-                    v.split(|c| c == ',' || c == ' ')
+                    v.split([',', ' '])
                         .filter(|f| !f.is_empty())
                         .map(|f| f.trim().to_string())
                         .collect()
@@ -1497,7 +1500,11 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
 
     // Pool-level settings used to flag special networks (Xen Orchestra stores
     // its default migration/backup network in pool other_config).
-    let pool_row = db.rows("pool").next().map(|(_, p)| p.clone()).unwrap_or_default();
+    let pool_row = db
+        .rows("pool")
+        .next()
+        .map(|(_, p)| p.clone())
+        .unwrap_or_default();
     let pool_other = decode_map(get(&pool_row, "other_config"));
     let pool_backup_ref = pool_other
         .iter()
@@ -1538,23 +1545,27 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let mut per_host: BTreeMap<String, Vec<StorageAdapter>> = BTreeMap::new();
         for (_, pci) in db.rows("PCI") {
             let class_name = get(pci, "class_name").to_lowercase();
-            let is_fc = class_name.contains("fibre") || class_name.contains("fc host")
+            let is_fc = class_name.contains("fibre")
+                || class_name.contains("fc host")
                 || get(pci, "driver_name").contains("fc");
             if !is_fc {
                 continue;
             }
             let host = ref_label(db, "host", &ref_of(pci, "host"), "hostname");
-            per_host.entry(host.clone()).or_default().push(StorageAdapter {
-                kind: "fc".into(),
-                host,
-                id: get(pci, "pci_id").to_string(),
-                description: format!(
-                    "{} {} ({})",
-                    get(pci, "vendor_name"),
-                    get(pci, "device_name"),
-                    get(pci, "class_name")
-                ),
-            });
+            per_host
+                .entry(host.clone())
+                .or_default()
+                .push(StorageAdapter {
+                    kind: "fc".into(),
+                    host,
+                    id: get(pci, "pci_id").to_string(),
+                    description: format!(
+                        "{} {} ({})",
+                        get(pci, "vendor_name"),
+                        get(pci, "device_name"),
+                        get(pci, "class_name")
+                    ),
+                });
         }
         // iSCSI targets from PBD device_config
         for pbd in &report.pbds {
@@ -1566,12 +1577,15 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .unwrap_or_default();
             for (k, v) in &pbd.device_config {
                 if k == "targetIQN" {
-                    per_host.entry(pbd.host.clone()).or_default().push(StorageAdapter {
-                        kind: "iscsi".into(),
-                        host: pbd.host.clone(),
-                        id: format!("{v} (SR {})", sr.name),
-                        description: format!("iSCSI initiator to {}", v),
-                    });
+                    per_host
+                        .entry(pbd.host.clone())
+                        .or_default()
+                        .push(StorageAdapter {
+                            kind: "iscsi".into(),
+                            host: pbd.host.clone(),
+                            id: format!("{v} (SR {})", sr.name),
+                            description: format!("iSCSI initiator to {}", v),
+                        });
                 }
             }
         }
@@ -1596,12 +1610,15 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 continue;
             }
             for host in &sr.hosts {
-                per_host.entry(host.clone()).or_default().push(StorageAdapter {
-                    kind: "nfs".into(),
-                    host: host.clone(),
-                    id: format!("{server}:{path}"),
-                    description: format!("NFS export for SR {}", sr.name),
-                });
+                per_host
+                    .entry(host.clone())
+                    .or_default()
+                    .push(StorageAdapter {
+                        kind: "nfs".into(),
+                        host: host.clone(),
+                        id: format!("{server}:{path}"),
+                        description: format!("NFS export for SR {}", sr.name),
+                    });
             }
         }
         for h in report.hosts.iter_mut() {
@@ -1676,7 +1693,9 @@ pub fn consolidate(reports: Vec<BundleReport>) -> ConsolidatedReport {
     for rep in &reports {
         consolidated.warnings.extend(rep.warnings.iter().cloned());
         for h in &rep.hosts {
-            seen_hosts.entry(h.uuid.clone()).or_insert_with(|| h.clone());
+            seen_hosts
+                .entry(h.uuid.clone())
+                .or_insert_with(|| h.clone());
         }
         for s in &rep.srs {
             seen_srs.entry(s.uuid.clone()).or_insert_with(|| s.clone());
@@ -1729,9 +1748,12 @@ mod tests {
         assert_eq!(h.pif_count, 2);
         // VMs
         assert!(!r.vms.is_empty());
-        let vm = r.vms.iter().find(|v| v.name == "iSCSIa").or_else(|| {
-            r.vms.iter().find(|v| !v.is_template)
-        }).unwrap();
+        let vm = r
+            .vms
+            .iter()
+            .find(|v| v.name == "iSCSIa")
+            .or_else(|| r.vms.iter().find(|v| !v.is_template))
+            .unwrap();
         assert!(!vm.name.is_empty(), "vm name should be populated");
         assert!(vm.vcpus_max > 0, "vcpus_max: {}", vm.vcpus_max);
         assert!(vm.memory_dynamic_max_bytes > 0);
@@ -1758,13 +1780,21 @@ mod tests {
         let db = XapiDb::from_xml(xml).unwrap();
         let r = build_report(&db, &Inventory::default(), "test");
         assert_eq!(r.vms.len(), 2);
-        let tpl = r.vms.iter().find(|v| v.uuid == "07d91aaa-43f7-430a-bf84-0edb6714df0f").unwrap();
+        let tpl = r
+            .vms
+            .iter()
+            .find(|v| v.uuid == "07d91aaa-43f7-430a-bf84-0edb6714df0f")
+            .unwrap();
         assert_eq!(tpl.name, "Debian Bookworm 12");
         assert!(tpl.is_template);
         assert!(tpl.is_default_template);
         assert_eq!(tpl.vcpus_max, 1);
         assert_eq!(tpl.vbd_count, 0);
-        let vm = r.vms.iter().find(|v| v.uuid == "a5609e55-f48c-56c7-e795-5edee4841245").unwrap();
+        let vm = r
+            .vms
+            .iter()
+            .find(|v| v.uuid == "a5609e55-f48c-56c7-e795-5edee4841245")
+            .unwrap();
         assert_eq!(vm.name, "backupproxy");
         assert!(!vm.is_template);
         assert!(!vm.is_snapshot);
@@ -1805,8 +1835,15 @@ mod tests {
         // PBD section: grouping fields + inconsistencies
         assert_eq!(r.pbds.len(), 6);
         let pbd3 = r.pbds.iter().find(|p| p.uuid == "pbd-uuid-3").unwrap();
-        assert_eq!(pbd3.preferred_formats, vec!["vhd".to_string(), "qcow2".to_string()]);
-        let kinds: Vec<&str> = r.pbd_inconsistencies.iter().map(|i| i.kind.as_str()).collect();
+        assert_eq!(
+            pbd3.preferred_formats,
+            vec!["vhd".to_string(), "qcow2".to_string()]
+        );
+        let kinds: Vec<&str> = r
+            .pbd_inconsistencies
+            .iter()
+            .map(|i| i.kind.as_str())
+            .collect();
         assert!(kinds.contains(&"PBD unplugged"));
         // host auto-scan-interval
         assert_eq!(r.hosts[0].auto_scan_interval, Some(600));
@@ -1816,15 +1853,27 @@ mod tests {
         // SR device_config / multipath / category
         let iscsi = r.srs.iter().find(|s| s.uuid == "sr-uuid-iscsi").unwrap();
         assert_eq!(iscsi.category, "iscsi");
-        assert!(iscsi.device_config.iter().any(|(k, v)| k == "SCSIid" && v == "360050768108101e2c000000000000145"));
-        assert!(iscsi.device_config.iter().any(|(k, v)| k == "preferred-image-formats" && v == "qcow2, vhd"));
+        assert!(iscsi
+            .device_config
+            .iter()
+            .any(|(k, v)| k == "SCSIid" && v == "360050768108101e2c000000000000145"));
+        assert!(iscsi
+            .device_config
+            .iter()
+            .any(|(k, v)| k == "preferred-image-formats" && v == "qcow2, vhd"));
         assert!(iscsi.multipath_mismatch, "4 vs 8 paths should be flagged");
         let nfs = r.srs.iter().find(|s| s.uuid == "sr-uuid-nfs").unwrap();
         assert_eq!(nfs.category, "nfs");
         let lvm = r.srs.iter().find(|s| s.uuid == "sr-uuid-local").unwrap();
         assert_eq!(lvm.category, "local");
         // PIFs grouped per host: host1 has 3 now (incl. one bond slave)
-        assert_eq!(r.pifs.iter().filter(|p| p.host == "host1.example.com").count(), 3);
+        assert_eq!(
+            r.pifs
+                .iter()
+                .filter(|p| p.host == "host1.example.com")
+                .count(),
+            3
+        );
         // PIF speed/driver details
         let eth0 = r.pifs.iter().find(|p| p.uuid == "pif-uuid-1").unwrap();
         assert_eq!(eth0.speed, Some(1000));
@@ -1835,14 +1884,29 @@ mod tests {
         assert!(bond.is_bond_master);
         assert_eq!(bond.bond_members, vec!["eth2".to_string()]);
         // migration/backup networks flagged via pool other_config
-        assert!(r.network_details.iter().any(|n| n.is_migration && n.uuid == "net-uuid-0"));
-        assert!(r.network_details.iter().any(|n| n.is_backup && n.uuid == "net-uuid-bk"));
+        assert!(r
+            .network_details
+            .iter()
+            .any(|n| n.is_migration && n.uuid == "net-uuid-0"));
+        assert!(r
+            .network_details
+            .iter()
+            .any(|n| n.is_backup && n.uuid == "net-uuid-bk"));
         // host storage adapters: FC HBA from PCI + iSCSI target from PBD device_config
         let h1 = &r.hosts[0];
-        assert!(h1.storage_adapters.iter().any(|a| a.kind == "fc" && a.id == "0000:05:00.0"));
-        assert!(h1.storage_adapters.iter().any(|a| a.kind == "iscsi" && a.id.contains("iqn.2004-04.com.qnap")));
+        assert!(h1
+            .storage_adapters
+            .iter()
+            .any(|a| a.kind == "fc" && a.id == "0000:05:00.0"));
+        assert!(h1
+            .storage_adapters
+            .iter()
+            .any(|a| a.kind == "iscsi" && a.id.contains("iqn.2004-04.com.qnap")));
         // NBD network detected via purpose
-        assert!(r.network_details.iter().any(|n| n.is_nbd && n.uuid == "net-uuid-0"));
+        assert!(r
+            .network_details
+            .iter()
+            .any(|n| n.is_nbd && n.uuid == "net-uuid-0"));
         // VDI snapshot/HA fields
         let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
         assert!(ha.is_ha_statefile);
@@ -1864,9 +1928,12 @@ mod tests {
         assert!(!vm2.orphaned, "vm2-disk is attached via vbd2");
         // leaf-coalesce=false surfaced on the report and in anomalies
         assert!(vm2.leaf_coalesce_disabled);
-        assert!(r.anomalies.iter().any(|a| a.category == "leaf-coalesce-disabled"
-            && a.subject == "vm2-disk"
-            && a.detail.contains("only meant to be set during a migration")));
+        assert!(r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "leaf-coalesce-disabled"
+                && a.subject == "vm2-disk"
+                && a.detail.contains("only meant to be set during a migration")));
         // auto-scan-interval surfaced on the SR, with attached hosts
         let nfs = r.srs.iter().find(|s| s.name == "NFS repo").unwrap();
         assert_eq!(nfs.auto_scan_interval, Some(300));
@@ -1878,15 +1945,36 @@ mod tests {
         assert!(cats.contains(&"shared-sr-coverage"), "categories: {cats:?}");
         assert!(cats.contains(&"sr-free-space"), "categories: {cats:?}");
         assert!(cats.contains(&"multipath-mismatch"), "categories: {cats:?}");
-        assert!(cats.contains(&"dom0-memory-mismatch"), "categories: {cats:?}");
-        assert!(cats.contains(&"broken-snapshot-parent"), "categories: {cats:?}");
+        assert!(
+            cats.contains(&"dom0-memory-mismatch"),
+            "categories: {cats:?}"
+        );
+        assert!(
+            cats.contains(&"broken-snapshot-parent"),
+            "categories: {cats:?}"
+        );
         assert!(cats.contains(&"auto-scan-interval"), "categories: {cats:?}");
-        assert!(cats.contains(&"pool-version-mismatch"), "categories: {cats:?}");
-        let mtu = r.anomalies.iter().find(|a| a.category == "management-mtu").unwrap();
+        assert!(
+            cats.contains(&"pool-version-mismatch"),
+            "categories: {cats:?}"
+        );
+        let mtu = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "management-mtu")
+            .unwrap();
         assert!(mtu.detail.contains("MTU 9000"));
-        let ver = r.anomalies.iter().find(|a| a.category == "pool-version-mismatch").unwrap();
+        let ver = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "pool-version-mismatch")
+            .unwrap();
         assert!(ver.detail.contains("8.3.0") && ver.detail.contains("8.2.1"));
-        let free = r.anomalies.iter().find(|a| a.category == "sr-free-space").unwrap();
+        let free = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "sr-free-space")
+            .unwrap();
         assert!(free.subject == "Local storage");
         // the largest disk VDI (vm2-disk, 10 GiB) drives the finding,
         // not the smaller tools DVD attached via a CD VBD
@@ -1894,22 +1982,42 @@ mod tests {
         // the built-in optical-drive SR (udev "DVD drives", 1 GiB size, 0 free,
         // VDI attached via a Disk VBD) must never trigger the check
         assert!(
-            !r.anomalies.iter().any(|a| a.category == "sr-free-space" && a.subject == "DVD drives"),
+            !r.anomalies
+                .iter()
+                .any(|a| a.category == "sr-free-space" && a.subject == "DVD drives"),
             "anomalies: {:?}",
-            r.anomalies.iter().filter(|a| a.category == "sr-free-space").collect::<Vec<_>>()
+            r.anomalies
+                .iter()
+                .filter(|a| a.category == "sr-free-space")
+                .collect::<Vec<_>>()
         );
         // auto-scan-interval: master/slave semantics
-        let scans: Vec<&Anomaly> = r.anomalies.iter().filter(|a| a.category == "auto-scan-interval").collect();
+        let scans: Vec<&Anomaly> = r
+            .anomalies
+            .iter()
+            .filter(|a| a.category == "auto-scan-interval")
+            .collect();
         // host1 is the master (pool.master=host1) and has the setting: no
         // "master has none" warning; host2 is a slave with the same setting
         // -> info entry saying a failover keeps the same behaviour
-        assert!(scans.iter().any(|a| a.severity == "info" && a.detail.contains("slave (non-master) host host2.example.com")
-            && a.detail.contains("failover to this host keeps the same behaviour")),
-            "scans: {scans:?}");
+        assert!(
+            scans.iter().any(|a| a.severity == "info"
+                && a.detail
+                    .contains("slave (non-master) host host2.example.com")
+                && a.detail
+                    .contains("failover to this host keeps the same behaviour")),
+            "scans: {scans:?}"
+        );
         // master identified on the host reports
         // master identified on the host reports
-        assert!(r.hosts.iter().any(|h| h.is_master && h.hostname == "host1.example.com"));
-        assert!(r.hosts.iter().any(|h| !h.is_master && h.hostname == "host2.example.com"));
+        assert!(r
+            .hosts
+            .iter()
+            .any(|h| h.is_master && h.hostname == "host1.example.com"));
+        assert!(r
+            .hosts
+            .iter()
+            .any(|h| !h.is_master && h.hostname == "host2.example.com"));
     }
 
     #[test]
@@ -1922,34 +2030,55 @@ mod tests {
         );
         let db = XapiDb::from_xml(&xml).unwrap();
         let r = build_report(&db, &Inventory::default(), "test");
-        let scans: Vec<&Anomaly> = r.anomalies.iter().filter(|a| a.category == "auto-scan-interval").collect();
+        let scans: Vec<&Anomaly> = r
+            .anomalies
+            .iter()
+            .filter(|a| a.category == "auto-scan-interval")
+            .collect();
         assert!(
             scans.iter().any(|a| a.severity == "warning"
-                && a.detail.contains("pool master host1.example.com has no other-config:auto-scan-interval")),
+                && a.detail.contains(
+                    "pool master host1.example.com has no other-config:auto-scan-interval"
+                )),
             "scans: {scans:?}"
         );
         assert!(
             scans.iter().any(|a| a.severity == "warning"
-                && a.detail.contains("slave (non-master) host host2.example.com")
+                && a.detail
+                    .contains("slave (non-master) host host2.example.com")
                 && a.detail.contains("would apply this setting")),
             "scans: {scans:?}"
         );
         // per-SR wording: 30s default, 5min only for linstor/xostor
-        assert!(scans.iter().any(|a| a.detail.contains("30 seconds")), "scans: {scans:?}");
+        assert!(
+            scans.iter().any(|a| a.detail.contains("30 seconds")),
+            "scans: {scans:?}"
+        );
     }
 
     #[test]
     fn parse_section_lists() {
         assert_eq!(
             crate::render::Section::parse_list("pool,storage").unwrap(),
-            vec![crate::render::Section::Pool, crate::render::Section::Storage]
+            vec![
+                crate::render::Section::Pool,
+                crate::render::Section::Storage
+            ]
         );
         assert_eq!(
             crate::render::Section::parse_list(" anomalies , vms ").unwrap(),
-            vec![crate::render::Section::Anomalies, crate::render::Section::VMs]
+            vec![
+                crate::render::Section::Anomalies,
+                crate::render::Section::VMs
+            ]
         );
-        assert!(crate::render::Section::parse_list("").unwrap() == vec![crate::render::Section::All]);
-        assert_eq!(crate::render::Section::parse_list("pool,bogus").unwrap_err(), "bogus");
+        assert!(
+            crate::render::Section::parse_list("").unwrap() == vec![crate::render::Section::All]
+        );
+        assert_eq!(
+            crate::render::Section::parse_list("pool,bogus").unwrap_err(),
+            "bogus"
+        );
     }
 }
 

@@ -34,7 +34,11 @@ impl XapiDb {
                                 .attributes()
                                 .flatten()
                                 .find(|a| a.key.as_ref() == "name")
-                                .and_then(|a| a.normalized_value(XmlVersion::Implicit1_0).ok().map(|v| v.into_owned()));
+                                .and_then(|a| {
+                                    a.normalized_value(XmlVersion::Implicit1_0)
+                                        .ok()
+                                        .map(|v| v.into_owned())
+                                });
                         }
                         "row" => {
                             let (key, attrs) = parse_row_attrs(&e, table.as_deref(), &db);
@@ -45,7 +49,11 @@ impl XapiDb {
                                 .attributes()
                                 .flatten()
                                 .find(|a| a.key.as_ref() == "name")
-                                .and_then(|a| a.normalized_value(XmlVersion::Implicit1_0).ok().map(|v| v.into_owned()))
+                                .and_then(|a| {
+                                    a.normalized_value(XmlVersion::Implicit1_0)
+                                        .ok()
+                                        .map(|v| v.into_owned())
+                                })
                                 .unwrap_or_else(|| name.clone());
                             stack.push(name);
                             field = Some((fname, String::new()));
@@ -61,13 +69,20 @@ impl XapiDb {
                                 .attributes()
                                 .flatten()
                                 .find(|a| a.key.as_ref() == "name")
-                                .and_then(|a| a.normalized_value(XmlVersion::Implicit1_0).ok().map(|v| v.into_owned()));
+                                .and_then(|a| {
+                                    a.normalized_value(XmlVersion::Implicit1_0)
+                                        .ok()
+                                        .map(|v| v.into_owned())
+                                });
                         }
                         "row" => {
                             let attrs = parse_row_attrs(&e, table.as_deref(), &db);
                             if let Some(t) = table.as_deref() {
                                 let (key, attrs) = attrs;
-                                db.tables.entry(t.to_string()).or_default().insert(key, attrs);
+                                db.tables
+                                    .entry(t.to_string())
+                                    .or_default()
+                                    .insert(key, attrs);
                             }
                         }
                         _ => {
@@ -76,7 +91,11 @@ impl XapiDb {
                                 .attributes()
                                 .flatten()
                                 .find(|a| a.key.as_ref() == "name")
-                                .and_then(|a| a.normalized_value(XmlVersion::Implicit1_0).ok().map(|v| v.into_owned()))
+                                .and_then(|a| {
+                                    a.normalized_value(XmlVersion::Implicit1_0)
+                                        .ok()
+                                        .map(|v| v.into_owned())
+                                })
                                 .unwrap_or_else(|| name.clone());
                             if let Some((_, attrs)) = row.as_mut() {
                                 attrs.insert(fname, String::new());
@@ -101,7 +120,10 @@ impl XapiDb {
                         "row" => {
                             if let Some((key, attrs)) = row.take() {
                                 if let Some(t) = table.as_deref() {
-                                    db.tables.entry(t.to_string()).or_default().insert(key, attrs);
+                                    db.tables
+                                        .entry(t.to_string())
+                                        .or_default()
+                                        .insert(key, attrs);
                                 }
                             }
                         }
@@ -132,14 +154,15 @@ impl XapiDb {
     }
 
     pub fn rows(&self, name: &str) -> impl Iterator<Item = (&String, &Row)> {
-        self.tables
-            .get(name)
-            .into_iter()
-            .flat_map(|t| t.iter())
+        self.tables.get(name).into_iter().flat_map(|t| t.iter())
     }
 }
 
-fn parse_row_attrs(e: &quick_xml::events::BytesStart, table: Option<&str>, db: &XapiDb) -> (String, Row) {
+fn parse_row_attrs(
+    e: &quick_xml::events::BytesStart,
+    table: Option<&str>,
+    db: &XapiDb,
+) -> (String, Row) {
     let mut attrs = Row::new();
     for a in e.attributes().flatten() {
         let k = a.key.as_ref().to_string();
@@ -157,7 +180,12 @@ fn parse_row_attrs(e: &quick_xml::events::BytesStart, table: Option<&str>, db: &
         .or_else(|| attrs.get("id"))
         .and_then(|r| as_ref(r))
         .unwrap_or_else(|| {
-            (db.tables.get(table.unwrap_or("")).map(|t| t.len()).unwrap_or(0) + 1).to_string()
+            (db.tables
+                .get(table.unwrap_or(""))
+                .map(|t| t.len())
+                .unwrap_or(0)
+                + 1)
+            .to_string()
         });
     (key, attrs)
 }
@@ -314,8 +342,6 @@ fn scan_all_quoted(v: &str) -> Vec<String> {
     }
     out
 }
-
-
 
 #[cfg(test)]
 mod tests {
