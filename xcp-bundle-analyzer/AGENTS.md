@@ -13,9 +13,11 @@ Binary: `xcp-bundle-analyzer`.
 - `xapidb.rs` — `xapi-db.xml` → typed tables + xapi value decoding
   (`OpaqueRef:` refs, OCaml sets/maps, Xml_spaces whitespace protection).
 - `inventory.rs` — `xensource-inventory` parsing.
-- `report.rs` — Domain model (pool, hosts, SRs, VDIs, VMs, VBDs, VIFs, PIFs,
-  PBDs) + pool consolidation.
-- `render.rs` — Output only: text, JSON, HTML. Never parses input.
+- `report/` — Domain model. `types.rs` (serde structs = JSON contract, see
+  `docs/SPEC.md`), `build.rs` (XapiDb → BundleReport), `anomalies.rs`,
+  `consolidate.rs` (pool view), `util.rs`.
+- `render/` — Output only: `text.rs`, `json.rs`, `html.rs`, `anomalies.rs`,
+  `vm_display.rs`, `vdi_tree.rs`, `util.rs`. Never parses input.
 
 Data flows one way: `bundle` → `xapidb` → `report` → `render`.
 Rendering modules must not read files; parsing modules must not format output.
@@ -29,16 +31,15 @@ Rendering modules must not read files; parsing modules must not format output.
 - No new dependencies without strong justification. Current deps are minimal.
 - Do NOT hand-edit `tests/fixtures/`. Regenerate with:
   `python3 tests/build_fixtures.py`
-- Sizes are stored in bytes (`u64`); display helpers (`gib`/`mib`) live in `render.rs`.
+- Sizes are stored in bytes (`u64`); display helpers (`gib`/`mib`) live in `render/util.rs` and `report/util.rs`.
 
 ## Commands (run in this order, stop at first failure)
 
 ```
 cargo check
 cargo clippy -- -D warnings
-cargo test            # NOTE: report_from_real_dump is a known failing test
-                      # (expects /tmp/real-xapi-db.xml, not committed) —
-                      # pre-existing, not caused by your change.
+cargo test            # report_from_real_dump is #[ignore]d (needs a real dump
+                      # at /tmp/real-xapi-db.xml); run it with -- --ignored
 cargo fmt --check     # do not reformat unrelated code
 ```
 
@@ -48,6 +49,6 @@ Conventional style: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 
 ## Known issues
 
-- `report::tests::report_from_real_dump` expects `/tmp/real-xapi-db.xml` (not
-  committed) and fails in a fresh checkout.
+- `report_from_real_dump` is `#[ignore]`d: it needs a real dump at
+  `/tmp/real-xapi-db.xml` (never committed, real pool data).
 - HTML output supports only a single bundle per invocation.
