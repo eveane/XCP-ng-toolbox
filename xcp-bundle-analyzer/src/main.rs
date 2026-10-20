@@ -1,5 +1,5 @@
-mod bundle;
 mod build_info;
+mod bundle;
 mod inventory;
 mod render;
 mod report;
@@ -235,7 +235,7 @@ fn cmd_analyze(
                 }
                 None => vec![render::Section::All],
             };
-            let has = |sec: render::Section| secs.iter().any(|s| *s == sec);
+            let has = |sec: render::Section| secs.contains(&sec);
             if reports.len() == 1 {
                 write_output(output, &render::render_sections(&reports[0], &secs))
             } else if has(render::Section::Anomalies) && !has(render::Section::All) {
