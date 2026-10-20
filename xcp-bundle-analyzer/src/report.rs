@@ -1733,6 +1733,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a real dump at /tmp/real-xapi-db.xml (never committed: real pool data); run with cargo test -- --ignored"]
     fn report_from_real_dump() {
         let db = real_db();
         let inv = Inventory::default();

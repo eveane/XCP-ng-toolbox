@@ -164,11 +164,14 @@ fn analyze_one(source_path: &Path) -> Result<BundleReport> {
         }
     };
 
-    let inventory = source
-        .read_best("xensource-inventory")
-        .and_then(|r| r.ok())
-        .map(|b| inventory::Inventory::parse(&String::from_utf8_lossy(&b)))
-        .unwrap_or_default();
+    let inventory = match source.read_best("xensource-inventory") {
+        Some(Ok(bytes)) => inventory::Inventory::parse(&String::from_utf8_lossy(&bytes)),
+        Some(Err(e)) => {
+            warnings.push(format!("failed reading xensource-inventory: {e:#}"));
+            inventory::Inventory::default()
+        }
+        None => inventory::Inventory::default(),
+    };
 
     let path_str = source.path().display().to_string();
     let mut rep = match &db {
