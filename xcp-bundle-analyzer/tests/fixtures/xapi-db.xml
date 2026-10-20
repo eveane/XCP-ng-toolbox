@@ -27,7 +27,7 @@
 </table>
 <table name="VDI">
 <row ref="OpaqueRef:vdi1" uuid="vdi-uuid-1" name__label="vm1-disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="('OpaqueRef:vbd1')" snapshots="('OpaqueRef:vdi-snap')" sm_config="(('vdi_type' 'vhd')%.('image-format' 'vhd'))" physical_utilisation="12884901888" cbt-enabled="true"/>
-<row ref="OpaqueRef:vdi2" uuid="vdi-uuid-2" name__label="vm2-disk" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd2')" sm_config="(('image-format' 'qcow2'))" physical_utilisation="7516192768" sharable="true"/>
+<row ref="OpaqueRef:vdi2" uuid="vdi-uuid-2" name__label="vm2-disk" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd2')" other_config="(('leaf-coalesce' 'false'))" sm_config="(('image-format' 'qcow2'))" physical_utilisation="7516192768" sharable="true"/>
 <row ref="OpaqueRef:vdi-ha" uuid="vdi-uuid-ha" name__label="Statefile for HA" type="ha_statefile" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="()" is_a_snapshot="false"/>
 <row ref="OpaqueRef:vdi-snap" uuid="vdi-uuid-snap" name__label="vm1-disk snapshot" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi1"/>
 <row ref="OpaqueRef:vdi-orphan" uuid="vdi-uuid-orphan" name__label="orphaned snapshot" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi-gone"/>

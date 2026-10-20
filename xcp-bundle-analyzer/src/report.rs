@@ -138,6 +138,10 @@ pub struct VdiReport {
     /// True when this VDI is not attached to any VM (no VBD, or VBDs
     /// pointing to VM rows that no longer exist in the dump).
     pub orphaned: bool,
+    /// True when other-config:leaf-coalesce is explicitly set to false.
+    /// This is only meant to be set while the VM/VDI is being migrated;
+    /// a leftover value disables leaf coalescing on the VDI.
+    pub leaf_coalesce_disabled: bool,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -604,6 +608,22 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                 d.name.clone(),
                 format!(
                     "VDI {} [{}] has snapshot_of set but its parent VDI no longer exists",
+                    d.name, d.uuid
+                ),
+            ));
+        }
+    }
+
+    // 7b) other-config:leaf-coalesce=false is only meant to be set while
+    //     the VM/VDI is being migrated; a leftover value disables leaf
+    //     coalescing for good and should be reviewed.
+    for d in &r.vdis {
+        if d.leaf_coalesce_disabled {
+            out.push(warn(
+                "leaf-coalesce-disabled",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}] has other-config:leaf-coalesce=false; this is only meant to be set during a migration — a leftover value disables leaf coalescing",
                     d.name, d.uuid
                 ),
             ));
@@ -1157,6 +1177,8 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .is_none();
         let is_ha_statefile = get(vdi, "type") == "ha_statefile"
             || get(vdi, "name__label") == "Statefile for HA";
+        let vdi_other = decode_map(get(vdi, "other_config"));
+        let leaf_coalesce_disabled = map_get(&vdi_other, "leaf-coalesce") == Some("false");
         let sm_config = decode_map(get(vdi, "sm_config"));
         let image_format = map_get(&sm_config, "image-format")
             .or_else(|| map_get(&sm_config, "vdi_type"))
@@ -1203,6 +1225,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             broken_parent,
             is_ha_statefile,
             orphaned,
+            leaf_coalesce_disabled,
         });
     }
 
@@ -1839,6 +1862,11 @@ mod tests {
         assert!(snap.orphaned, "snapshot has no VBD");
         let vm2 = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-2").unwrap();
         assert!(!vm2.orphaned, "vm2-disk is attached via vbd2");
+        // leaf-coalesce=false surfaced on the report and in anomalies
+        assert!(vm2.leaf_coalesce_disabled);
+        assert!(r.anomalies.iter().any(|a| a.category == "leaf-coalesce-disabled"
+            && a.subject == "vm2-disk"
+            && a.detail.contains("only meant to be set during a migration")));
         // auto-scan-interval surfaced on the SR, with attached hosts
         let nfs = r.srs.iter().find(|s| s.name == "NFS repo").unwrap();
         assert_eq!(nfs.auto_scan_interval, Some(300));
