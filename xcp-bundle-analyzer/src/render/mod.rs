@@ -6,6 +6,7 @@
 mod anomalies;
 mod html;
 mod json;
+mod object_display;
 mod text;
 mod util;
 mod vdi_tree;
@@ -13,6 +14,7 @@ mod vm_display;
 
 pub use html::render_html;
 pub use json::render_json;
+pub use object_display::{object_table, render_object_display, OBJECTS};
 pub use vdi_tree::render_vdi_tree;
 pub use vm_display::render_vm_display;
 

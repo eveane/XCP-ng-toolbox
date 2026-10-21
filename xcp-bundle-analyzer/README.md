@@ -27,6 +27,11 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   and `xml_spaces.ml`): `OpaqueRef:` references, S-expression sets/maps, and
   the whitespace protection scheme (`%.` = space, `%t`/`%n`/`%r` = tab/nl/cr,
   `%%` = `%`).
+- `object` subcommand: shows all details of one object, like
+  `xe <object>-param-list`: `xcp-bundle-analyzer object vdi <uuid> <bundle>`.
+  Valid objects: vdi, vbd, vif, pbd, pif, sr, network, vm, host. Every field
+  of the xapi row is printed; references are resolved to uuid (name), and
+  sets/maps (other_config, sm_config, VBDs, PIFs, ...) are decoded.
 - `vdi-tree` subcommand: prints VDI snapshot trees (`VDI.snapshot_of` chains).
   With a VDI uuid it prints the tree containing that VDI, starting from the
   chain root; without an argument it prints a tree for every root VDI.
