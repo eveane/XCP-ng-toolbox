@@ -71,6 +71,7 @@ document.getElementById('verline').textContent = 'xcp-bundle-analyzer __VERSION_
 document.getElementById('subtitle').textContent = r.bundle_path + ' — pool ' + r.pool.name + ' (' + r.pool.uuid + ')'
   + (r.bundle_origin_host ? ' — collected from ' + r.bundle_origin_host : '');
 document.getElementById('cards').innerHTML = [
+  ['HA', r.pool.ha_enabled === undefined || r.pool.ha_enabled === null ? 'unknown' : (r.pool.ha_enabled ? 'enabled' : 'disabled')],
   ['Hosts', r.pool.host_count], ['VMs running', r.pool.vm_running + ' / ' + r.pool.vm_total],
   ['SRs', r.srs.length], ['Storage', fmtGib(r.pool.sr_total_size_bytes)],
   ['Used', fmtGib(r.pool.sr_total_used_bytes)], ['Networks', r.networks],

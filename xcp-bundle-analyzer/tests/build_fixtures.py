@@ -11,7 +11,7 @@ OUT = os.path.join(os.path.dirname(__file__), "fixtures")
 XAPI_DB = """<?xml version="1.0"?>
 <database>
 <table name="pool">
-<row ref="OpaqueRef:pool1" uuid="pool-uuid-1" name__label="mypool" master="OpaqueRef:host1" other_config="(('xo:migrationNetwork' 'OpaqueRef:net0')%.('xo:backupNetwork' 'OpaqueRef:net-bk'))"/>
+<row ha_enabled="true" ref="OpaqueRef:pool1" uuid="pool-uuid-1" name__label="mypool" master="OpaqueRef:host1" other_config="(('xo:migrationNetwork' 'OpaqueRef:net0')%.('xo:backupNetwork' 'OpaqueRef:net-bk'))"/>
 </table>
 <table name="host">
 <row ref="OpaqueRef:host1" uuid="host-uuid-1" name__label="host1" hostname="host1.example.com" address="192.168.1.11" enabled="true" power_state="Running" metrics="OpaqueRef:hm1" other_config="(('boot_time' '1750000000')%.('auto-scan-interval' '600'))" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd3')" PIFs="('OpaqueRef:pif1' 'OpaqueRef:pif2')" cpu_info="(('cpu_count' '8') ('cores_per_socket' '4') ('socket_count' '2') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2630'))" software_version="(('product_version' '8.3.0') ('xen_version' '4.17') ('linux_version' '4.19.0-1.el8.xcpng'))"/>

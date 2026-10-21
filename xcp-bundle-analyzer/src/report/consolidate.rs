@@ -74,6 +74,8 @@ mod tests {
         let inv = Inventory::default();
         let r = build_report(&db, &inv, "test");
         assert_eq!(r.hosts.len(), 1);
+        // real-like fixture has no ha_enabled on the pool row
+        assert_eq!(r.pool.ha_enabled, None);
         let h = &r.hosts[0];
         assert_eq!(h.hostname, "dt40");
         assert_eq!(h.cpu_count, 8);
@@ -154,6 +156,7 @@ mod tests {
         assert_eq!(r.srs.len(), 4);
         assert_eq!(r.vms.len(), 6);
         assert_eq!(r.pool.vm_running, 1);
+        assert_eq!(r.pool.ha_enabled, Some(true));
         assert!(!r.vbds.is_empty());
         // bundle origin detection via INSTALLATION_UUID
         assert_eq!(r.bundle_origin_host, "host1.example.com");

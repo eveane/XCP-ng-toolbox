@@ -141,6 +141,23 @@ mod uptime_utc_tests {
     use super::*;
 
     #[test]
+    fn pool_section_shows_ha_status() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
+        assert_eq!(r.pool.ha_enabled, Some(true));
+        let text = render_sections(&r, &[Section::Pool]);
+        assert!(text.contains("HA: enabled"), "{text}");
+        // real-like fixture has no ha_enabled on the pool row
+        let real = include_str!("../../tests/fixtures/xapi-db-real-like.xml");
+        let db = crate::xapidb::XapiDb::from_xml(real).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
+        assert_eq!(r.pool.ha_enabled, None);
+        let text = render_sections(&r, &[Section::Pool]);
+        assert!(text.contains("HA: unknown"), "{text}");
+    }
+
+    #[test]
     fn formats_utc_timestamps() {
         assert_eq!(utc_timestamp(0), "1970-01-01 00:00 UTC");
         assert_eq!(utc_timestamp(1781524800), "2026-06-15 12:00 UTC");
