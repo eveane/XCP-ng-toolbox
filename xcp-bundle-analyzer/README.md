@@ -101,11 +101,13 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     listing, per host: FC/FCoE HBAs (from the PCI table, with vendor/model),
     iSCSI targets (from PBD device-config) and NFS servers (from SR
     device-config). It then includes the SR, VDI and PBD sub-sections.
-  - **PBDs** are grouped per SR (with shared/local marker) showing host,
-    attach state, UUID and the disk-format preference order from the PBD's
-    `other-config:preferred-image-formats` (e.g. `vhd > qcow2`). Pool
-    inconsistencies are highlighted on top: a shared SR missing a PBD on
-    one of the pool hosts, or a shared SR whose PBD is unplugged on a host.
+  - **PBDs** are grouped per SR (with shared/local marker and SR UUID),
+    hosts sorted by name, showing host, attach state, UUID, the disk-format
+    preference order from the PBD's `other-config:preferred-image-formats`
+    when set (`pref-img=vhd > qcow2`), and the multipath path count
+    (`paths=[8, 8]`) on multipathed SRs. Pool inconsistencies are
+    highlighted on top: a shared SR missing a PBD on one of the pool
+    hosts, or a shared SR whose PBD is unplugged on a host.
 - Consolidated view: pass several bundles (e.g. one per host of a pool) and
   hosts/SRs/VMs are merged by UUID into a single pool report. This is the
   extension point for future features (upload bundles from a whole pool,

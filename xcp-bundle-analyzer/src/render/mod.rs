@@ -150,6 +150,34 @@ mod uptime_utc_tests {
     use super::*;
 
     #[test]
+    fn pbds_section_sorted_with_uuid_prefimg_and_paths() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
+        let text = render_sections(&r, &[Section::PBDs]);
+        // SR uuid shown next to the SR name
+        assert!(
+            text.contains("SR: NFS repo [shared] [sr-uuid-nfs]"),
+            "{text}"
+        );
+        // no useless formats=- placeholder when preferred-image-formats absent
+        assert!(!text.contains("formats=-"), "{text}");
+        // pref-img only when set
+        assert!(text.contains("pref-img=vhd > qcow2"), "{text}");
+        // multipath paths shown per host
+        assert!(text.contains("paths=[8, 8]"), "{text}");
+        assert!(text.contains("paths=[4, 8]"), "{text}");
+        // hosts sorted by name within an SR group
+        let h1 = text
+            .find("host=host1.example.com attached=true uuid=pbd-uuid-5")
+            .unwrap();
+        let h2 = text
+            .find("host=host2.example.com attached=true uuid=pbd-uuid-6")
+            .unwrap();
+        assert!(h1 < h2, "{text}");
+    }
+
+    #[test]
     fn vdis_section_does_not_render_pbds() {
         let xml = include_str!("../../tests/fixtures/xapi-db.xml");
         let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();

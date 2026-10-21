@@ -506,25 +506,45 @@ pub(crate) fn render_pbds_body(r: &BundleReport, out: &mut String) {
     }
     for (sr, group) in &by_sr {
         let shared = group.iter().any(|p| p.sr_shared);
+        let sr_uuid = group
+            .iter()
+            .map(|p| p.sr_uuid.as_str())
+            .next()
+            .unwrap_or("");
+        // multipath paths per host, from the SR's mpath- entries
+        let mpaths: BTreeMap<&str, &str> = r
+            .srs
+            .iter()
+            .find(|s| s.name == *sr)
+            .map(|s| {
+                s.multipath
+                    .iter()
+                    .map(|m| (m.host.as_str(), m.raw.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut sorted: Vec<&&PbdReport> = group.iter().collect();
+        sorted.sort_by(|a, b| a.host.cmp(&b.host));
         let _ = writeln!(
             out,
-            "\n  SR: {}{} ({} PBDs)",
+            "\n  SR: {}{} [{}] ({} PBDs)",
             sr,
             if shared { " [shared]" } else { " [local]" },
-            group.len()
+            sr_uuid,
+            sorted.len()
         );
-        for p in group {
+        for p in sorted {
+            let mut extras = String::new();
+            if !p.preferred_formats.is_empty() {
+                extras.push_str(&format!(" pref-img={}", p.preferred_formats.join(" > ")));
+            }
+            if let Some(paths) = mpaths.get(p.host.as_str()) {
+                extras.push_str(&format!(" paths={paths}"));
+            }
             let _ = writeln!(
                 out,
-                "    host={} attached={} uuid={} formats={}",
-                p.host,
-                p.attached,
-                p.uuid,
-                if p.preferred_formats.is_empty() {
-                    "-".to_string()
-                } else {
-                    p.preferred_formats.join(" > ")
-                }
+                "    host={} attached={} uuid={}{}",
+                p.host, p.attached, p.uuid, extras
             );
         }
     }
