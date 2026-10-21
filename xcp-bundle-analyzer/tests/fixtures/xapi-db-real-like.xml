@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<database>
+<table name="pool">
+<row ref="OpaqueRef:pool1" uuid="pool-uuid-real" name__label="realdump" master="OpaqueRef:host1" other_config="()"/>
+</table>
+<table name="host">
+<row ref="OpaqueRef:host1" uuid="host-uuid-dt40" name__label="dt40" hostname="dt40" address="10.80.229.40" enabled="true" power_state="Running" metrics="OpaqueRef:hm1" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2' 'OpaqueRef:pbd3' 'OpaqueRef:pbd4' 'OpaqueRef:pbd5' 'OpaqueRef:pbd6')" PIFs="('OpaqueRef:pif1' 'OpaqueRef:pif2')" cpu_info="(('cpu_count' '8') ('cores_per_socket' '2') ('socket_count' '4') ('modelname' 'Intel(R)%.Xeon(R)%.CPU%.E5-2640%.v3%.@%.2.60GHz') ('vendor' 'GenuineIntel'))" software_version="(('product_version' '6.0.50') ('xen' '4.1.6') ('linux' '2.6.32.12'))" other_config="(('boot_time' '1350000000')%.('agent_start_time' '1350000000'))"/>
+</table>
+<table name="host_metrics">
+<row ref="OpaqueRef:hm1" memory__total="34359738368" memory__free="17179869184" last_updated="20121115T12:00:00Z"/>
+</table>
+<table name="SR">
+<row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local%storage" type="lvm" shared="false" physical_size="998999399104" physical_utilisation="123456789" PBDs="('OpaqueRef:pbd1')" VDIs="('OpaqueRef:vdi-iso')"/>
+<row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI%.SR" type="lvmoiscsi" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" PBDs="('OpaqueRef:pbd2' 'OpaqueRef:pbd3')" VDIs="('OpaqueRef:vdi1' 'OpaqueRef:vdi2')"/>
+<row ref="OpaqueRef:sr-nfs" uuid="sr-uuid-nfs" name__label="NFS%.ISO%.library" type="nfs" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd4' 'OpaqueRef:pbd5' 'OpaqueRef:pbd6')" VDIs="('OpaqueRef:vdi-tools')"/>
+</table>
+<table name="PBD">
+<row ref="OpaqueRef:pbd1" uuid="pbd-uuid-1" host="OpaqueRef:host1" SR="OpaqueRef:sr-local" currently_attached="true"/>
+<row ref="OpaqueRef:pbd2" uuid="pbd-uuid-2" host="OpaqueRef:host1" SR="OpaqueRef:sr-iscsi" currently_attached="true" device_config="(('SCSIid' '360050768108101e2c000000000000145')%.('target' '10.80.229.100')%.('targetIQN' 'iqn.2004-04.com.qnap:ts-859:iscsi.lun0'))"/>
+<row ref="OpaqueRef:pbd3" uuid="pbd-uuid-3" host="OpaqueRef:host1" SR="OpaqueRef:sr-iscsi" currently_attached="true" device_config="(('SCSIid' '360050768108101e2c000000000000145'))"/>
+<row ref="OpaqueRef:pbd4" uuid="pbd-uuid-4" host="OpaqueRef:host1" SR="OpaqueRef:sr-nfs" currently_attached="true" device_config="(('server' '10.80.229.200')%.('serverpath' '/export/isos'))"/>
+<row ref="OpaqueRef:pbd5" uuid="pbd-uuid-5" host="OpaqueRef:host1" SR="OpaqueRef:sr-nfs" currently_attached="true" device_config="(('server' '10.80.229.200')%.('serverpath' '/export/isos'))"/>
+<row ref="OpaqueRef:pbd6" uuid="pbd-uuid-6" host="OpaqueRef:host1" SR="OpaqueRef:sr-nfs" currently_attached="false" device_config="(('server' '10.80.229.201')%.('serverpath' '/export/isos2'))"/>
+</table>
+<table name="VDI">
+<row ref="OpaqueRef:vdi1" uuid="vdi-uuid-iscsi-a" name__label="iSCSIa%.disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-iscsi" VBDs="('OpaqueRef:vbd1')"/>
+<row ref="OpaqueRef:vdi2" uuid="vdi-uuid-iscsi-b" name__label="iSCSIa%.disk2" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-iscsi" VBDs="('OpaqueRef:vbd2')"/>
+<row ref="OpaqueRef:vdi-tools" uuid="vdi-uuid-tools" name__label="xs-tools.iso" type="user" virtual_size="558345728" SR="OpaqueRef:sr-nfs" VBDs="('OpaqueRef:vbd-cd')"/>
+<row ref="OpaqueRef:vdi-iso" uuid="vdi-uuid-iso" name__label="local%.swap" type="swap" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="()"/>
+</table>
+<table name="VBD">
+<row ref="OpaqueRef:vbd1" uuid="vbd-uuid-1" VDI="OpaqueRef:vdi1" VM="OpaqueRef:vm1" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="true"/>
+<row ref="OpaqueRef:vbd2" uuid="vbd-uuid-2" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm1" device="xvdb" type="Disk" mode="RW" bootable="false" currently_attached="true"/>
+<row ref="OpaqueRef:vbd-cd" uuid="vbd-uuid-cd" VDI="OpaqueRef:vdi-tools" VM="OpaqueRef:vm1" device="xvdd" type="CD" mode="RO" bootable="false" currently_attached="true"/>
+</table>
+<table name="VM">
+<row ref="OpaqueRef:vm1" uuid="vm-uuid-iscsi-a" name__label="iSCSIa" power_state="Running" is_a_template="false" is_a_snapshot="false" is_control_domain="false" domid="7" resident_on="OpaqueRef:host1" affinity="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__static_max="4294967296" memory__target="4294967296" VCPUs__max="2" VCPUs__at_startup="2" VIFs="('OpaqueRef:vif1')" VBDs="('OpaqueRef:vbd1' 'OpaqueRef:vbd2' 'OpaqueRef:vbd-cd')" guest_metrics="OpaqueRef:gm1"/>
+<row ref="OpaqueRef:dom0" uuid="dom0-uuid" name__label="Control%.domain%.on%.host%.dt40" power_state="Running" is_a_template="false" is_control_domain="true" domid="0" resident_on="OpaqueRef:host1" affinity="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__target="4294967296" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
+</table>
+<table name="VM_guest_metrics">
+<row ref="OpaqueRef:gm1" os_version="(('name' 'Debian%.GNU%.Linux%.6'))"/>
+</table>
+<table name="VIF">
+<row ref="OpaqueRef:vif1" uuid="vif-uuid-1" VM="OpaqueRef:vm1" network="OpaqueRef:net0" device="0" MAC="aa:bb:cc:dd:ee:01" currently_attached="true"/>
+</table>
+<table name="PIF">
+<row ref="OpaqueRef:pif1" uuid="pif-uuid-1" host="OpaqueRef:host1" network="OpaqueRef:net-mgmt" device="eth0" MAC="aa:bb:cc:dd:ee:f1" currently_attached="true" management="true" IP="10.80.229.40" netmask="255.255.255.0" gateway="10.80.229.1" VLAN="-1"/>
+<row ref="OpaqueRef:pif2" uuid="pif-uuid-2" host="OpaqueRef:host1" network="OpaqueRef:net0" device="eth1" MAC="aa:bb:cc:dd:ee:f2" currently_attached="true" management="false" IP="192.168.1.40" netmask="255.255.255.0" VLAN="-1"/>
+</table>
+<table name="network">
+<row ref="OpaqueRef:net-mgmt" uuid="net-uuid-mgmt" name__label="Pool%.management" bridge="xenbr0"/>
+<row ref="OpaqueRef:net0" uuid="net-uuid-0" name__label="VM%.network" bridge="xenbr1"/>
+</table>
+</database>
