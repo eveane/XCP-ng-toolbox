@@ -88,12 +88,7 @@ pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
                 && (want == Section::PIFs || want == Section::VIFs)
                 && !has(Section::PIFs)
                 && !has(Section::VIFs))
-            || (has(Section::Storage)
-                && (want == Section::SRs || want == Section::VDIs || want == Section::PBDs)
-                && !has(want))
-            || ((has(Section::SRs) || has(Section::VDIs) || has(Section::PBDs))
-                && want == Section::Storage)
-            // pifs/vifs alone: like srs -> Storage, render the merged Network
+            // pifs/vifs alone: like storage -> Storage, render the merged Network
             || ((has(Section::PIFs) || has(Section::VIFs))
                 && want == Section::Network)
     };
@@ -111,6 +106,18 @@ pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
     }
     if show(Section::Storage) {
         text::render_storage(r, &mut out);
+    } else {
+        // A specific storage section (srs/vdis/pbds) renders only its own
+        // sub-section; the merged Storage view needs an explicit "storage".
+        if has(Section::SRs) {
+            text::render_srs_body(r, &mut out);
+        }
+        if has(Section::VDIs) {
+            text::render_vdis_body(r, &mut out);
+        }
+        if has(Section::PBDs) {
+            text::render_pbds_body(r, &mut out);
+        }
     }
     if show(Section::VBDs) {
         text::render_vbds(r, &mut out);
@@ -139,6 +146,30 @@ pub fn render_consolidated_anomalies(c: &ConsolidatedReport) -> String {
 mod uptime_utc_tests {
     use super::util::utc_timestamp;
     use super::*;
+
+    #[test]
+    fn vdis_section_does_not_render_pbds() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
+        let text = render_sections(&r, &[Section::VDIs]);
+        assert!(text.contains("--- VDIs"), "{text}");
+        assert!(!text.contains("--- PBDs"), "{text}");
+        // srs alone: only the SR sub-section
+        let text = render_sections(&r, &[Section::SRs]);
+        assert!(text.contains("--- STORAGE REPOSITORIES"), "{text}");
+        assert!(!text.contains("--- VDIs"), "{text}");
+        assert!(!text.contains("--- PBDs"), "{text}");
+        // pbds alone: only the PBD sub-section
+        let text = render_sections(&r, &[Section::PBDs]);
+        assert!(text.contains("--- PBDs"), "{text}");
+        assert!(!text.contains("--- VDIs"), "{text}");
+        // explicit storage still renders the merged view with all bodies
+        let text = render_sections(&r, &[Section::Storage]);
+        assert!(text.contains("--- STORAGE REPOSITORIES"), "{text}");
+        assert!(text.contains("--- VDIs"), "{text}");
+        assert!(text.contains("--- PBDs"), "{text}");
+    }
 
     #[test]
     fn pool_section_shows_ha_status() {
