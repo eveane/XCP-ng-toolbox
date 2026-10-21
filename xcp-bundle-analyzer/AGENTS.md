@@ -38,8 +38,7 @@ Rendering modules must not read files; parsing modules must not format output.
 ```
 cargo check
 cargo clippy -- -D warnings
-cargo test            # report_from_real_dump is #[ignore]d (needs a real dump
-                      # at /tmp/real-xapi-db.xml); run it with -- --ignored
+cargo test            # all tests run; no #[ignore]d tests
 cargo fmt --check     # do not reformat unrelated code
 ```
 
@@ -49,6 +48,6 @@ Conventional style: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 
 ## Known issues
 
-- `report_from_real_dump` is `#[ignore]`d: it needs a real dump at
-  `/tmp/real-xapi-db.xml` (never committed, real pool data).
+- none currently (the former /tmp/real-xapi-db.xml dependency was replaced by
+  the committed synthetic fixture tests/fixtures/xapi-db-real-like.xml)
 - HTML output supports only a single bundle per invocation.

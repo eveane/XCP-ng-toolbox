@@ -60,13 +60,15 @@ mod tests {
     use crate::report::build_report;
     use crate::xapidb::XapiDb;
 
+    /// Synthetic fixture mirroring the real XenServer 6.0 dump the original
+    /// test ran against (host dt40, VM iSCSIa, xs-tools.iso, mgmt PIF
+    /// 10.80.229.40) — see tests/fixtures/xapi-db-real-like.xml.
     fn real_db() -> XapiDb {
-        let xml = std::fs::read_to_string("/tmp/real-xapi-db.xml").unwrap();
-        XapiDb::from_xml(&xml).unwrap()
+        let xml = include_str!("../../tests/fixtures/xapi-db-real-like.xml");
+        XapiDb::from_xml(xml).unwrap()
     }
 
     #[test]
-    #[ignore = "requires a real dump at /tmp/real-xapi-db.xml (never committed: real pool data); run with cargo test -- --ignored"]
     fn report_from_real_dump() {
         let db = real_db();
         let inv = Inventory::default();
