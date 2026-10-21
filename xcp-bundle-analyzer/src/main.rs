@@ -33,6 +33,9 @@ const EXAMPLES: &str = r#"EXAMPLES:
   xcp-bundle-analyzer analyze xapi-db.xml
   xcp-bundle-analyzer vm-display xapi-db.xml uuid=<uuid>
 
+  # All details of one object, like `xe vdi-param-list`
+  xcp-bundle-analyzer object vdi <vdi-uuid> XenServer-host1.tar.bz2
+
   # VDI snapshot trees: all of them, or just the tree containing one VDI
   xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2
   xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2 uuid=<vdi-uuid>
@@ -131,6 +134,17 @@ enum Commands {
         bundle: PathBuf,
         /// Table name (e.g. host, VM, SR, VDI, VIF, PIF, PBD, network)
         table: String,
+    },
+    /// Show all details of one object, like `xe <object>-param-list`
+    Object {
+        /// Object type: vdi, vbd, vif, pbd, pif, sr, network, vm, host
+        object: String,
+        /// Object UUID, given as uuid=<uuid> or just <uuid>
+        #[arg(requires = "bundle")]
+        uuid: String,
+        /// Bundle file (tar/tar.gz/tar.bz2/zip), decompressed bundle directory,
+        /// or bare xapi-db.xml file
+        bundle: PathBuf,
     },
     /// Show a detailed view of one VM, like `xe vm-param-list`
     VmDisplay {
@@ -320,6 +334,7 @@ fn main() -> Result<()> {
         } => cmd_analyze(&bundles, format, output.as_deref(), compact, section),
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
+        Commands::Object { object, uuid, bundle } => cmd_object_display(&object, &uuid, &bundle),
         Commands::VmDisplay { bundle, uuid } => cmd_vm_display(&bundle, &uuid),
         Commands::VdiTree { bundle, uuid } => cmd_vdi_tree(&bundle, uuid.as_deref()),
     }
@@ -336,6 +351,30 @@ fn cmd_vdi_tree(bundle_path: &Path, uuid: Option<&str>) -> Result<()> {
     let uuid = uuid.map(|u| u.strip_prefix("uuid=").unwrap_or(u));
     let rep = analyze_one(bundle_path)?;
     let text = render::render_vdi_tree(&rep, uuid)?;
+    print!("{text}");
+    Ok(())
+}
+
+fn cmd_object_display(object: &str, uuid: &str, bundle_path: &Path) -> Result<()> {
+    let object = object.to_ascii_lowercase();
+    let object = object.strip_suffix("s").unwrap_or(&object);
+    let table = render::object_table(object).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown object '{object}' (valid: {})",
+            render::OBJECTS
+                .iter()
+                .map(|(n, _)| *n)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
+    let uuid = uuid.strip_prefix("uuid=").unwrap_or(uuid);
+    let source = bundle::Source::open(bundle_path)?;
+    let db = source
+        .xapi_db()
+        .transpose()?
+        .context("no xapi-db.xml found in this source")?;
+    let text = render::render_object_display(&db, table, uuid)?;
     print!("{text}");
     Ok(())
 }
