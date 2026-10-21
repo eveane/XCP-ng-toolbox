@@ -178,6 +178,27 @@ mod uptime_utc_tests {
     }
 
     #[test]
+    fn vdis_section_shows_per_sr_stats() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
+        let text = render_sections(&r, &[Section::VDIs]);
+        // per-SR stats mirror the global header format
+        assert!(
+            text.contains(
+                "SR: Local storage (3 VDIs: 3 base, 0 snapshots, 0 orphaned, 11.59 GiB total)"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "SR: NFS repo (3 VDIs: 1 base, 2 snapshots, 2 orphaned, 50.00 GiB total)"
+            ),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn vdis_section_does_not_render_pbds() {
         let xml = include_str!("../../tests/fixtures/xapi-db.xml");
         let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();

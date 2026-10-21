@@ -66,6 +66,8 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     ISO and removable-media SRs (types `iso`/`udev`, e.g. DVD drives) are
     excluded (the header shows how many were skipped); HA statefile disks
     ("Statefile for HA", type ha_statefile) are listed separately on top;
+    each SR group header carries per-SR VDI statistics (base / snapshots /
+    orphaned counts and total size), mirroring the global header;
     each VDI shows its image format (`sm_config:image-format`, e.g.
     vhd/qcow2), its physical utilisation, and is flagged `SNAPSHOT`,
     `HAS-SNAPSHOTS`, `cbt` (changed block tracking enabled), `sharable`,

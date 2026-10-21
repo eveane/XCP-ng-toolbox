@@ -379,13 +379,19 @@ pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
     }
     for (sr, group) in &by_sr {
         let total: u64 = group.iter().map(|d| d.size_bytes).sum();
-        let _ = writeln!(
-            out,
-            "\n  SR: {} ({} VDIs, {} total)",
+        let base = group.iter().filter(|d| !d.is_snapshot).count();
+        let snap = group.iter().filter(|d| d.is_snapshot).count();
+        let orphan = group.iter().filter(|d| d.orphaned).count();
+        let stats = format!(
+            "\n  SR: {} ({} VDIs: {} base, {} snapshots, {} orphaned, {} total)\n",
             sr,
             group.len(),
+            base,
+            snap,
+            orphan,
             gib(total)
         );
+        out.push_str(&stats);
         for d in group {
             let mut flags = String::new();
             if d.is_snapshot {
