@@ -285,6 +285,9 @@ pub struct PoolSummary {
     pub host_count: usize,
     pub vm_running: usize,
     pub vm_total: usize,
+    /// Pool-level HA status from the pool row (pool.ha_enabled).
+    /// None when the field is absent or unparseable in the dump.
+    pub ha_enabled: Option<bool>,
     pub sr_total_size_bytes: u64,
     pub sr_total_used_bytes: u64,
     pub vdi_total_size_bytes: u64,

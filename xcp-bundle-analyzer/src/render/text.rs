@@ -23,6 +23,15 @@ pub(crate) fn render_pool(r: &BundleReport, out: &mut String) {
     );
     let _ = writeln!(
         out,
+        "HA: {}",
+        match r.pool.ha_enabled {
+            Some(true) => "enabled".to_string(),
+            Some(false) => "disabled".to_string(),
+            None => "unknown".to_string(),
+        }
+    );
+    let _ = writeln!(
+        out,
         "Hosts: {}   VMs: {} running / {} total   Networks: {}",
         r.pool.host_count, r.pool.vm_running, r.pool.vm_total, r.networks
     );
@@ -684,6 +693,15 @@ pub(crate) fn render_consolidated_text(c: &ConsolidatedReport) -> String {
         out,
         "Pool: {} (uuid {}), master: {}",
         c.pool.name, c.pool.uuid, c.pool.master
+    );
+    let _ = writeln!(
+        out,
+        "HA: {}",
+        match c.pool.ha_enabled {
+            Some(true) => "enabled".to_string(),
+            Some(false) => "disabled".to_string(),
+            None => "unknown".to_string(),
+        }
     );
     let _ = writeln!(
         out,

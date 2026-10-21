@@ -21,7 +21,7 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   - VMs: name, UUID, power state, template flag, resident host, vCPUs, memory,
     OS name, VIF/VDI counts
   - VIFs and PIFs: device, MAC, network, IP (PIF), VLAN, attach state
-  - pool summary: name, UUID, master, totals
+  - pool summary: name, UUID, master, HA enabled/disabled, totals
 - Handles the xapi value encoding faithfully (verified against
   [`db_xml.ml`](https://github.com/xapi-project/xen-api/blob/master/ocaml/database/db_xml.ml)
   and `xml_spaces.ml`): `OpaqueRef:` references, S-expression sets/maps, and

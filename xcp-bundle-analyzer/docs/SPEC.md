@@ -40,7 +40,8 @@ Conventions that apply to every field:
 
 ## `PoolSummary`
 
-Pool name, UUID, master hostname, and totals (`host_count`, `vm_running`,
+Pool name, UUID, master hostname, HA status (`ha_enabled`: true/false, or
+null when absent from the dump), and totals (`host_count`, `vm_running`,
 `vm_total`, plus per-type counters). Built from the pool table plus host/master
 resolution.
 
