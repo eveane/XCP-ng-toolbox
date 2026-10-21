@@ -101,7 +101,7 @@ mod tests {
         assert!(!r.vbds.is_empty());
         let vbd = r.vbds.iter().find(|b| b.device == "xvda").unwrap();
         assert_eq!(vbd.vbd_type, "Disk");
-        assert!(r.vdis.len() > 0);
+        assert!(!r.vdis.is_empty());
         let vdi = r.vdis.iter().find(|d| d.name == "xs-tools.iso").unwrap();
         assert!(vdi.size_bytes > 0);
         // PIFs

@@ -54,9 +54,9 @@ pub fn render_object_display(db: &XapiDb, table: &str, uuid: &str) -> anyhow::Re
         .find(|(_, t)| *t == table)
         .map(|(n, _)| *n)
         .unwrap_or(table);
-    let found = db.rows(table).find(|(_, row)| {
-        row.get("uuid").map(|u| u == uuid).unwrap_or(false)
-    });
+    let found = db
+        .rows(table)
+        .find(|(_, row)| row.get("uuid").map(|u| u == uuid).unwrap_or(false));
     let (row_ref, row) = match found {
         Some(v) => v,
         None => anyhow::bail!("no {object} with uuid {uuid} in this bundle"),
@@ -64,7 +64,11 @@ pub fn render_object_display(db: &XapiDb, table: &str, uuid: &str) -> anyhow::Re
     let mut out = String::new();
     let _ = writeln!(out, "{} {uuid}", table);
     let _ = writeln!(out, "{:-<60}", "");
-    let _ = writeln!(out, "  uuid (RO): {}", row.get("uuid").cloned().unwrap_or_default());
+    let _ = writeln!(
+        out,
+        "  uuid (RO): {}",
+        row.get("uuid").cloned().unwrap_or_default()
+    );
     let _ = writeln!(out, "  opaque-ref (RO): OpaqueRef:{row_ref}");
     let _ = writeln!(out);
     for (key, value) in row {

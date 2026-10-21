@@ -334,7 +334,11 @@ fn main() -> Result<()> {
         } => cmd_analyze(&bundles, format, output.as_deref(), compact, section),
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
-        Commands::Object { object, uuid, bundle } => cmd_object_display(&object, &uuid, &bundle),
+        Commands::Object {
+            object,
+            uuid,
+            bundle,
+        } => cmd_object_display(&object, &uuid, &bundle),
         Commands::VmDisplay { bundle, uuid } => cmd_vm_display(&bundle, &uuid),
         Commands::VdiTree { bundle, uuid } => cmd_vdi_tree(&bundle, uuid.as_deref()),
     }
