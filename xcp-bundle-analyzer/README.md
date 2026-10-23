@@ -127,7 +127,10 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   5. inconsistent multipath path counts between hosts
   6. dom0 memory not matching between pool hosts
   7. VDI snapshot chain with a missing parent (`snapshot_of` set, parent gone)
-  7b. VDI with `other-config:leaf-coalesce=false` — only meant to be set
+  7b. orphaned base disk with `sm-config:vhd-parent` whose parent has no
+      reference back to it (no snapshot/VBD links): a leftover VHD base-copy
+      chain, both disks can likely be deleted
+  7c. VDI with `other-config:leaf-coalesce=false` — only meant to be set
       while the VM/VDI is being migrated; a leftover value disables leaf
       coalescing
   8. `other-config:auto-scan-interval` master/slave semantics: the setting is

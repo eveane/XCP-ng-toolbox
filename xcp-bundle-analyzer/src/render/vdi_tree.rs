@@ -178,15 +178,16 @@ mod vdi_counts_tests {
         let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
         let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
         let text = render_sections(&r, &[Section::Storage]);
-        // STORAGE header counts all 8 VDIs: 6 base, 2 snapshots, 3 orphaned
+        // STORAGE header counts all 10 VDIs: 8 base, 2 snapshots, 5 orphaned
+        // (includes the 2 orphaned VHD base-copy-chain disks)
         assert!(
-            text.contains("VDIs: 8 (6 base, 2 snapshots, 3 orphaned)"),
+            text.contains("VDIs: 10 (8 base, 2 snapshots, 5 orphaned)"),
             "{text}"
         );
-        // VDI section excludes the VDI on the udev optical SR: 7 listed
+        // VDI section excludes the VDI on the udev optical SR: 9 listed
         let vdis = render_sections(&r, &[Section::VDIs]);
         assert!(
-            vdis.contains("--- VDIs (7) — 5 base, 2 snapshots, 3 orphaned, 1 on ISO/removable SRs not shown ---"),
+            vdis.contains("--- VDIs (9) — 7 base, 2 snapshots, 5 orphaned, 1 on ISO/removable SRs not shown ---"),
             "{vdis}"
         );
         assert!(vdis.contains("ORPHANED (not attached to any VM)"), "{vdis}");

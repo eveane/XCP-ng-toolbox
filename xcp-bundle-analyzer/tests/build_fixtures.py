@@ -42,6 +42,8 @@ XAPI_DB = """<?xml version="1.0"?>
 <row ref="OpaqueRef:vdi-orphan" uuid="vdi-uuid-orphan" name__label="orphaned snapshot" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi-gone"/>
 </table>
 <table name="VBD">
+<row ref="OpaqueRef:vdi-bc-parent" uuid="vdi-uuid-bc-parent" name__label="base copy" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-iscsi" VBDs="()" sm_config="(('image-format' 'vhd'))" physical_utilisation="1082130432"/>
+<row ref="OpaqueRef:vdi-bc-child" uuid="vdi-uuid-bc-child" name__label="base copy" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-iscsi" VBDs="()" sm_config="(('image-format' 'vhd')%.('vhd-parent' 'vdi-uuid-bc-parent'))" physical_utilisation="33329152"/>
 <row ref="OpaqueRef:vbd1" uuid="vbd-uuid-1" VDI="OpaqueRef:vdi1" VM="OpaqueRef:vm1" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="true"/>
 <row ref="OpaqueRef:vbd-cd" uuid="vbd-uuid-cd" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvdd" type="CD" mode="RO" bootable="false" currently_attached="true"/>
 <row ref="OpaqueRef:vbd2" uuid="vbd-uuid-2" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="false"/>
