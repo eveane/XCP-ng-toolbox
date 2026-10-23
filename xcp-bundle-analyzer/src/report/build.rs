@@ -413,6 +413,9 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let utilisation = as_u64(get(vdi, "physical_utilisation")).unwrap_or(0);
         let cbt_enabled =
             get(vdi, "cbt-enabled") == "true" || map_get(&sm_config, "cbt-enabled") == Some("true");
+        let vhd_parent_uuid = map_get(&sm_config, "vhd-parent")
+            .unwrap_or_default()
+            .to_string();
         let sharable = as_bool(get(vdi, "sharable")).unwrap_or(false);
         let sr_category = db
             .table("SR")
@@ -451,6 +454,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             broken_parent,
             is_ha_statefile,
             orphaned,
+            vhd_parent_uuid,
             leaf_coalesce_disabled,
         });
     }

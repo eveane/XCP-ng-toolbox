@@ -172,7 +172,32 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 7b) other-config:leaf-coalesce=false is only meant to be set while
+    // 7b) Orphaned base disk with an sm_config:vhd-parent whose parent has
+    //     no reference back to it: a leftover VHD base-copy chain (usually
+    //     after a failed/aborted coalesce or migration), where neither disk
+    //     is attached to a VM and the xapi-level snapshot links are gone.
+    for d in &r.vdis {
+        if d.vhd_parent_uuid.is_empty() || !d.orphaned || d.is_snapshot {
+            continue;
+        }
+        let parent = r.vdis.iter().find(|p| p.uuid == d.vhd_parent_uuid);
+        let orphan_chain = match parent {
+            Some(p) => p.orphaned && !p.has_snapshots && p.snapshot_of_uuid.is_empty(),
+            None => false,
+        };
+        if orphan_chain {
+            out.push(warn(
+                "orphaned-vhd-parent",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}] is an orphaned base disk with sm_config:vhd-parent={}, but its parent does not reference it back (no snapshot/VBD links): leftover VHD base-copy chain, both disks can likely be deleted",
+                    d.name, d.uuid, d.vhd_parent_uuid
+                ),
+            ));
+        }
+    }
+
+    // 7c) other-config:leaf-coalesce=false is only meant to be set while
     //     the VM/VDI is being migrated; a leftover value disables leaf
     //     coalescing for good and should be reviewed.
     for d in &r.vdis {

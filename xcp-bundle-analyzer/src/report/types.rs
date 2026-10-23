@@ -137,6 +137,9 @@ pub struct VdiReport {
     /// True when this VDI is not attached to any VM (no VBD, or VBDs
     /// pointing to VM rows that no longer exist in the dump).
     pub orphaned: bool,
+    /// UUID from sm_config:vhd-parent when set (VHD base-copy chain).
+    /// Empty when not set.
+    pub vhd_parent_uuid: String,
     /// True when other-config:leaf-coalesce is explicitly set to false.
     /// This is only meant to be set while the VM/VDI is being migrated;
     /// a leftover value disables leaf coalescing on the VDI.

@@ -420,3 +420,37 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod orphaned_vhd_parent_tests {
+    use super::*;
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn orphaned_vhd_base_copy_chain_flagged() {
+        let r = report();
+        // the child carries vhd-parent and is orphaned; the parent is orphaned
+        // too and has no reference back to the child
+        let child = r
+            .vdis
+            .iter()
+            .find(|d| d.uuid == "vdi-uuid-bc-child")
+            .unwrap();
+        assert_eq!(child.vhd_parent_uuid, "vdi-uuid-bc-parent");
+        assert!(child.orphaned);
+        assert!(r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "orphaned-vhd-parent" && a.subject == "base copy"));
+        // a healthy VHD without vhd-parent is not flagged
+        assert!(!r.anomalies.iter().any(|a| a.detail.contains("vdi-uuid-1")));
+    }
+}
