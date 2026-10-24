@@ -44,10 +44,12 @@ cargo fmt --check     # do not reformat unrelated code
 
 ## Versioning
 
-Semver-style `x.y.z`:
-- any new patch/small change → bump `z` in `Cargo.toml`
-- major change (new section, new feature, new subcommand) → bump `y`
-- breaking change (CLI or JSON contract) → bump `x`
+Semver-style `x.y.z` (`major.minor.patch`):
+- every patch/commit → bump `z` in `Cargo.toml`
+- feature or addition → ASK THE USER for confirmation that a minor bump
+  (`y`) is needed before bumping
+- major (`x`) stays STATIC at 0 until the first release-ready version
+  (never bump it without an explicit user request)
 
 Add an entry to `RELEASE_NOTES.md` for every version bump (new section at
 the top for minor/major releases, extend the current entry for patches).
