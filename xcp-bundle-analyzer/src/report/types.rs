@@ -231,6 +231,10 @@ pub struct VmReport {
     pub vcpus_max: u64,
     pub vcpus_at_startup: u64,
     pub os_name: String,
+    /// Template this VM was cloned from, resolved via the template's
+    /// children set or other-config:base_template_name. Empty when unknown.
+    pub template_name: String,
+    pub template_uuid: String,
     pub vif_count: usize,
     pub vbd_count: usize,
 }

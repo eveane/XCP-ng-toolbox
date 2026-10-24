@@ -279,7 +279,7 @@ mod vm_uuid_grouping_tests {
         assert_eq!(vbd.vm_uuid, "vm-uuid-1");
         let text = render_sections(&r, &[Section::VBDs]);
         assert!(text.contains("vm: vm1 - vm-uuid-1"), "{text}");
-        assert!(text.contains("vm: vm2 - vm-uuid-2"), "{text}");
+        assert!(text.contains("vm: win2 - vm-uuid-2"), "{text}");
         // VIF reports carry the VM uuid too
         let vif = r.vifs.iter().find(|v| v.uuid == "vif-uuid-1").unwrap();
         assert_eq!(vif.vm_uuid, "vm-uuid-1");

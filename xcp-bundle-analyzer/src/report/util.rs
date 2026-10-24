@@ -111,6 +111,44 @@ pub(crate) fn map_get<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'
         .map(|(_, v)| v.as_str())
 }
 
+/// Coarse OS family from an OS/template/vm-name string: "windows",
+/// "linux" or None when no family keyword is present. Used by the
+/// template/OS mismatch check: matching families is enough evidence,
+/// unknown families are not compared.
+pub(crate) fn os_family(s: &str) -> Option<&'static str> {
+    let s = s.to_lowercase();
+    if s.contains("windows")
+        || s.contains("win2")
+        || s.contains("win7")
+        || s.contains("win8")
+        || s.contains("win10")
+        || s.contains("win11")
+        || s.contains("winserver")
+        || s.contains("server201")
+        || s.contains("server 201")
+        || s.contains("server 202")
+    {
+        return Some("windows");
+    }
+    if s.contains("linux")
+        || s.contains("debian")
+        || s.contains("ubuntu")
+        || s.contains("centos")
+        || s.contains("rocky")
+        || s.contains("alma")
+        || s.contains("fedora")
+        || s.contains("red hat")
+        || s.contains("redhat")
+        || s.contains("rhel")
+        || s.contains("suse")
+        || s.contains("opensuse")
+        || s.contains("oracle linux")
+    {
+        return Some("linux");
+    }
+    None
+}
+
 pub(crate) fn warn(category: &str, subject: String, detail: String) -> Anomaly {
     Anomaly {
         category: category.to_string(),

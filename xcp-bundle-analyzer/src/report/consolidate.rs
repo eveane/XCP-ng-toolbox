@@ -154,8 +154,8 @@ mod tests {
         assert_eq!(h.cpu_count, 8);
         assert_eq!(h.dom0_memory_config_mib, Some(2048));
         assert_eq!(r.srs.len(), 4);
-        assert_eq!(r.vms.len(), 6);
-        assert_eq!(r.pool.vm_running, 1);
+        assert_eq!(r.vms.len(), 8);
+        assert_eq!(r.pool.vm_running, 2);
         assert_eq!(r.pool.ha_enabled, Some(true));
         assert!(!r.vbds.is_empty());
         // bundle origin detection via INSTALLATION_UUID
@@ -489,5 +489,66 @@ mod version_fields_tests {
             .unwrap();
         assert!(vm.detail.contains("xapi 22.45.0"), "{}", vm.detail);
         assert!(vm.detail.contains("sm 4.17.0"), "{}", vm.detail);
+    }
+}
+
+#[cfg(test)]
+mod template_os_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn vms_carry_their_template() {
+        let r = report();
+        let vm1 = r.vms.iter().find(|v| v.uuid == "vm-uuid-1").unwrap();
+        assert_eq!(vm1.template_name, "Debian 12 template");
+        assert_eq!(vm1.template_uuid, "vm-uuid-tpl");
+    }
+
+    #[test]
+    fn template_os_mismatch_high_and_low_confidence() {
+        let r = report();
+        // vm3: running Windows on the Debian template -> warning
+        assert!(
+            r.anomalies
+                .iter()
+                .any(|a| a.category == "template-os-mismatch"
+                    && a.severity == "warning"
+                    && a.subject == "vm3"
+                    && a.detail.contains("Windows Server 2019")
+                    && a.detail.contains("Debian 12 template")),
+            "anomalies: {:?}",
+            r.anomalies
+        );
+        // win2: halted, no guest metrics, name suggests Windows on the
+        // Debian template -> info (guessed from the VM name)
+        assert!(
+            r.anomalies
+                .iter()
+                .any(|a| a.category == "template-os-mismatch"
+                    && a.severity == "info"
+                    && a.subject == "win2"
+                    && a.detail.contains("lower confidence")),
+            "anomalies: {:?}",
+            r.anomalies
+        );
+        // vm1: running Debian on the Debian template -> no finding
+        assert!(!r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "template-os-mismatch" && a.subject == "vm1"));
+        // dom0 / templates / snapshots are never compared
+        assert!(!r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "template-os-mismatch"
+                && (a.subject.contains("template") || a.subject.contains("Control"))));
     }
 }

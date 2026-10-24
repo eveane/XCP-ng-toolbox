@@ -104,7 +104,8 @@ fill('srs', ['Name','UUID','Type','Shared','Size','Used','PBDs','VDIs','auto-sca
 const isRealVm = v => !v.is_template && !v.is_snapshot && !v.is_vmss_snapshot && !v.is_control_domain;
 const vmRow = v => `<tr><td>${esc(v.name)}</td><td class="muted">${esc(v.uuid)}</td><td>${badge(v.power_state, false)}</td>
     <td>${v.vcpus_max}</td><td>${fmtMib(v.memory_dynamic_max_bytes)}</td><td>${esc(v.resident_host)}</td>
-    <td>${v.vif_count}</td><td>${v.vbd_count}</td><td>${esc(v.os_name)}</td></tr>`;
+    <td>${v.vif_count}</td><td>${v.vbd_count}</td><td>${esc(v.os_name)}</td>
+    <td>${esc(v.template_name)}</td></tr>`;
 const groups = {};
 r.vms.filter(isRealVm).forEach(v => { (groups[v.resident_host||'(not running)'] ||= []).push(v); });
 let vmRows = [];
@@ -112,15 +113,15 @@ Object.keys(groups).sort().forEach(host => {
   const g = groups[host].sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   const running = g.filter(v=>v.power_state==='Running');
   const vcpus = running.reduce((s,v)=>s+Math.max(v.vcpus_at_startup,v.vcpus_max),0);
-  vmRows.push(`<tr><td colspan="9" style="background:#e8f0fa;font-weight:600">${esc(host)} — ${running.length} running, ${vcpus} vCPUs</td></tr>`);
+  vmRows.push(`<tr><td colspan="10" style="background:#e8f0fa;font-weight:600">${esc(host)} — ${running.length} running, ${vcpus} vCPUs</td></tr>`);
   g.forEach(v => vmRows.push(vmRow(v)));
 });
 r.vms.filter(v=>!isRealVm(v))
   .sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
   .forEach(v => vmRows.push(`<tr><td>${esc(v.name)}</td><td class="muted">${esc(v.uuid)}</td>
     <td><span class="badge tpl">${v.is_template?'template'+(v.is_default_template?' (default)':''):'snapshot'}</span></td>
-    <td>${v.vcpus_max}</td><td>${fmtMib(v.memory_static_max_bytes)}</td><td></td><td></td><td>${v.vbd_count}</td><td></td></tr>`));
-fill('vms', ['Name','UUID','State','vCPUs','Memory','Host','VIFs','VBDs','OS'], []);
+    <td>${v.vcpus_max}</td><td>${fmtMib(v.memory_static_max_bytes)}</td><td></td><td></td><td>${v.vbd_count}</td><td></td><td></td></tr>`));
+fill('vms', ['Name','UUID','State','vCPUs','Memory','Host','VIFs','VBDs','OS','Template'], []);
 document.getElementById('vms').querySelector('tbody').innerHTML = vmRows.join('');
 fill('vdis', ['Name','UUID','Type','Size','SR','VM'],
   r.vdis.map(d=>[`<td>${esc(d.name)}</td>`,`<td class="muted">${esc(d.uuid)}</td>`,`<td>${esc(d.vdi_type)}</td>`,

@@ -4,6 +4,17 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.2 (patch)
+
+- feat: VM section shows the template each VM was cloned from (resolved via
+  the template's children set, with other-config:base_template_name as
+  fallback) — text, JSON and HTML outputs.
+- feat: template/OS mismatch anomaly — a VM running an OS from a different
+  family than its template (e.g. Windows on a Linux template) is flagged
+  as a warning when guest metrics report the OS, and as a lower-confidence
+  info when the OS is not detected or the VM is off and the guess comes
+  from the VM name.
+
 ## v0.3.1 (patch)
 
 - docs: versioning policy updated across the repository — every patch/commit
