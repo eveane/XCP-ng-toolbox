@@ -70,21 +70,8 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
             "  product: {}   xen: {}   kernel: {}",
             h.product_version, h.xen_version, h.kernel_version
         );
-        if !h.xapi_version.is_empty() || !h.sm_version.is_empty() {
-            let _ = writeln!(
-                out,
-                "  xapi: {}   sm: {}",
-                if h.xapi_version.is_empty() {
-                    "-"
-                } else {
-                    &h.xapi_version
-                },
-                if h.sm_version.is_empty() {
-                    "-"
-                } else {
-                    &h.sm_version
-                }
-            );
+        if !h.xapi_version.is_empty() {
+            let _ = writeln!(out, "  xapi: {}", h.xapi_version);
         }
         if let Some(est) = &h.release_estimate {
             let product = if est.is_xcpng { "XCP-ng" } else { "XenServer" };

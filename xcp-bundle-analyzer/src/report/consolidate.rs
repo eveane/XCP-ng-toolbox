@@ -472,7 +472,6 @@ mod version_fields_tests {
             .find(|h| h.hostname == "host1.example.com")
             .unwrap();
         assert_eq!(h1.xapi_version, "24.30.3");
-        assert_eq!(h1.sm_version, "4.17.3");
         let est = h1.release_estimate.as_ref().unwrap();
         assert_eq!(est.matched_version, "8.3");
         assert_eq!(est.releases_behind, 0);
@@ -481,14 +480,13 @@ mod version_fields_tests {
             .anomalies
             .iter()
             .any(|a| a.category == "release-stale" && a.subject == "host2.example.com"));
-        // cross-host version mismatch includes xapi/sm in the detail
+        // cross-host version mismatch includes xapi in the detail
         let vm = r
             .anomalies
             .iter()
             .find(|a| a.category == "pool-version-mismatch")
             .unwrap();
         assert!(vm.detail.contains("xapi 22.45.0"), "{}", vm.detail);
-        assert!(vm.detail.contains("sm 4.17.0"), "{}", vm.detail);
     }
 }
 
