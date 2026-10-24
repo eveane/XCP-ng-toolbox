@@ -322,7 +322,7 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
     }
 
     // 9) Inconsistent versions in the same pool (product, xen, kernel,
-    //    xapi, sm: any of them differing between hosts is flagged)
+    //    xapi: any of them differing between hosts is flagged)
     if r.hosts.len() > 1 {
         let versions: Vec<(&crate::report::HostReport, String)> = r
             .hosts
@@ -331,7 +331,7 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                 (
                     h,
                     format!(
-                        "product {} xen {} kernel {} xapi {} sm {}",
+                        "product {} xen {} kernel {} xapi {}",
                         h.product_version,
                         h.xen_version,
                         h.kernel_version,
@@ -339,11 +339,6 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                             "-"
                         } else {
                             &h.xapi_version
-                        },
-                        if h.sm_version.is_empty() {
-                            "-"
-                        } else {
-                            &h.sm_version
                         },
                     ),
                 )
@@ -358,8 +353,7 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         let mismatch = differs(|h| h.product_version.clone())
             || differs(|h| h.xen_version.clone())
             || differs(|h| h.kernel_version.clone())
-            || differs(|h| h.xapi_version.clone())
-            || differs(|h| h.sm_version.clone());
+            || differs(|h| h.xapi_version.clone());
         if mismatch {
             let detail = versions
                 .iter()

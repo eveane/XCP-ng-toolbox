@@ -200,7 +200,6 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .unwrap_or_default()
                 .to_string(),
             xapi_version: map_get(&software, "xapi").unwrap_or_default().to_string(),
-            sm_version: map_get(&software, "sm").unwrap_or_default().to_string(),
             release_estimate: estimate_release(
                 map_get(&software, "product_version").unwrap_or_default(),
             ),

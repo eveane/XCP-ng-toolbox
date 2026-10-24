@@ -14,7 +14,7 @@ self-contained HTML dashboard (XO-like single page, no external assets).
 - Parses `xapi-db.xml` (the full xapi database dump, with secrets already
   filtered by xen-bugtool) into typed tables and rows:
   - hosts: hostname, UUID, opaque-ref, IP, product (XCP-ng/XenServer) version,
-    Xen version, kernel, xapi and SM (storage manager) versions when present,
+    Xen version, kernel, xapi version when present,
     a release estimate (release date of the installed version, how many
     releases behind the newest known), CPU model/count/sockets/cores,
     memory total/free, dom0 memory & CPU config (from `xensource-inventory`),
