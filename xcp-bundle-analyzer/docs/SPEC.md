@@ -56,7 +56,10 @@ resolution.
   when the dump reported 0/missing free memory), `dom0_memory_config_mib` and
   `dom0_cpus_config` (from inventory CONTROL_DOMAIN_*), `dom0_memory_live_bytes`
   (control-domain VM row).
-- Versions: `product_version`, `xen_version`, `kernel_version`.
+- Versions: `product_version`, `xen_version`, `kernel_version`,
+  `xapi_version`, `sm_version` (from software_version), and
+  `release_estimate` (matched release, release date, releases behind the
+  newest known release, XCP-ng vs XenServer).
 - Load: `vcpus_in_use` (sum of running-VM vCPUs), `vms_running`,
   `vms_resident`, `uptime_seconds`, `boot_time`.
 - Storage: `storage_adapters` (`StorageAdapter`: kind fc/iscsi/nfs, host, id,

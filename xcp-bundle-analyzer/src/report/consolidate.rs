@@ -454,3 +454,40 @@ mod orphaned_vhd_parent_tests {
         assert!(!r.anomalies.iter().any(|a| a.detail.contains("vdi-uuid-1")));
     }
 }
+
+#[cfg(test)]
+mod version_fields_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    #[test]
+    fn hosts_carry_xapi_sm_and_release_estimate() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        let h1 = r
+            .hosts
+            .iter()
+            .find(|h| h.hostname == "host1.example.com")
+            .unwrap();
+        assert_eq!(h1.xapi_version, "24.30.3");
+        assert_eq!(h1.sm_version, "4.17.3");
+        let est = h1.release_estimate.as_ref().unwrap();
+        assert_eq!(est.matched_version, "8.3");
+        assert_eq!(est.releases_behind, 0);
+        // host2 is one release behind -> flagged in anomalies
+        assert!(r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "release-stale" && a.subject == "host2.example.com"));
+        // cross-host version mismatch includes xapi/sm in the detail
+        let vm = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "pool-version-mismatch")
+            .unwrap();
+        assert!(vm.detail.contains("xapi 22.45.0"), "{}", vm.detail);
+        assert!(vm.detail.contains("sm 4.17.0"), "{}", vm.detail);
+    }
+}
