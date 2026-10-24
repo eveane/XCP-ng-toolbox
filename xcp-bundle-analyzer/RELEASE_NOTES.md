@@ -1,0 +1,40 @@
+# Release notes — xcp-bundle-analyzer
+
+Versioning scheme: `x.y.z` — every new patch bumps `z`; every major change
+(new section, new feature, new subcommand) bumps `y`; breaking changes
+(CLI or JSON contract incompatibilities) bump `x`.
+
+## v0.3.0 (minor)
+
+- feat: `completions` subcommand — shell auto-completion scripts for bash,
+  zsh, fish, elvish, and PowerShell.
+- feat: restructured long help (`xcp-bundle-analyzer --help` and
+  `analyze --help`) with a clearly readable list of the sections available
+  for the analyze command and a dedicated OUTPUT section documenting the
+  html/json/text and file (`-o`) output options.
+- docs: README — Windows installation instructions, shell completion setup,
+  versioning policy.
+- chore: version bumped to 0.3.0.
+
+## v0.2.0 (minor)
+
+- feat: `object` subcommand showing all details of one object, like
+  `xe <object>-param-list` (vdi, vbd, vif, pbd, pif, sr, network, vm, host).
+- feat: per-SR VDI statistics in the VDIs section (base / snapshots /
+  orphaned counts and total size per SR group).
+- feat: improve PBD section output — grouped per SR, disk-format
+  preference order, multipath path counts, pool inconsistency highlights.
+- feat: flag orphaned VHD base-copy chains in anomalies.
+- fix: `--section vdis`/`srs`/`pbds` renders only its own sub-section.
+- feat: report pool-level HA status (ha_enabled) in the pool section.
+- test: replaced the /tmp/real-xapi-db.xml dependency with the committed
+  synthetic fixture `tests/fixtures/xapi-db-real-like.xml`.
+- refactor: split `report.rs` and `render.rs` into module directories.
+
+## v0.1.x (patch)
+
+- Initial releases: analyze/list/xapi-db/vm-display/vdi-tree subcommands,
+  text/JSON/HTML output, `--section` filtering, consolidated pool view
+  from several bundles, anomaly heuristics, VDI snapshot trees, VBD/VIF
+  sections grouped per VM, storage categories and multipath details,
+  per-SR VDI statistics groundwork, README and CI.
