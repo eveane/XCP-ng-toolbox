@@ -6,7 +6,8 @@ mod report;
 mod xapidb;
 
 use anyhow::{bail, Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::{generate, Shell};
 use report::BundleReport;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,27 @@ enum Format {
     Text,
     Json,
     Html,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+    Elvish,
+    Powershell,
+}
+
+impl CompletionShell {
+    fn clap_shell(self) -> Shell {
+        match self {
+            CompletionShell::Bash => Shell::Bash,
+            CompletionShell::Zsh => Shell::Zsh,
+            CompletionShell::Fish => Shell::Fish,
+            CompletionShell::Elvish => Shell::Elvish,
+            CompletionShell::Powershell => Shell::PowerShell,
+        }
+    }
 }
 
 const EXAMPLES: &str = r#"EXAMPLES:
@@ -40,27 +62,57 @@ const EXAMPLES: &str = r#"EXAMPLES:
   xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2
   xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2 uuid=<vdi-uuid>
 
-  # One or several sections (comma-separated list): pool, hosts, vms,
-  # network (pifs+vifs), storage (srs+vdis+pbds), or the finer-grained
-  # srs, vdis, vbds, vifs, pbds, pifs
-  xcp-bundle-analyzer analyze --section vms XenServer-host1.tar.bz2
-  xcp-bundle-analyzer analyze --section pool,storage XenServer-host1.tar.bz2
+SECTIONS AVAILABLE FOR THE ANALYZE COMMAND (--section, single or
+comma-separated list; the default is the full report):
 
-  # Settings that probably need attention (opt-in, never shown by default):
-  # management MTU != 1500, VDIs on dom0, shared SR missing a host, SR free
-  # space < 2x largest VDI, multipath inconsistencies, dom0 memory mismatch,
-  # broken snapshot parents, missing auto-scan-interval, version mismatches
-  xcp-bundle-analyzer analyze --section anomalies XenServer-host1.tar.bz2
-  xcp-bundle-analyzer analyze --section anomalies host1.tar.bz2 host2.tar.bz2
+  pool       pool name, UUID, master, HA status, totals
+  hosts      per-host hardware, versions, memory, vCPU usage, uptime
+  vms        VMs grouped per resident host + templates + snapshots
+  network    PIFs (per host, bonds, link speed) + VIFs (merged section)
+  storage    host storage adapters + SRs + VDIs + PBDs (merged section)
+  srs        SRs with category, device-config, multipath details
+  vdis       VDIs grouped per SR with per-SR statistics
+  vbds       VBDs grouped per VM
+  vifs       VIFs grouped per VM
+  pifs       PIFs grouped per host
+  pbd        (same as pbds below, singular accepted)
+  pbds       PBDs grouped per SR, pool inconsistencies highlighted
+  anomalies  settings needing attention, opt-in only, never shown by default
+             (management MTU != 1500, VDIs on dom0, shared SR missing a host,
+             SR free space < 2x largest VDI, multipath inconsistencies,
+             dom0 memory mismatch, broken snapshot parents, missing
+             auto-scan-interval, version mismatches, ...)
 
-  # JSON report to a file (compact with -c)
-  xcp-bundle-analyzer analyze -f json -o report.json XenServer-host1.tar.bz2
+  Examples:
+    xcp-bundle-analyzer analyze --section vms XenServer-host1.tar.bz2
+    xcp-bundle-analyzer analyze --section pool,storage XenServer-host1.tar.bz2
+    xcp-bundle-analyzer analyze --section anomalies host1.tar.bz2 host2.tar.bz2
 
-  # Self-contained HTML dashboard (open in a browser, works offline)
-  xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1.tar.bz2
+OUTPUT OPTIONS (-f/--format plus optional -o/--output):
 
-  # Whole pool: pass one bundle per host, get a consolidated view
-  xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2
+  -f text (default)  plain-text report on stdout
+  -f json             JSON report (compact with -c)
+  -f html             self-contained HTML dashboard (open in a browser,
+                      works offline; single bundle only)
+
+  Without -o the report goes to stdout; with -o <file> it is written to
+  the file (the parent directory is created if needed) and the path is
+  echoed on stderr.
+
+  Examples:
+    # text report on stdout
+    xcp-bundle-analyzer analyze XenServer-host1.tar.bz2
+
+    # JSON report to a file (compact with -c)
+    xcp-bundle-analyzer analyze -f json -o report.json XenServer-host1.tar.bz2
+
+    # Self-contained HTML dashboard
+    xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1.tar.bz2
+
+    # Whole pool: pass one bundle per host, get a consolidated view
+    xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2
+
+OTHER COMMANDS:
 
   # List the entries inside a bundle
   xcp-bundle-analyzer list XenServer-host1.tar.bz2
@@ -71,6 +123,10 @@ const EXAMPLES: &str = r#"EXAMPLES:
 
   # Dump a raw xapi table from xapi-db.xml (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
   xcp-bundle-analyzer xapi-db XenServer-host1.tar.bz2 host
+
+  # Shell completion scripts
+  xcp-bundle-analyzer completions bash > xcp-bundle-analyzer.bash
+  xcp-bundle-analyzer completions zsh > _xcp-bundle-analyzer
 
   # Show version/build number
   xcp-bundle-analyzer -V
@@ -107,12 +163,17 @@ enum Commands {
         /// or bare xapi-db.xml files. Defaults to the current directory.
         #[arg(default_value = ".")]
         bundles: Vec<PathBuf>,
-        /// Only display the given sections, single or comma-separated list:
-        /// pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage,
-        /// or anomalies (settings needing attention, opt-in only) (text output)
+        /// SECTIONS AVAILABLE (single or comma-separated list, text
+        /// output only; default: full report):
+        ///   pool, hosts, vms, network, storage,
+        ///   srs, vdis, vbds, vifs, pifs, pbds,
+        ///   anomalies (settings needing attention, opt-in only)
+        /// see `xcp-bundle-analyzer --help` for what each section contains
         #[arg(short, long, value_delimiter = ',')]
         section: Option<Vec<String>>,
-        /// Output format
+        /// OUTPUT format: text (default), json, or html
+        /// (html = self-contained dashboard, single bundle only);
+        /// use -o/--output <file> to write to a file instead of stdout
         #[arg(short, long, value_enum, default_value = "text")]
         format: Format,
         /// Write output to a file instead of stdout
@@ -159,6 +220,11 @@ enum Commands {
         /// for every root VDI in the dump.
         #[arg(requires = "bundle")]
         uuid: Option<String>,
+    },
+    /// Print a shell completion script for the given shell
+    Completions {
+        /// Shell to generate the completion script for
+        shell: CompletionShell,
     },
 }
 
@@ -341,6 +407,15 @@ fn main() -> Result<()> {
         } => cmd_object_display(&object, &uuid, &bundle),
         Commands::VmDisplay { bundle, uuid } => cmd_vm_display(&bundle, &uuid),
         Commands::VdiTree { bundle, uuid } => cmd_vdi_tree(&bundle, uuid.as_deref()),
+        Commands::Completions { shell } => {
+            generate(
+                shell.clap_shell(),
+                &mut Cli::command(),
+                "xcp-bundle-analyzer",
+                &mut std::io::stdout(),
+            );
+            Ok(())
+        }
     }
 }
 

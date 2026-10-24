@@ -42,6 +42,16 @@ cargo test            # all tests run; no #[ignore]d tests
 cargo fmt --check     # do not reformat unrelated code
 ```
 
+## Versioning
+
+Semver-style `x.y.z`:
+- any new patch/small change → bump `z` in `Cargo.toml`
+- major change (new section, new feature, new subcommand) → bump `y`
+- breaking change (CLI or JSON contract) → bump `x`
+
+Add an entry to `RELEASE_NOTES.md` for every version bump (new section at
+the top for minor/major releases, extend the current entry for patches).
+
 ## Commits
 
 Conventional style: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.

@@ -1,6 +1,6 @@
 [package]
 name = "xcp-bundle-analyzer"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Analyze XCP-ng / XenServer status-report (xen-bugtool) bundles"
 license = "LGPL-2.1"
@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 quick-xml = "0.42"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

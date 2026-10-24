@@ -110,6 +110,9 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     (`paths=[8, 8]`) on multipathed SRs. Pool inconsistencies are
     highlighted on top: a shared SR missing a PBD on one of the pool
     hosts, or a shared SR whose PBD is unplugged on a host.
+- Shell completion: `xcp-bundle-analyzer completions <shell>` prints an
+  auto-completion script for bash, zsh, fish, elvish, and PowerShell
+  (see the "Shell completion" section).
 - Consolidated view: pass several bundles (e.g. one per host of a pool) and
   hosts/SRs/VMs are merged by UUID into a single pool report. This is the
   extension point for future features (upload bundles from a whole pool,
@@ -183,6 +186,49 @@ Optional — make it available system-wide:
 ```bash
 sudo cp target/release/xcp-bundle-analyzer /usr/local/bin/
 ```
+
+#### Install on Windows
+
+1. Install Rust with [rustup](https://rustup.rs) — download and run
+   `rustup-init.exe`, or, with [winget](https://winget.microsoft.com):
+
+   ```powershell
+   winget install Rustlang.Rustup
+   ```
+
+2. Get the code and build (a C compiler / Visual Studio Build Tools is not
+   required: all dependencies are pure Rust, so `cargo build --release`
+   works with the GNU toolchain shipped by rustup):
+
+   ```powershell
+   git clone https://github.com/eveane/XCP-ng-toolbox.git
+cd XCP-ng-toolbox\xcp-bundle-analyzer
+cargo build --release
+   ```
+
+3. The binary lands in `.\target\release\xcp-bundle-analyzer.exe`.
+   Add it to your `PATH` or copy it wherever you like:
+
+   ```powershell
+   copy .\target\release\xcp-bundle-analyzer.exe C:\Tools\
+   ```
+
+4. Run it on a status report copied from your XCP-ng host (e.g. via `scp`
+   from Windows's built-in OpenSSH client):
+
+   ```powershell
+   C:\Tools\xcp-bundle-analyzer.exe analyze .\XenServer-host1-20260616.tar.bz2
+   ```
+
+   On PowerShell 5.1 the `.exe` extension is required; on PowerShell 7 and
+   cmd the bare name works.
+
+5. PowerShell completion (see the [Shell completion](#shell-completion)
+   section):
+
+   ```powershell
+   xcp-bundle-analyzer completions powershell > xcp-bundle-analyzer.ps1
+   ```
 
 ### 3. Collect a bundle from your XCP-ng host
 
@@ -266,7 +312,7 @@ uncommitted changes) and the build timestamp, e.g.:
 
 ```
 $ xcp-bundle-analyzer -V
-xcp-bundle-analyzer v0.2.0 (build 9d0770b, built 2026-10-16T21:26:21Z)
+xcp-bundle-analyzer v0.3.0 (build 9d0770b, built 2026-10-16T21:26:21Z)
 ```
 
 The same build string is printed in the header of text/HTML reports, so a
@@ -311,6 +357,41 @@ Each table is dumped as:
   then whitespace-protected by `Xml_spaces.protect` (spaces become `%.`).
 - secret/Cluster/NVRAM-EFI values are already replaced by `REMOVED` by
   xen-bugtool before archiving.
+
+## Shell completion
+
+The `completions` subcommand prints a completion script for bash, zsh, fish,
+elvish, or powershell. Write it to the standard completion location of your
+shell:
+
+```bash
+# bash
+xcp-bundle-analyzer completions bash | sudo tee /etc/bash_completion.d/xcp-bundle-analyzer >/dev/null
+
+# zsh (assuming ~/.zsh/completions is in your fpath, and compinit is enabled)
+xcp-bundle-analyzer completions zsh > ~/.zsh/completions/_xcp-bundle-analyzer
+
+# fish
+xcp-bundle-analyzer completions fish > ~/.config/fish/completions/xcp-bundle-analyzer.fish
+
+# PowerShell
+xcp-bundle-analyzer completions powershell > $HOME\xcp-bundle-analyzer.ps1
+# then add to your $PROFILE:
+#   . $HOME\xcp-bundle-analyzer.ps1
+```
+
+## Versioning and release notes
+
+The project follows a `x.y.z` (major.minor.patch) scheme:
+
+- **patch (`z`)** — every new patch / small change (fixes, refactors, docs).
+- **minor (`y`)** — every major change: a new section, a new feature, or a
+  new subcommand.
+- **major (`x`)** — breaking changes (CLI options removed/renamed, output
+  format/JSON contract changed incompatibly).
+
+Release notes for every released version are maintained in
+[RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## Testing
 
