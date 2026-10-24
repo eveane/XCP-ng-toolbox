@@ -396,11 +396,10 @@ xcp-bundle-analyzer completions powershell > $HOME\xcp-bundle-analyzer.ps1
 
 The project follows a `x.y.z` (major.minor.patch) scheme:
 
-- **patch (`z`)** — every new patch / small change (fixes, refactors, docs).
-- **minor (`y`)** — every major change: a new section, a new feature, or a
-  new subcommand.
-- **major (`x`)** — breaking changes (CLI options removed/renamed, output
-  format/JSON contract changed incompatibly).
+- **patch (`z`)** — every new patch / commit (fixes, refactors, docs, chores).
+- **minor (`y`)** — every feature or addition; a minor bump requires
+  explicit confirmation before it is applied.
+- **major (`x`)** — stays static at 0 until the first release-ready version.
 
 Release notes for every released version are maintained in
 [RELEASE_NOTES.md](RELEASE_NOTES.md).

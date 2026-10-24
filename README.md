@@ -6,6 +6,19 @@ yet they may help others or actually apply in wider situation.
 
 please use them with a pinch of slat and after careful review.
 
+## Versioning
+
+All projects in this repository follow `x.y.z` (major.minor.patch):
+
+- **patch (`z`)** — every patch/commit bumps `z`.
+- **minor (`y`)** — every feature or addition; a minor bump requires explicit
+  confirmation before it is applied.
+- **major (`x`)** — stays static at 0 until we have a first release-ready
+  version.
+
+See `xcp-bundle-analyzer/RELEASE_NOTES.md` for the per-version history of the
+analyzer.
+
 ## Bond Create
 
 script to create bond. 

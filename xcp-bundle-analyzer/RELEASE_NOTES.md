@@ -1,8 +1,15 @@
 # Release notes — xcp-bundle-analyzer
 
-Versioning scheme: `x.y.z` — every new patch bumps `z`; every major change
-(new section, new feature, new subcommand) bumps `y`; breaking changes
-(CLI or JSON contract incompatibilities) bump `x`.
+Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
+`z`; every feature or addition bumps `y` only after explicit confirmation;
+the major `x` stays static at 0 until the first release-ready version.
+
+## v0.3.1 (patch)
+
+- docs: versioning policy updated across the repository — every patch/commit
+  bumps `z`, minor (`y`) bumps for features/additions require explicit
+  confirmation, and the major (`x`) stays static at 0 until the first
+  release-ready version.
 
 ## v0.3.0 (minor)
 
