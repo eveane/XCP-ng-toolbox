@@ -321,35 +321,49 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 9) Inconsistent versions in the same pool
+    // 9) Inconsistent versions in the same pool (product, xen, kernel,
+    //    xapi, sm: any of them differing between hosts is flagged)
     if r.hosts.len() > 1 {
-        let versions: Vec<(String, String, String)> = r
+        let versions: Vec<(&crate::report::HostReport, String)> = r
             .hosts
             .iter()
             .map(|h| {
                 (
-                    h.hostname.clone(),
-                    h.product_version.clone(),
-                    h.xen_version.clone(),
+                    h,
+                    format!(
+                        "product {} xen {} kernel {} xapi {} sm {}",
+                        h.product_version,
+                        h.xen_version,
+                        h.kernel_version,
+                        if h.xapi_version.is_empty() {
+                            "-"
+                        } else {
+                            &h.xapi_version
+                        },
+                        if h.sm_version.is_empty() {
+                            "-"
+                        } else {
+                            &h.sm_version
+                        },
+                    ),
                 )
             })
             .collect();
-        let uniq_products: Vec<&str> = {
-            let mut v: Vec<&str> = versions.iter().map(|(_, p, _)| p.as_str()).collect();
+        let differs = |get: fn(&crate::report::HostReport) -> String| {
+            let mut v: Vec<String> = r.hosts.iter().map(get).collect();
             v.sort();
             v.dedup();
-            v
+            v.len() > 1
         };
-        let uniq_xen: Vec<&str> = {
-            let mut v: Vec<&str> = versions.iter().map(|(_, _, x)| x.as_str()).collect();
-            v.sort();
-            v.dedup();
-            v
-        };
-        if uniq_products.len() > 1 || uniq_xen.len() > 1 {
+        let mismatch = differs(|h| h.product_version.clone())
+            || differs(|h| h.xen_version.clone())
+            || differs(|h| h.kernel_version.clone())
+            || differs(|h| h.xapi_version.clone())
+            || differs(|h| h.sm_version.clone());
+        if mismatch {
             let detail = versions
                 .iter()
-                .map(|(h, p, x)| format!("{h}: product {p}, xen {x}"))
+                .map(|(h, v)| format!("{}: {v}", h.hostname))
                 .collect::<Vec<_>>()
                 .join("; ");
             out.push(warn(
@@ -357,6 +371,72 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                 r.pool.name.clone(),
                 format!("hosts run inconsistent versions in the same pool: {detail}"),
             ));
+        }
+    }
+
+    // 10) Release staleness estimate: how far behind the newest known
+    //     release each host is, and whether the installed version is likely
+    //     missing security fixes (very old releases) or newer features.
+    for h in &r.hosts {
+        if let Some(est) = &h.release_estimate {
+            let product = if est.is_xcpng { "XCP-ng" } else { "XenServer" };
+            if est.releases_behind >= 3 {
+                out.push(warn(
+                    "release-stale",
+                    h.hostname.clone(),
+                    format!(
+                        "{} {} on {} shipped {}; it is {} release(s) behind the newest known {product} release — it is likely missing security fixes and newer features, plan an upgrade",
+                        product, est.matched_version, h.hostname, est.release_date, est.releases_behind
+                    ),
+                ));
+            } else if est.releases_behind >= 1 {
+                out.push(info(
+                    "release-stale",
+                    h.hostname.clone(),
+                    format!(
+                        "{} {} on {} shipped {}; it is {} release(s) behind the newest known {product} release — review the release notes for relevant fixes",
+                        product, est.matched_version, h.hostname, est.release_date, est.releases_behind
+                    ),
+                ));
+            }
+        }
+    }
+
+    // 11) Intra-host component discrepancy: xen/kernel version inconsistent
+    //     with the expected pairing for the product version (e.g. XCP-ng 8.3
+    //     ships Xen 4.17; a host running 8.3 with a different major Xen is
+    //     likely running a custom/alternate kernel or a partial upgrade).
+    for h in &r.hosts {
+        let est = match &h.release_estimate {
+            Some(e) if e.is_xcpng => e,
+            _ => continue,
+        };
+        // Expected Xen major per XCP-ng release family.
+        let expected_xen_major: Option<u64> = match est.matched_version.as_str() {
+            "7.4" | "7.5" | "7.6" => Some(4),
+            "8.0" | "8.1" => Some(4),
+            "8.2" | "8.2.1" | "8.3" => Some(4),
+            _ => None,
+        };
+        if let (Some(expect), Some(actual)) = (
+            expected_xen_major,
+            h.xen_version
+                .strip_prefix("Xen ")
+                .unwrap_or(&h.xen_version)
+                .split('.')
+                .next()
+                .and_then(|p| p.parse::<u64>().ok()),
+        ) {
+            if actual != expect {
+                out.push(warn(
+                    "host-component-mismatch",
+                    h.hostname.clone(),
+                    format!(
+                        "host {} runs product {} with Xen {} — XCP-ng {} ships a Xen 4.x line; a different major version suggests an alternate kernel or a partial upgrade",
+                        h.hostname, h.product_version, h.xen_version, est.matched_version
+                    ),
+                ));
+            }
         }
     }
 

@@ -14,8 +14,11 @@ self-contained HTML dashboard (XO-like single page, no external assets).
 - Parses `xapi-db.xml` (the full xapi database dump, with secrets already
   filtered by xen-bugtool) into typed tables and rows:
   - hosts: hostname, UUID, opaque-ref, IP, product (XCP-ng/XenServer) version,
-    Xen version, kernel, CPU model/count/sockets/cores, memory total/free,
-    dom0 memory & CPU config (from `xensource-inventory`), PBD/PIF counts
+    Xen version, kernel, xapi and SM (storage manager) versions when present,
+    a release estimate (release date of the installed version, how many
+    releases behind the newest known), CPU model/count/sockets/cores,
+    memory total/free, dom0 memory & CPU config (from `xensource-inventory`),
+    PBD/PIF counts
   - SRs: name, UUID, type, shared, size, used, PBD/VDI counts
   - VDIs: name, UUID, type, size, SR, owning VM (via VBDs)
   - VMs: name, UUID, power state, template flag, resident host, vCPUs, memory,
@@ -136,6 +139,15 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   7c. VDI with `other-config:leaf-coalesce=false` — only meant to be set
       while the VM/VDI is being migrated; a leftover value disables leaf
       coalescing
+  10. release staleness: each host's product version is matched against a
+      built-in table of XCP-ng / XenServer release dates; hosts 3+ releases
+      behind the newest known release are warned about (likely missing
+      security fixes and features), 1-2 behind are listed for review. The
+      hosts section shows the estimate per host (release date, releases
+      behind)
+  11. host component mismatch: product version paired with an unexpected
+      Xen major version (e.g. XCP-ng 8.x should run a Xen 4.x line),
+      suggesting an alternate kernel or a partial upgrade
   8. `other-config:auto-scan-interval` master/slave semantics: the setting is
      only read by the pool master, so a master without it (and any slave that
      carries it while the master does not) is flagged — if the master role

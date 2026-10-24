@@ -9,11 +9,13 @@ mod build;
 mod consolidate;
 mod types;
 mod util;
+mod versions;
 
 pub use anomalies::compute_anomalies;
 pub use build::build_report;
 pub use consolidate::{consolidate, ConsolidatedReport};
 pub use types::*;
+pub use versions::ReleaseEstimate;
 
 #[cfg(test)]
 mod time_tests {

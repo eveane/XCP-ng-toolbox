@@ -11,6 +11,13 @@ pub struct HostReport {
     pub product_version: String,
     pub xen_version: String,
     pub kernel_version: String,
+    /// xapi version from software_version:xapi, when present.
+    pub xapi_version: String,
+    /// Storage Manager (SMAPI) version from software_version:sm, when present.
+    pub sm_version: String,
+    /// Estimated release info for product_version (release date, how many
+    /// releases behind the newest known release).
+    pub release_estimate: Option<crate::report::ReleaseEstimate>,
     pub dom0_memory_config_mib: Option<u64>,
     pub dom0_cpus_config: Option<u32>,
     pub enabled: bool,
