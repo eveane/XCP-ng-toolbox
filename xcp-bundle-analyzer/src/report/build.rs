@@ -501,6 +501,20 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
     }
 
     // VMs
+    // Template link: a template's children set lists the VMs cloned from it
+    // (kept even for Halted VMs); other-config:base_template_name carries
+    // the name when the template row is absent from the dump.
+    let mut template_of: BTreeMap<String, (String, String)> = BTreeMap::new();
+    for (_, t) in db.rows("VM") {
+        if !as_bool(get(t, "is_a_template")).unwrap_or(false) {
+            continue;
+        }
+        let t_uuid = get(t, "uuid").to_string();
+        let t_name = get2(t, "name__label").to_string();
+        for c in ref_set(get(t, "children")) {
+            template_of.insert(format!("OpaqueRef:{c}"), (t_name.clone(), t_uuid.clone()));
+        }
+    }
     for (r, vm) in db.rows("VM") {
         let uuid = get(vm, "uuid").to_string();
         if uuid.is_empty() {
@@ -532,6 +546,16 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                     .map(|s| s.to_string())
             })
             .unwrap_or_default();
+        let linked_template = template_of
+            .get(&format!("OpaqueRef:{r}"))
+            .cloned()
+            .or_else(|| {
+                let other = decode_map(get(vm, "other_config"));
+                map_get(&other, "base_template_name")
+                    .filter(|s| !s.is_empty())
+                    .map(|s| (s.to_string(), String::new()))
+            });
+        let (template_name, template_uuid) = linked_template.unwrap_or_default();
         report.vms.push(VmReport {
             name: get2(vm, "name__label").to_string(),
             uuid,
@@ -548,6 +572,8 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vcpus_max: as_u64(get(vm, "VCPUs__max")).unwrap_or(0),
             vcpus_at_startup: as_u64(get(vm, "VCPUs__at_startup")).unwrap_or(0),
             os_name,
+            template_name,
+            template_uuid,
             vif_count: vm_vifs.get(r).map(|v| v.len()).unwrap_or(0),
             vbd_count: vm_vbds.get(r).map(|v| v.len()).unwrap_or(0),
         });

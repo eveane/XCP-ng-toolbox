@@ -84,7 +84,8 @@ iscsi/fc/fcoe/zfs/xostor/local...), `device_config`, `other_config`,
 ## `VmReport`
 
 `name`, `uuid`, `power_state`, `resident_host`, `vcpus_max`,
-`memory_static_max_bytes`, `os_name`, flags: `is_template`,
+`memory_static_max_bytes`, `os_name`, `template_name`, `template_uuid`, flags:
+`is_template`,
 `is_default_template`, `is_snapshot`, `is_vmss_snapshot`, `is_control_domain`,
 `vbd_count`, `vif_count`, `snapshot_of` (parent UUID for VM snapshots).
 

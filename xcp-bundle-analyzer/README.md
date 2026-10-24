@@ -157,6 +157,12 @@ self-contained HTML dashboard (XO-like single page, no external assets).
      master, warning when the master has none). Per-SR intervals are always
      displayed for review when set.
   9. inconsistent product versions across hosts of the same pool
+  12. template/OS mismatch: a VM running an OS from a different family than
+      the template it was cloned from (e.g. Windows on a Linux template —
+      can cause stability issues). Warning when guest metrics report the
+      running OS; info with lower confidence when the OS is not detected or
+      the VM is off and the guess comes from the VM name. The VM section
+      shows the template each VM was cloned from.
 
   The findings are also part of the JSON output (`anomalies` array) and of
   the consolidated pool report. In JSON, each entry carries a `category`,

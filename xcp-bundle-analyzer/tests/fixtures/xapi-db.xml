@@ -1,3 +1,4 @@
+
 <?xml version="1.0"?>
 <database>
 <table name="pool">
@@ -48,14 +49,17 @@
 </table>
 <table name="VM">
 <row ref="OpaqueRef:vm1" uuid="vm-uuid-1" name__label="vm1" power_state="Running" is_a_template="false" is_a_snapshot="false" is_control_domain="false" domid="7" resident_on="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__static_max="4294967296" memory__target="4294967296" VCPUs__max="4" VCPUs__at_startup="4" VIFs="('OpaqueRef:vif1')" VBDs="('OpaqueRef:vbd1')" snapshots="('OpaqueRef:snap1')" guest_metrics="OpaqueRef:gm1"/>
-<row ref="OpaqueRef:vm2" uuid="vm-uuid-2" name__label="vm2" power_state="Halted" is_a_template="false" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="('OpaqueRef:vbd2')" guest_metrics="OpaqueRef:NULL"/>
+<row ref="OpaqueRef:vm2" uuid="vm-uuid-2" name__label="win2" power_state="Halted" is_a_template="false" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="('OpaqueRef:vbd2')" guest_metrics="OpaqueRef:NULL"/>
+<row ref="OpaqueRef:vm3" uuid="vm-uuid-3" name__label="vm3" power_state="Running" is_a_template="false" is_a_snapshot="false" is_control_domain="false" domid="8" resident_on="OpaqueRef:host1" memory__dynamic_max="4294967296" VCPUs__max="2" VCPUs__at_startup="2" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:gm3"/>
 <row ref="OpaqueRef:dom0" uuid="dom0-uuid" name__label="Control domain on host1" power_state="Running" is_a_template="false" is_control_domain="true" domid="0" resident_on="OpaqueRef:host1" affinity="OpaqueRef:host1" memory__dynamic_max="4294967296" memory__target="4294967296" VCPUs__max="4" VIFs="()" VBDs="('OpaqueRef:vbd-dom0')" guest_metrics="OpaqueRef:NULL"/>
 <row ref="OpaqueRef:dom0b" uuid="dom0-uuid-2" name__label="Control domain on host2" power_state="Running" is_a_template="false" is_control_domain="true" domid="0" resident_on="OpaqueRef:NULL" affinity="OpaqueRef:host2" memory__dynamic_max="2147483648" memory__target="2147483648" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 <row ref="OpaqueRef:snap1" uuid="snap-uuid-1" name__label="vm1 snapshot" power_state="Halted" is_a_template="false" is_a_snapshot="true" is_control_domain="false" snapshot_of="OpaqueRef:vm1" snapshot_time="20260615T10:00:00Z" resident_on="OpaqueRef:NULL" memory__dynamic_max="4294967296" VCPUs__max="4" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
-<row ref="OpaqueRef:tmpl" uuid="vm-uuid-tpl" name__label="Debian%.12%.template" power_state="Halted" is_a_template="true" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
+<row ref="OpaqueRef:tmpl" uuid="vm-uuid-tpl" name__label="Debian%.12%.template" power_state="Halted" is_a_template="true" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="()" children="('OpaqueRef:vm1' 'OpaqueRef:vm2' 'OpaqueRef:vm3')" guest_metrics="OpaqueRef:NULL"/>
+<row ref="OpaqueRef:tmpl-win" uuid="vm-uuid-tpl-win" name__label="Windows%.Server%.2019%.template" power_state="Halted" is_a_template="true" is_control_domain="false" resident_on="OpaqueRef:NULL" memory__dynamic_max="2147483648" VCPUs__max="2" VIFs="()" VBDs="()" guest_metrics="OpaqueRef:NULL"/>
 </table>
 <table name="VM_guest_metrics">
 <row ref="OpaqueRef:gm1" os_version="(('name' 'Debian%.12'))"/>
+<row ref="OpaqueRef:gm3" os_version="(('name' 'Windows%.Server%.2019'))"/>
 </table>
 <table name="VIF">
 <row ref="OpaqueRef:vif1" uuid="vif-uuid-1" VM="OpaqueRef:vm1" network="OpaqueRef:net0" device="0" MAC="aa:bb:cc:dd:ee:01" currently_attached="true"/>

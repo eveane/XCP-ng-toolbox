@@ -1,7 +1,7 @@
 //! Heuristic anomaly detection over a report.
 
 use super::types::{Anomaly, BundleReport};
-use super::util::{gib, info, warn};
+use super::util::{gib, info, os_family, warn};
 
 /// Collect settings that probably need attention. These are heuristic
 /// findings: each one is worth a review but is not necessarily a fault.
@@ -431,6 +431,45 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                     ),
                 ));
             }
+        }
+    }
+
+    // 12) VM running an OS from a different family than its template:
+    //     running e.g. Windows on a Linux template (or the reverse) can
+    //     cause stability issues. High confidence when guest metrics
+    //     report the OS; lower confidence (info, guessed from the VM
+    //     name) when the OS is not detected or the VM is not running.
+    for v in &r.vms {
+        if v.is_template || v.is_snapshot || v.is_vmss_snapshot || v.is_control_domain {
+            continue;
+        }
+        if v.template_name.is_empty() {
+            continue;
+        }
+        let template_family = os_family(&v.template_name);
+        if template_family.is_none() {
+            continue;
+        }
+        let detected = os_family(&v.os_name);
+        let guessed = os_family(&v.name);
+        match (detected, guessed) {
+            (Some(os), _) if Some(os) != template_family => out.push(warn(
+                "template-os-mismatch",
+                v.name.clone(),
+                format!(
+                    "VM {} [{}] runs {} but was cloned from template {} — running an OS from a different family than its template can cause stability issues",
+                    v.name, v.uuid, v.os_name, v.template_name
+                ),
+            )),
+            (None, Some(g)) if Some(g) != template_family => out.push(info(
+                "template-os-mismatch",
+                v.name.clone(),
+                format!(
+                    "VM {} [{}] has no OS reported and its name suggests {} — this differs from template {} (guessed from the VM name, lower confidence)",
+                    v.name, v.uuid, g, v.template_name
+                ),
+            )),
+            _ => {}
         }
     }
 

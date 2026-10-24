@@ -302,6 +302,9 @@ pub(crate) fn render_vms(r: &BundleReport, out: &mut String) {
             if !v.os_name.is_empty() {
                 let _ = writeln!(out, "        os: {}", v.os_name);
             }
+            if !v.template_name.is_empty() {
+                let _ = writeln!(out, "        template: {}", v.template_name);
+            }
         }
     }
 
