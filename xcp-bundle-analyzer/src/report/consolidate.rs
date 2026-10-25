@@ -154,8 +154,8 @@ mod tests {
         assert_eq!(h.cpu_count, 8);
         assert_eq!(h.dom0_memory_config_mib, Some(2048));
         assert_eq!(r.srs.len(), 4);
-        assert_eq!(r.vms.len(), 8);
-        assert_eq!(r.pool.vm_running, 2);
+        assert_eq!(r.vms.len(), 15);
+        assert_eq!(r.pool.vm_running, 3);
         assert_eq!(r.pool.ha_enabled, Some(true));
         assert!(!r.vbds.is_empty());
         // bundle origin detection via INSTALLATION_UUID
@@ -548,5 +548,63 @@ mod template_os_tests {
             .iter()
             .any(|a| a.category == "template-os-mismatch"
                 && (a.subject.contains("template") || a.subject.contains("Control"))));
+    }
+}
+
+#[cfg(test)]
+mod generic_template_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn generic_template_recommends_matching_pool_template() {
+        let r = report();
+        // vm-4: running Oracle Linux 8.10 on "Other install media" ->
+        // warning with a recommendation naming the Oracle Linux 8 template
+        let a = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "template-os-mismatch" && a.subject == "vm-4")
+            .unwrap();
+        assert_eq!(a.severity, "warning");
+        assert!(a.detail.contains("Other install media"), "{}", a.detail);
+        assert!(
+            a.detail.contains("Oracle Linux 8"),
+            "recommendation missing: {}",
+            a.detail
+        );
+    }
+
+    #[test]
+    fn generic_template_name_guess_recommends_from_pool() {
+        let r = report();
+        // oracleLinux_8_x86_64: halted, custom template, name suggests a
+        // Linux -> info with a recommendation; ubuntu_24_x64 -> Ubuntu 24 04
+        let ol = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "template-os-mismatch" && a.subject == "oracleLinux_8_x86_64")
+            .unwrap();
+        assert_eq!(ol.severity, "info");
+        assert!(
+            ol.detail.contains("_mytemplate_2026101420596"),
+            "{}",
+            ol.detail
+        );
+        assert!(ol.detail.contains("Oracle Linux 8"), "{}", ol.detail);
+        let ub = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "template-os-mismatch" && a.subject == "ubuntu_24_x64")
+            .unwrap();
+        assert_eq!(ub.severity, "info");
+        assert!(ub.detail.contains("Ubuntu 24 04"), "{}", ub.detail);
     }
 }

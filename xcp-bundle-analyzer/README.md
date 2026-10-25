@@ -161,8 +161,11 @@ self-contained HTML dashboard (XO-like single page, no external assets).
       the template it was cloned from (e.g. Windows on a Linux template —
       can cause stability issues). Warning when guest metrics report the
       running OS; info with lower confidence when the OS is not detected or
-      the VM is off and the guess comes from the VM name. The VM section
-      shows the template each VM was cloned from.
+      the VM is off and the guess comes from the VM name. VMs on a generic
+      or unrecognized template ("Other install media", custom names) are
+      reviewed as well, with a recommendation of a better-matching template
+      from the pool (family + version match) when one exists. The VM
+      section shows the template each VM was cloned from.
 
   The findings are also part of the JSON output (`anomalies` array) and of
   the consolidated pool report. In JSON, each entry carries a `category`,

@@ -1,6 +1,6 @@
 //! Heuristic anomaly detection over a report.
 
-use super::types::{Anomaly, BundleReport};
+use super::types::{Anomaly, BundleReport, VmReport};
 use super::util::{gib, info, os_family, warn};
 
 /// Collect settings that probably need attention. These are heuristic
@@ -434,11 +434,14 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 12) VM running an OS from a different family than its template:
-    //     running e.g. Windows on a Linux template (or the reverse) can
-    //     cause stability issues. High confidence when guest metrics
-    //     report the OS; lower confidence (info, guessed from the VM
-    //     name) when the OS is not detected or the VM is not running.
+    // 12) VM/template OS mismatch. Running e.g. Windows on a Linux
+    //     template (or the reverse) can cause stability issues. Two cases:
+    //     a) the template family is known and differs from the OS family
+    //        -> warning (info when the OS is only guessed from the VM name);
+    //     b) the template is generic/unrecognized ("Other install media",
+    //        custom names) -> review: recommend a better-matching template
+    //        from the pool's templates (family + version match) when one
+    //        exists.
     for v in &r.vms {
         if v.is_template || v.is_snapshot || v.is_vmss_snapshot || v.is_control_domain {
             continue;
@@ -447,31 +450,104 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
             continue;
         }
         let template_family = os_family(&v.template_name);
-        if template_family.is_none() {
-            continue;
-        }
         let detected = os_family(&v.os_name);
         let guessed = os_family(&v.name);
-        match (detected, guessed) {
-            (Some(os), _) if Some(os) != template_family => out.push(warn(
-                "template-os-mismatch",
-                v.name.clone(),
-                format!(
-                    "VM {} [{}] runs {} but was cloned from template {} — running an OS from a different family than its template can cause stability issues",
-                    v.name, v.uuid, v.os_name, v.template_name
-                ),
-            )),
-            (None, Some(g)) if Some(g) != template_family => out.push(info(
-                "template-os-mismatch",
-                v.name.clone(),
-                format!(
-                    "VM {} [{}] has no OS reported and its name suggests {} — this differs from template {} (guessed from the VM name, lower confidence)",
-                    v.name, v.uuid, g, v.template_name
-                ),
-            )),
+        let (os_source, os_family_found) = match (detected, guessed) {
+            (Some(os), _) => ("reported", Some(os)),
+            (None, Some(g)) => ("guessed from the VM name", Some(g)),
+            (None, None) => ("", None),
+        };
+        match (template_family, os_family_found) {
+            // a) known template family, different OS family
+            (Some(tf), Some(os)) if tf != os => out.push(if detected.is_some() {
+                warn(
+                    "template-os-mismatch",
+                    v.name.clone(),
+                    format!(
+                        "VM {} [{}] runs {} but was cloned from template {} — running an OS from a different family than its template can cause stability issues",
+                        v.name, v.uuid, v.os_name, v.template_name
+                    ),
+                )
+            } else {
+                info(
+                    "template-os-mismatch",
+                    v.name.clone(),
+                    format!(
+                        "VM {} [{}] has no OS reported and its name suggests {} — this differs from template {} (guessed from the VM name, lower confidence)",
+                        v.name, v.uuid, os, v.template_name
+                    ),
+                )
+            }),
+            // b) generic/unrecognized template: recommend a better one
+            (None, Some(os)) => {
+                let hint = if detected.is_some() { &v.os_name } else { &v.name };
+                let recommendation = best_template_for(&r.vms, os, hint);
+                let base = format!(
+                    "VM {} [{}] ({} {}) uses generic template {}",
+                    v.name,
+                    v.uuid,
+                    os_source,
+                    hint,
+                    v.template_name
+                );
+                out.push(if detected.is_some() { warn("template-os-mismatch", v.name.clone(), add_recommendation(base, recommendation, true)) } else { info("template-os-mismatch", v.name.clone(), add_recommendation(base, recommendation, false)) });
+            }
             _ => {}
         }
     }
 
     out
+}
+
+/// Append a template recommendation to an anomaly detail.
+fn add_recommendation(
+    base: String,
+    recommendation: Option<String>,
+    high_confidence: bool,
+) -> String {
+    match recommendation {
+        Some(t) => format!(
+            "{base} — a template matching the {} OS would be more appropriate: {t}",
+            if high_confidence {
+                "reported"
+            } else {
+                "suspected"
+            }
+        ),
+        None => format!(
+            "{base} — no template in the pool matches this OS family; consider creating one"
+        ),
+    }
+}
+
+/// Pick the best template from the pool for an OS of the given family.
+/// Prefers a version match on the OS hint (e.g. "Windows Server 2019" ->
+/// "Windows Server 2019 (64-bit)", "oracle linux 8" -> "Oracle Linux 8"),
+/// then falls back to any template of the same family.
+fn best_template_for(vms: &[VmReport], family: &str, os_hint: &str) -> Option<String> {
+    let candidates: Vec<&VmReport> = vms
+        .iter()
+        .filter(|t| t.is_template && os_family(&t.name) == Some(family))
+        .collect();
+    if candidates.is_empty() {
+        return None;
+    }
+    // Version tokens from the hint: numbers like "2019", "8", "24", "9".
+    let hint_versions: Vec<&str> = os_hint
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|s| !s.is_empty())
+        .collect();
+    // Exact-ish version match first: template and hint share a version token.
+    for t in &candidates {
+        let tpl_versions: Vec<&str> = t
+            .name
+            .split(|c: char| !c.is_ascii_digit())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if tpl_versions.iter().any(|tv| hint_versions.contains(tv)) {
+            return Some(t.name.clone());
+        }
+    }
+    // Fall back to the first template of the family (deterministic order).
+    candidates.first().map(|t| t.name.clone())
 }

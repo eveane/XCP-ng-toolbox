@@ -4,6 +4,17 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.3 (patch)
+
+- fix: template/OS mismatch now also reviews VMs cloned from a generic or
+  unrecognized template ("Other install media", custom template names) —
+  previously only templates with a known OS family were compared. When the
+  pool has a better-matching template (same OS family and version, e.g.
+  Windows Server 2019 → "Windows Server 2019 (64-bit)", Oracle Linux 8.10 →
+  "Oracle Linux 8"), it is recommended in the finding; warning severity
+  when guest metrics report the OS, info when the guess comes from the VM
+  name.
+
 ## v0.3.2 (patch)
 
 - feat: VM section shows the template each VM was cloned from (resolved via

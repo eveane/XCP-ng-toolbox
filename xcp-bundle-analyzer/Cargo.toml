@@ -1,6 +1,6 @@
 [package]
 name = "xcp-bundle-analyzer"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 description = "Analyze XCP-ng / XenServer status-report (xen-bugtool) bundles"
 license = "LGPL-2.1"
