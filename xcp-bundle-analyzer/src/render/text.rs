@@ -80,6 +80,19 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
                 "  release: {product} {} shipped {} — {} release(s) behind the newest known",
                 est.matched_version, est.release_date, est.releases_behind
             );
+            if let Some(u) = &est.update_estimate {
+                let _ = writeln!(
+                    out,
+                    "  last updated: ~{} (from the xapi/xen update timeline, see {})",
+                    u.date, u.source
+                );
+            }
+            if est.newer_than_table {
+                let _ = writeln!(
+                    out,
+                    "  note: component versions are newer than the newest known update — the built-in timeline may be stale"
+                );
+            }
         }
         let _ = writeln!(
             out,

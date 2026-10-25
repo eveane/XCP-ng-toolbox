@@ -371,6 +371,9 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
     // 10) Release staleness estimate: how far behind the newest known
     //     release each host is, and whether the installed version is likely
     //     missing security fixes (very old releases) or newer features.
+    //     For LTS releases with monthly updates (XCP-ng 8.3), the update
+    //     timeline refines the estimate: the GA date alone is misleading
+    //     because the product version does not change across updates.
     for h in &r.hosts {
         if let Some(est) = &h.release_estimate {
             let product = if est.is_xcpng { "XCP-ng" } else { "XenServer" };
@@ -390,6 +393,26 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                     format!(
                         "{} {} on {} shipped {}; it is {} release(s) behind the newest known {product} release — review the release notes for relevant fixes",
                         product, est.matched_version, h.hostname, est.release_date, est.releases_behind
+                    ),
+                ));
+            }
+            if let Some(u) = &est.update_estimate {
+                out.push(info(
+                    "release-stale",
+                    h.hostname.clone(),
+                    format!(
+                        "{} {} on {} was last updated ~{} (estimated from the xapi/xen versions; announcement: {})",
+                        product, est.matched_version, h.hostname, u.date, u.source
+                    ),
+                ));
+            }
+            if est.newer_than_table {
+                out.push(info(
+                    "release-stale",
+                    h.hostname.clone(),
+                    format!(
+                        "{} {} on {} reports component versions newer than the newest known update in the built-in timeline — the analyzer's version table may be stale; check https://xcp-ng.org/blog for the latest updates",
+                        product, est.matched_version, h.hostname
                     ),
                 ));
             }

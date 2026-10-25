@@ -142,9 +142,13 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   10. release staleness: each host's product version is matched against a
       built-in table of XCP-ng / XenServer release dates; hosts 3+ releases
       behind the newest known release are warned about (likely missing
-      security fixes and features), 1-2 behind are listed for review. The
-      hosts section shows the estimate per host (release date, releases
-      behind)
+      security fixes and features), 1-2 behind are listed for review. For
+      XCP-ng 8.3 LTS (monthly updates, product version stays 8.3.0), the
+      update level is additionally estimated from the xapi/xen versions via
+      a built-in update timeline, shown as "last updated ~date" with a link
+      to the official announcement. Hosts reporting component versions
+      newer than the newest timeline entry are flagged so a stale analyzer
+      table is not mistaken for a current host
   11. host component mismatch: product version paired with an unexpected
       Xen major version (e.g. XCP-ng 8.x should run a Xen 4.x line),
       suggesting an alternate kernel or a partial upgrade

@@ -3,7 +3,7 @@
 use super::anomalies::compute_anomalies;
 use super::types::*;
 use super::util::*;
-use super::versions::estimate_release;
+use super::versions::estimate_release_with_components;
 use crate::inventory::Inventory;
 use crate::xapidb::{as_bool, as_ref, as_u64, decode_map, decode_set, Row, XapiDb};
 use std::collections::BTreeMap;
@@ -200,13 +200,17 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .unwrap_or_default()
                 .to_string(),
             xapi_version: map_get(&software, "xapi").unwrap_or_default().to_string(),
-            release_estimate: estimate_release(
-                map_get(&software, "product_version").unwrap_or_default(),
-            ),
             xen_version: map_get(&software, "xen_version")
                 .or_else(|| map_get(&software, "xen"))
                 .unwrap_or_default()
                 .to_string(),
+            release_estimate: estimate_release_with_components(
+                map_get(&software, "product_version").unwrap_or_default(),
+                map_get(&software, "xapi").unwrap_or_default(),
+                map_get(&software, "xen_version")
+                    .or_else(|| map_get(&software, "xen"))
+                    .unwrap_or_default(),
+            ),
             kernel_version: map_get(&software, "linux_version")
                 .or_else(|| map_get(&software, "linux"))
                 .unwrap_or_default()

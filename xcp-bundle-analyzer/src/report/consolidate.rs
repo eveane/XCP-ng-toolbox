@@ -471,7 +471,7 @@ mod version_fields_tests {
             .iter()
             .find(|h| h.hostname == "host1.example.com")
             .unwrap();
-        assert_eq!(h1.xapi_version, "24.30.3");
+        assert_eq!(h1.xapi_version, "26.1");
         let est = h1.release_estimate.as_ref().unwrap();
         assert_eq!(est.matched_version, "8.3");
         assert_eq!(est.releases_behind, 0);
