@@ -4,6 +4,17 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.4 (patch)
+
+- fix: XCP-ng 8.3 LTS hosts no longer report only the 2024-10 GA date —
+  the product version stays 8.3.0 across monthly updates, so the update
+  level is now estimated from the xapi/xen versions against a built-in
+  update timeline ("last updated ~date" + link to the official
+  announcement, in the hosts section and as an info anomaly). Hosts with
+  component versions newer than the newest timeline entry are flagged as
+  possibly-stale-table instead of guessing. GA-date estimate unchanged for
+  other releases.
+
 ## v0.3.3 (patch)
 
 - fix: template/OS mismatch now also reviews VMs cloned from a generic or
