@@ -5,12 +5,13 @@ An "orphaned base copy" is a VDI that:
   - has sm_config:vhd-parent set,
   - is not attached to any VM (no VBDs),
   - is not itself a snapshot (is_a_snapshot false, snapshot_of NULL),
-  - and whose parent VDI is also orphaned and does not reference it back
-    (no snapshots, no VBDs, snapshot_of NULL).
+  - and whose parent VDI does not reference it back at all (the child does
+    not appear in the parent's snapshots list). The parent itself may be
+    attached to a VM or have snapshots; that does not matter.
 
-This is the same heuristic as the "orphaned-vhd-parent" anomaly reported by
-xcp-bundle-analyzer (see issue #41). Such chains are usually leftovers of a
-failed or aborted coalesce/migration.
+This is the "orphaned base copy" situation described in issue #41: the VHD
+parent link exists, but no xapi-level link remains between the two disks.
+Such chains are usually leftovers of a failed or aborted coalesce/migration.
 
 Modes:
   (default)   detect and list the orphaned chains (always safe)
@@ -103,11 +104,9 @@ def find_orphaned_chains(vdis):
         parent = next((p for p in vdis if p["uuid"] == parent_uuid), None)
         if parent is None:
             continue
-        if vbd_uuids(parent):
-            continue
-        if snapshot_uuids(parent):
-            continue
-        if opaque_ref_uuid(parent.get("snapshot-of", "")):
+        # The only condition on the parent: it must not reference the child
+        # back. The parent itself may be attached or have snapshots.
+        if vdi["uuid"] in snapshot_uuids(parent):
             continue
         chains.append((vdi, parent))
     return chains
@@ -128,10 +127,8 @@ def print_chains(chains):
               % (child["uuid"], child.get("name-label", ""),
                  human_size(int(child.get("physical-utilisation", 0))),
                  opaque_ref_uuid(child.get("SR", ""))))
-        print("  parent %s  %r  (%s, SR %s)"
-              % (parent["uuid"], parent.get("name-label", ""),
-                 human_size(int(parent.get("physical-utilisation", 0))),
-                 opaque_ref_uuid(parent.get("SR", ""))))
+        print("  parent %s  %r  (not deleted, kept as reference only)"
+              % (parent["uuid"], parent.get("name-label", "")))
     return chains
 
 
@@ -200,10 +197,9 @@ def main():
         print("\nNothing to do.")
         return
 
-    doomed = []
-    for child, parent in chains:
-        doomed.append(child)
-        doomed.append(parent)
+    # Only the orphaned base copies are deleted. Their parents are printed
+    # for reference but are never touched: they may be in use.
+    doomed = [child for child, parent in chains]
 
     if not (args.delete or args.force):
         if not args.dry_run:
@@ -238,9 +234,11 @@ def main():
             print("Aborted, nothing deleted.")
             return
 
+    parents = {c["uuid"]: p["uuid"] for c, p in chains}
     for vdi in doomed:
-        print("deleting %s ..." % vdi["uuid"])
+        print("deleting orphaned base copy %s ..." % vdi["uuid"])
         delete_vdi(vdi)
+        print("  parent %s is kept" % parents[vdi["uuid"]])
     print("Done: %d VDIs deleted." % len(doomed))
 
 

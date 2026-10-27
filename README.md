@@ -87,27 +87,27 @@ See `xcp-bundle-analyzer/README.md`.
 ## Orphaned VHD base-copy cleanup
 
 Python script that detects and removes the leftover VHD base-copy chains reported
-by xcp-bundle-analyzer as the `orphaned-vhd-parent` anomaly (issue #41): a VDI with
-`sm_config:vhd-parent` set that is not attached to any VM, is not a snapshot, and
-whose parent does not reference it back.
+by xcp-bundle-analyzer (issue #41): a VDI with
+`sm_config:vhd-parent` set that is not attached to any VM, is not a snapshot, and whose
+parent does not reference it back. The parent itself may be in use and is kept.
 
 Only the Python standard library is used; it talks to the pool through the local
 `xe` CLI, so run it as root on an XCP-ng host.
 
 ```
 # list the orphaned chains (default, safe)
-./orphaned-vhd-cleanup.py
+./orphaned-vdi-cleanup.py
 
 # summary of what would be deleted
-./orphaned-vhd-cleanup.py --dry-run
+./orphaned-vdi-cleanup.py --dry-run
 
 # delete, with confirmation
-./orphaned-vhd-cleanup.py --delete
+./orphaned-vdi-cleanup.py --delete
 
 # delete without confirmation
-./orphaned-vhd-cleanup.py --force
+./orphaned-vdi-cleanup.py --force
 
 # back up each VDI to a VHD file before deleting, then restore later if needed
-./orphaned-vhd-cleanup.py --delete --backup /backup/orphans-20250101
-./orphaned-vhd-cleanup.py --restore /backup/orphans-20250101
+./orphaned-vdi-cleanup.py --delete --backup /backup/orphans-20250101
+./orphaned-vdi-cleanup.py --restore /backup/orphans-20250101
 ```
