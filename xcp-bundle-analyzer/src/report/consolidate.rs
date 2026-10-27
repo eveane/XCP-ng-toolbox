@@ -272,7 +272,23 @@ mod tests {
             .iter()
             .any(|a| a.category == "leaf-coalesce-disabled"
                 && a.subject == "vm2-disk"
-                && a.detail.contains("only meant to be set during a migration")));
+                && a.detail.contains("temporary workaround only")
+                && a.detail.contains("xe vdi-param-remove")));
+        // SR-level leaf-coalesce=false disables coalescing for the whole SR
+        let iscsi = r.srs.iter().find(|s| s.name == "iSCSI shared").unwrap();
+        assert!(
+            r.anomalies
+                .iter()
+                .any(|a| a.category == "leaf-coalesce-disabled"
+                    && a.subject == iscsi.name
+                    && a.detail.contains("every VDI of the SR")
+                    && a.detail.contains("xe sr-param-remove")),
+            "anomalies: {:?}",
+            r.anomalies
+                .iter()
+                .filter(|a| a.category == "leaf-coalesce-disabled")
+                .collect::<Vec<_>>()
+        );
         // auto-scan-interval surfaced on the SR, with attached hosts
         let nfs = r.srs.iter().find(|s| s.name == "NFS repo").unwrap();
         assert_eq!(nfs.auto_scan_interval, Some(300));
