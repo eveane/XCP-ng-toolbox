@@ -106,8 +106,4 @@ Only the Python standard library is used; it talks to the pool through the local
 
 # delete without confirmation
 ./orphaned-vdi-cleanup.py --force
-
-# back up each VDI to a VHD file before deleting, then restore later if needed
-./orphaned-vdi-cleanup.py --delete --backup /backup/orphans-20250101
-./orphaned-vdi-cleanup.py --restore /backup/orphans-20250101
 ```

@@ -18,8 +18,6 @@ Modes:
   --dry-run   same as default, plus a summary of what would be deleted
   --delete    delete the listed VDIs, asking for confirmation
   --force     delete without asking for confirmation
-  --backup DIR   before deleting, export each VDI to DIR as a VHD file
-  --restore DIR  restore previously backed-up VDIs from DIR
 
 Only the Python standard library is used; the script talks to the
 local pool through the `xe` CLI (run as root on an XCP-ng host).
@@ -132,40 +130,8 @@ def print_chains(chains):
     return chains
 
 
-def backup_vdi(vdi, backup_dir):
-    """Export one VDI to backup_dir as <uuid>.vhd; return the file path."""
-    path = os.path.join(backup_dir, "%s.vhd" % vdi["uuid"])
-    run_xe("vdi-export", "uuid=%s" % vdi["uuid"],
-           "filename=%s" % path, "format=vhd")
-    return path
-
-
-def write_manifest(manifest_path, entries):
-    with open(manifest_path, "w") as fh:
-        json.dump(entries, fh, indent=2)
-
-
 def delete_vdi(vdi):
     run_xe("vdi-destroy", "uuid=%s" % vdi["uuid"])
-
-
-def restore_backup(backup_dir):
-    """Re-import every VHD listed in the backup manifest."""
-    manifest_path = os.path.join(backup_dir, "manifest.json")
-    if not os.path.isfile(manifest_path):
-        sys.exit("error: no manifest.json in %s" % backup_dir)
-    with open(manifest_path) as fh:
-        entries = json.load(fh)
-    for entry in entries:
-        path = os.path.join(backup_dir, os.path.basename(entry["file"]))
-        if not os.path.isfile(path):
-            print("warning: backup file missing, skipping: %s" % path)
-            continue
-        print("restoring %s into SR %s ..." % (entry["uuid"], entry["sr"]))
-        out = run_xe("vdi-import", "sr-uuid=%s" % entry["sr"],
-                     "filename=%s" % path, "format=vhd")
-        new_uuid = out.strip().splitlines()[-1].strip()
-        print("  restored as VDI %s" % new_uuid)
 
 
 def main():
@@ -178,15 +144,7 @@ def main():
                       help="delete the listed VDIs (asks for confirmation)")
     mode.add_argument("--force", action="store_true",
                       help="delete the listed VDIs without confirmation")
-    mode.add_argument("--restore", metavar="DIR",
-                      help="restore VDIs previously backed up with --backup DIR")
-    parser.add_argument("--backup", metavar="DIR",
-                        help="before deleting, export each VDI to DIR as VHD")
     args = parser.parse_args()
-
-    if args.restore:
-        restore_backup(args.restore)
-        return
 
     print("Reading VDI list from the pool ...")
     vdis = [get_vdi_params(u) for u in all_vdi_uuids()]
@@ -211,21 +169,6 @@ def main():
                      human_size(sum(int(v.get("physical-utilisation", 0))
                                     for v in doomed))))
         return
-
-    if args.backup:
-        os.makedirs(args.backup, exist_ok=True)
-        entries = []
-        for vdi in doomed:
-            print("backing up %s ..." % vdi["uuid"])
-            path = backup_vdi(vdi, args.backup)
-            entries.append({
-                "uuid": vdi["uuid"],
-                "sr": opaque_ref_uuid(vdi.get("SR", "")),
-                "name": vdi.get("name-label", ""),
-                "file": os.path.basename(path),
-            })
-        write_manifest(os.path.join(args.backup, "manifest.json"), entries)
-        print("Backup of %d VDIs written to %s" % (len(doomed), args.backup))
 
     if not args.force:
         answer = input("\nDelete %d VDIs (%s)? Type 'yes' to confirm: "
