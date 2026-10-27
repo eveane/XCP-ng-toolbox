@@ -4,6 +4,15 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.5 (patch)
+
+- fix: the leaf-coalesce anomaly now also detects SR-level
+  `other-config:leaf-coalesce=false` (which disables leaf coalescing for
+  every VDI of the SR), not only VDI-level settings. The finding message
+  explains the impact of a leftover value (snapshots kept forever,
+  performance impact, disk consumption) and includes the exact
+  `xe vdi-param-remove` / `xe sr-param-remove` command to remove it.
+
 ## v0.3.4 (patch)
 
 - fix: XCP-ng 8.3 LTS hosts no longer report only the 2024-10 GA date —

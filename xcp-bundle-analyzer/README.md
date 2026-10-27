@@ -136,9 +136,11 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   7b. orphaned base disk with `sm-config:vhd-parent` whose parent has no
       reference back to it (no snapshot/VBD links): a leftover VHD base-copy
       chain, both disks can likely be deleted
-  7c. VDI with `other-config:leaf-coalesce=false` — only meant to be set
-      while the VM/VDI is being migrated; a leftover value disables leaf
-      coalescing
+  7c. VDI or SR with `other-config:leaf-coalesce=false` — a temporary
+      workaround for coalesce issues; a leftover value keeps snapshots
+      forever, impacts performance and consumes disk. SR-level settings
+      disable leaf coalescing for every VDI of the SR. The finding includes
+      the `xe *-param-remove` command to remove it
   10. release staleness: each host's product version is matched against a
       built-in table of XCP-ng / XenServer release dates; hosts 3+ releases
       behind the newest known release are warned about (likely missing

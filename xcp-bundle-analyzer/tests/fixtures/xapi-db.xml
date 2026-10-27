@@ -1,6 +1,7 @@
 
 
 
+
 <?xml version="1.0"?>
 <database>
 <table name="pool">
@@ -17,7 +18,7 @@
 <table name="SR">
 <row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local storage" type="lvm" shared="false" physical_size="21474836480" physical_utilisation="19327352832" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2')" VDIs="('OpaqueRef:vdi2')"/>
 <row ref="OpaqueRef:sr-nfs" uuid="sr-uuid-nfs" name__label="NFS repo" type="nfs" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" PBDs="('OpaqueRef:pbd3' 'OpaqueRef:pbd4')" VDIs="('OpaqueRef:vdi1')" other_config="(('auto-scan-interval' '300'))"/>
-<row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI shared" type="lvmoiscsi" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd5' 'OpaqueRef:pbd6')" VDIs="()"/>
+<row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI shared" type="lvmoiscsi" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd5' 'OpaqueRef:pbd6')" VDIs="()" other_config="(('leaf-coalesce' 'false'))"/>
 <row ref="OpaqueRef:sr-dvd" uuid="sr-uuid-dvd" name__label="DVD drives" type="udev" shared="false" physical_size="1073741824" physical_utilisation="1073741824" PBDs="()" VDIs="('OpaqueRef:vdi-dvd2')"/>
 </table>
 <table name="PBD">

@@ -1,7 +1,7 @@
 //! Heuristic anomaly detection over a report.
 
 use super::types::{Anomaly, BundleReport, VmReport};
-use super::util::{gib, info, os_family, warn};
+use super::util::{gib, info, map_get, os_family, warn};
 
 /// Collect settings that probably need attention. These are heuristic
 /// findings: each one is worth a review but is not necessarily a fault.
@@ -197,17 +197,32 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 7c) other-config:leaf-coalesce=false is only meant to be set while
-    //     the VM/VDI is being migrated; a leftover value disables leaf
-    //     coalescing for good and should be reviewed.
+    // 7c) other-config:leaf-coalesce=false is a temporary workaround for
+    //     coalesce issues (set on the VDI or the SR while migrating or
+    //     troubleshooting). Left over, it keeps snapshots forever, hurts
+    //     performance and consumes disk: flag it so it is removed as soon
+    //     as it is no longer needed.
     for d in &r.vdis {
         if d.leaf_coalesce_disabled {
             out.push(warn(
                 "leaf-coalesce-disabled",
                 d.name.clone(),
                 format!(
-                    "VDI {} [{}] has other-config:leaf-coalesce=false; this is only meant to be set during a migration — a leftover value disables leaf coalescing",
-                    d.name, d.uuid
+                    "VDI {} [{}] has other-config:leaf-coalesce=false; this is a temporary workaround only — a leftover value keeps snapshots forever, impacts performance and consumes disk; remove it with: xe vdi-param-remove param-name=other-config param-key=leaf-coalesce uuid={}",
+                    d.name, d.uuid, d.uuid
+                ),
+            ));
+        }
+    }
+    // SR-level: disables leaf coalescing for ALL VDIs of the SR.
+    for s in &r.srs {
+        if map_get(&s.other_config, "leaf-coalesce") == Some("false") {
+            out.push(warn(
+                "leaf-coalesce-disabled",
+                s.name.clone(),
+                format!(
+                    "SR {} [{}] has other-config:leaf-coalesce=false; this disables leaf coalescing for every VDI of the SR — snapshots are kept forever, performance is impacted and disk is consumed; remove it as soon as it is no longer needed with: xe sr-param-remove uuid={} param-name=other-config param-key=leaf-coalesce",
+                    s.name, s.uuid, s.uuid
                 ),
             ));
         }
