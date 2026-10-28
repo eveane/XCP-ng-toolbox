@@ -466,8 +466,55 @@ mod orphaned_vhd_parent_tests {
             .anomalies
             .iter()
             .any(|a| a.category == "orphaned-vhd-parent" && a.subject == "base copy"));
-        // a healthy VHD without vhd-parent is not flagged
-        assert!(!r.anomalies.iter().any(|a| a.detail.contains("vdi-uuid-1")));
+    }
+
+    #[test]
+    fn orphaned_base_copy_with_in_use_parent_flagged() {
+        // issue #57: the parent does NOT have to be orphaned — an in-use
+        // parent (attached to a VM, with its own snapshots) that does not
+        // reference the base copy still makes the base copy orphaned.
+        let r = report();
+        let bc2 = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-bc2").unwrap();
+        assert_eq!(bc2.vhd_parent_uuid, "vdi-uuid-1");
+        assert!(bc2.orphaned, "the base copy has no VBD");
+        // parent vm1-disk: in use (attached to vm1) and has a snapshot —
+        // previously this case was NOT flagged because the parent was not
+        // orphaned/snapshot-free
+        let parent = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-1").unwrap();
+        assert!(!parent.orphaned, "parent is attached to a VM");
+        assert!(parent.has_snapshots, "parent has its own snapshot");
+        assert!(!parent.snapshot_children_uuids.contains(&bc2.uuid));
+        assert!(
+            r.anomalies
+                .iter()
+                .any(|a| a.category == "orphaned-vhd-parent"
+                    && a.subject == "orphaned base copy 2"
+                    && a.detail.contains("vhd-parent=vdi-uuid-1")),
+            "anomalies: {:?}",
+            r.anomalies
+                .iter()
+                .filter(|a| a.category == "orphaned-vhd-parent")
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn referenced_base_copy_not_flagged() {
+        // a base copy that its parent DOES reference (it is among the
+        // parent's snapshot children) is not flagged, even though it is
+        // not attached to any VM: it is part of a live snapshot chain.
+        let r = report();
+        let vdi1 = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-1").unwrap();
+        assert!(vdi1
+            .snapshot_children_uuids
+            .contains(&"vdi-uuid-snap".to_string()));
+        let snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-snap").unwrap();
+        assert!(snap.orphaned, "snapshot has no VBD");
+        assert_eq!(snap.snapshot_of_uuid, "vdi-uuid-1");
+        assert!(!r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "orphaned-vhd-parent" && a.subject == "vm1-disk snapshot"));
     }
 }
 

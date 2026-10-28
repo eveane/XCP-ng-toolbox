@@ -398,7 +398,15 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let size = as_u64(get(vdi, "virtual_size")).unwrap_or(0);
         report.pool.vdi_total_size_bytes = report.pool.vdi_total_size_bytes.saturating_add(size);
         let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
-        let has_snapshots = !decode_set(get(vdi, "snapshots")).is_empty();
+        let snapshot_children_uuids: Vec<String> = ref_set(get(vdi, "snapshots"))
+            .iter()
+            .filter_map(|sr| {
+                db.table("VDI")
+                    .and_then(|t| t.get(sr))
+                    .map(|c| get(c, "uuid").to_string())
+            })
+            .collect();
+        let has_snapshots = !snapshot_children_uuids.is_empty();
         let snap_of = ref_of(vdi, "snapshot_of");
         let snap_of_uuid = if snap_of.is_empty() {
             String::new()
@@ -459,6 +467,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vm: ref_label(db, "VM", &vm_ref, "name__label"),
             is_snapshot,
             has_snapshots,
+            snapshot_children_uuids,
             snapshot_of_uuid: snap_of_uuid,
             broken_parent,
             is_ha_statefile,

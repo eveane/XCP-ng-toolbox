@@ -133,9 +133,11 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   5. inconsistent multipath path counts between hosts
   6. dom0 memory not matching between pool hosts
   7. VDI snapshot chain with a missing parent (`snapshot_of` set, parent gone)
-  7b. orphaned base disk with `sm-config:vhd-parent` whose parent has no
-      reference back to it (no snapshot/VBD links): a leftover VHD base-copy
-      chain, both disks can likely be deleted
+  7b. orphaned base disk with `sm-config:vhd-parent` whose parent does not
+      reference it back (the base copy is not among the parent's snapshot
+      children): a leftover VHD base-copy chain, the base copy can likely be
+      deleted. The parent does not have to be orphaned — it can be an
+      in-use disk; only the missing back-reference matters
   7c. VDI or SR with `other-config:leaf-coalesce=false` — a temporary
       workaround for coalesce issues; a leftover value keeps snapshots
       forever, impacts performance and consumes disk. SR-level settings

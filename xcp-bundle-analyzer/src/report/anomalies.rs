@@ -172,17 +172,21 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 7b) Orphaned base disk with an sm_config:vhd-parent whose parent has
-    //     no reference back to it: a leftover VHD base-copy chain (usually
-    //     after a failed/aborted coalesce or migration), where neither disk
-    //     is attached to a VM and the xapi-level snapshot links are gone.
+    // 7b) Orphaned base disk with an sm_config:vhd-parent whose parent does
+    //     not reference it back: a leftover VHD base-copy chain (usually
+    //     after a failed/aborted coalesce or migration). The base copy is
+    //     not attached to any VM and is not a snapshot itself; the parent
+    //     does NOT have to be orphaned or snapshot-free — it can be an
+    //     in-use disk. The only condition is that the parent has no
+    //     reference to the base copy (the base copy uuid is not among the
+    //     parent's snapshot children).
     for d in &r.vdis {
         if d.vhd_parent_uuid.is_empty() || !d.orphaned || d.is_snapshot {
             continue;
         }
         let parent = r.vdis.iter().find(|p| p.uuid == d.vhd_parent_uuid);
         let orphan_chain = match parent {
-            Some(p) => p.orphaned && !p.has_snapshots && p.snapshot_of_uuid.is_empty(),
+            Some(p) => !p.snapshot_children_uuids.contains(&d.uuid),
             None => false,
         };
         if orphan_chain {
@@ -190,7 +194,7 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                 "orphaned-vhd-parent",
                 d.name.clone(),
                 format!(
-                    "VDI {} [{}] is an orphaned base disk with sm_config:vhd-parent={}, but its parent does not reference it back (no snapshot/VBD links): leftover VHD base-copy chain, both disks can likely be deleted",
+                    "VDI {} [{}] is an orphaned base disk with sm_config:vhd-parent={}, but its parent does not reference it back (not among its snapshot children): leftover VHD base-copy chain, the base copy can likely be deleted",
                     d.name, d.uuid, d.vhd_parent_uuid
                 ),
             ));
