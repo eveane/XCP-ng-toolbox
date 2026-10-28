@@ -131,6 +131,10 @@ pub struct VdiReport {
     pub is_snapshot: bool,
     /// True when this VDI has at least one snapshot child.
     pub has_snapshots: bool,
+    /// UUIDs of the snapshot children of this VDI (its `snapshots` set,
+    /// resolved to uuids). Used by the orphaned-vhd-parent check: a parent
+    /// references its base copies through this list.
+    pub snapshot_children_uuids: Vec<String>,
     /// UUID of the parent VDI (snapshot_of), when set and resolvable.
     pub snapshot_of_uuid: String,
     /// True when snapshot_of is set but the parent VDI no longer exists

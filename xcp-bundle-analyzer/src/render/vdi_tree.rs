@@ -181,13 +181,13 @@ mod vdi_counts_tests {
         // STORAGE header counts all 10 VDIs: 8 base, 2 snapshots, 5 orphaned
         // (includes the 2 orphaned VHD base-copy-chain disks)
         assert!(
-            text.contains("VDIs: 10 (8 base, 2 snapshots, 5 orphaned)"),
+            text.contains("VDIs: 11 (9 base, 2 snapshots, 6 orphaned)"),
             "{text}"
         );
         // VDI section excludes the VDI on the udev optical SR: 9 listed
         let vdis = render_sections(&r, &[Section::VDIs]);
         assert!(
-            vdis.contains("--- VDIs (9) — 7 base, 2 snapshots, 5 orphaned, 1 on ISO/removable SRs not shown ---"),
+            vdis.contains("--- VDIs (10) — 8 base, 2 snapshots, 6 orphaned, 1 on ISO/removable SRs not shown ---"),
             "{vdis}"
         );
         assert!(vdis.contains("ORPHANED (not attached to any VM)"), "{vdis}");

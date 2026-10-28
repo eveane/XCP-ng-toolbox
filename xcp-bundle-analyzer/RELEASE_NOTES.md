@@ -4,6 +4,17 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.6 (patch)
+
+- fix: orphaned base copies with an in-use parent are now detected — the
+  orphaned-vhd-parent check no longer requires the parent VDI to be
+  orphaned/snapshot-free; the only condition (per issue #57) is that the
+  parent does not reference the base copy back (not among its snapshot
+  children). Previously, base copies whose parent was still attached to a
+  VM or had other snapshots were silently missed.
+- VDI reports gain `snapshot_children` (resolved uuids of the `snapshots`
+  set) in JSON output.
+
 ## v0.3.5 (patch)
 
 - fix: the leaf-coalesce anomaly now also detects SR-level
