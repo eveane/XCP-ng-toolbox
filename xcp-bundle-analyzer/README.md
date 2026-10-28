@@ -133,11 +133,13 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   5. inconsistent multipath path counts between hosts
   6. dom0 memory not matching between pool hosts
   7. VDI snapshot chain with a missing parent (`snapshot_of` set, parent gone)
-  7b. orphaned base disk with `sm-config:vhd-parent` whose parent does not
-      reference it back (the base copy is not among the parent's snapshot
-      children): a leftover VHD base-copy chain, the base copy can likely be
-      deleted. The parent does not have to be orphaned — it can be an
-      in-use disk; only the missing back-reference matters
+  7b. orphaned VHD base copy: a leaf of a VHD chain with nothing depending
+      on it — no live VBD, no VDI physically on top of it (no
+      sm-config:vhd-parent pointing at it) and not a valid snapshot —
+      matching the SM garbage collector's criteria (xcp-ng `cleanup.py`):
+      only VDIs with no children are ever prunable. Mid-chain snapshots and
+      base copies (no VBD by design, referenced through the chain) are
+      never flagged; the parent does not have to be orphaned either
   7c. VDI or SR with `other-config:leaf-coalesce=false` — a temporary
       workaround for coalesce issues; a leftover value keeps snapshots
       forever, impacts performance and consumes disk. SR-level settings

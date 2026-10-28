@@ -354,7 +354,22 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
     }
 
-    // VDIs
+    // VDIs. Physical (SM-level) chain: sm_config:vhd-parent links a VHD
+    // to its base copy. Mid-chain snapshots and base copies have no VBD by
+    // design — they are referenced through the chain — so "no live VBD"
+    // alone does not make them garbage. Per the SM garbage collector
+    // (xcp-ng sm, cleanup.py findGarbage), a VDI is only prunable when
+    // nothing depends on it: no live VBD AND no physical child.
+    let vhd_parent_count: BTreeMap<String, usize> = {
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for (_, v) in db.rows("VDI") {
+            let sm = decode_map(get(v, "sm_config"));
+            if let Some(p) = map_get(&sm, "vhd-parent").filter(|p| !p.is_empty()) {
+                *counts.entry(p.to_string()).or_default() += 1;
+            }
+        }
+        counts
+    };
     for (r, vdi) in db.rows("VDI") {
         let uuid = get(vdi, "uuid").to_string();
         if uuid.is_empty() {
@@ -389,15 +404,28 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             let vmr = ref_of(vbd, "VM");
             !vmr.is_empty() && db.table("VM").and_then(|t| t.get(&vmr)).is_some()
         };
-        let orphaned = !vbd_keys.iter().any(|k| {
+        // Physical children: VDIs whose sm_config:vhd-parent points here.
+        // A VDI with physical children is the base of an active chain and
+        // is never garbage, even without a VBD.
+        let vhd_children = vhd_parent_count.get(&uuid).copied().unwrap_or(0);
+        let has_live_vbd_link = vbd_keys.iter().any(|k| {
             db.table("VBD")
                 .and_then(|t| t.get(k))
                 .map(has_live_vbd)
                 .unwrap_or(false)
-        }) && !db.rows("VBD").any(|(br, vbd)| br == r && has_live_vbd(vbd));
+        }) || db.rows("VBD").any(|(br, vbd)| br == r && has_live_vbd(vbd));
+        let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
+        // A valid snapshot (is_a_snapshot with a resolvable snapshot_of
+        // parent) is a user-managed object, not garbage — even when it has
+        // no VBD (mid-chain snapshots never do). A snapshot whose parent is
+        // gone is reported by the broken-snapshot-parent check instead.
+        let valid_snapshot = is_snapshot && {
+            let p = ref_of(vdi, "snapshot_of");
+            !p.is_empty() && db.table("VDI").and_then(|t| t.get(&p)).is_some()
+        };
+        let orphaned = !has_live_vbd_link && vhd_children == 0 && !valid_snapshot;
         let size = as_u64(get(vdi, "virtual_size")).unwrap_or(0);
         report.pool.vdi_total_size_bytes = report.pool.vdi_total_size_bytes.saturating_add(size);
-        let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
         let snapshot_children_uuids: Vec<String> = ref_set(get(vdi, "snapshots"))
             .iter()
             .filter_map(|sr| {
@@ -473,6 +501,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             is_ha_statefile,
             orphaned,
             vhd_parent_uuid,
+            vhd_children,
             leaf_coalesce_disabled,
         });
     }

@@ -4,6 +4,18 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.7 (patch)
+
+- fix: regression from 0.3.6 — mid-chain VHD snapshots and base copies were
+  flagged as orphaned just because they have no VBD. The orphan criteria now
+  match the SM garbage collector (xcp-ng sm, cleanup.py findGarbage): a VDI
+  is garbage only when nothing depends on it — no live VBD, no physical
+  child (no sm_config:vhd-parent pointing at it) and not a valid snapshot
+  (is_a_snapshot with a resolvable parent). The orphaned-vhd-parent check
+  no longer compares against the xapi snapshot-children set (the physical
+  chain and the xapi chain are different trees). VDI reports gain
+  `vhd_children` (physical child count) in JSON output.
+
 ## v0.3.6 (patch)
 
 - fix: orphaned base copies with an in-use parent are now detected — the

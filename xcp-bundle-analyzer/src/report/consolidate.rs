@@ -262,7 +262,10 @@ mod tests {
         let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
         assert!(ha.orphaned, "HA statefile has no VBD");
         let snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-snap").unwrap();
-        assert!(snap.orphaned, "snapshot has no VBD");
+        assert!(
+            !snap.orphaned,
+            "a valid snapshot with a resolvable parent is not orphaned, even without a VBD"
+        );
         let vm2 = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-2").unwrap();
         assert!(!vm2.orphaned, "vm2-disk is attached via vbd2");
         // leaf-coalesce=false surfaced on the report and in anomalies
@@ -509,7 +512,10 @@ mod orphaned_vhd_parent_tests {
             .snapshot_children_uuids
             .contains(&"vdi-uuid-snap".to_string()));
         let snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-snap").unwrap();
-        assert!(snap.orphaned, "snapshot has no VBD");
+        assert!(
+            !snap.orphaned,
+            "a valid snapshot with a resolvable parent is not orphaned, even without a VBD"
+        );
         assert_eq!(snap.snapshot_of_uuid, "vdi-uuid-1");
         assert!(!r
             .anomalies
@@ -669,5 +675,64 @@ mod generic_template_tests {
             .unwrap();
         assert_eq!(ub.severity, "info");
         assert!(ub.detail.contains("Ubuntu 24 04"), "{}", ub.detail);
+    }
+}
+
+#[cfg(test)]
+mod midchain_vhd_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn midchain_snapshot_and_base_are_not_orphaned() {
+        // Regression: a mid-chain VHD snapshot has no VBD by design, but
+        // it has a physical child (delta above it) and a resolvable xapi
+        // snapshot_of parent — it is valid, never garbage. Same for the
+        // in-use base below it (physical children, no snapshot status).
+        let r = report();
+        let mid = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-mid").unwrap();
+        assert_eq!(mid.vhd_parent_uuid, "vdi-uuid-1");
+        assert!(mid.vhd_children == 1, "delta sits physically on top");
+        assert!(!mid.orphaned, "mid-chain snapshot must not be orphaned");
+        assert!(!r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "orphaned-vhd-parent" && a.subject.contains("mid-snap")));
+
+        let delta = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-delta").unwrap();
+        assert!(!delta.orphaned, "valid snapshot leaf of a live chain");
+
+        // the in-use root with physical children on top is fine too
+        let root = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-1").unwrap();
+        assert!(!root.orphaned);
+        assert!(root.vhd_children >= 1);
+        assert!(!r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "orphaned-vhd-parent" && a.detail.contains("vdi-uuid-1]")));
+    }
+
+    #[test]
+    fn true_leftover_leaves_still_flagged() {
+        // The two fixture leftovers (no VBD, no physical child, no valid
+        // snapshot link) must still be flagged as orphaned-vhd-parent.
+        let r = report();
+        for uuid in ["vdi-uuid-bc-child", "vdi-uuid-bc2"] {
+            let d = r.vdis.iter().find(|d| d.uuid == uuid).unwrap();
+            assert!(d.orphaned, "{uuid} should be orphaned");
+            assert!(
+                r.anomalies
+                    .iter()
+                    .any(|a| a.category == "orphaned-vhd-parent" && a.detail.contains(uuid)),
+                "anomaly missing for {uuid}"
+            );
+        }
     }
 }

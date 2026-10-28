@@ -149,6 +149,10 @@ pub struct VdiReport {
     /// UUID from sm_config:vhd-parent when set (VHD base-copy chain).
     /// Empty when not set.
     pub vhd_parent_uuid: String,
+    /// Number of VDIs whose sm_config:vhd-parent points at this VDI
+    /// (physical children in the SM-level chain). A VDI with physical
+    /// children is the base of an active chain and is never garbage.
+    pub vhd_children: usize,
     /// True when other-config:leaf-coalesce is explicitly set to false.
     /// This is only meant to be set while the VM/VDI is being migrated;
     /// a leftover value disables leaf coalescing on the VDI.

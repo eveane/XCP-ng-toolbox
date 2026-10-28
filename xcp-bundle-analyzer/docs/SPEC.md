@@ -76,7 +76,7 @@ iscsi/fc/fcoe/zfs/xostor/local...), `device_config`, `other_config`,
 
 `name`, `uuid`, `sr`/`sr_uuid`, `vdi_type`, `size_bytes` (virtual size), `vm`
 (owning VM name via VBDs), flags: `is_snapshot`, `has_snapshots`,
-`snapshot_children` (uuids of the snapshot children),
+`snapshot_children` (uuids of the snapshot children), `vhd_children` (physical child count),
 `broken_parent` (snapshot_of set but parent missing from the dump),
 `is_ha_statefile`, `is_orphan` (no VM), `sharable`, `read_only`, `cbt_enabled`,
 `utilisation_bytes`, `image_format`, `snapshot_of_uuid`, `leaf_coalesce`

@@ -192,7 +192,7 @@ mod uptime_utc_tests {
         );
         assert!(
             text.contains(
-                "SR: NFS repo (4 VDIs: 2 base, 2 snapshots, 3 orphaned, 51.00 GiB total)"
+                "SR: NFS repo (6 VDIs: 2 base, 4 snapshots, 2 orphaned, 91.00 GiB total)"
             ),
             "{text}"
         );

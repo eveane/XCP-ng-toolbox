@@ -172,33 +172,26 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 7b) Orphaned base disk with an sm_config:vhd-parent whose parent does
-    //     not reference it back: a leftover VHD base-copy chain (usually
-    //     after a failed/aborted coalesce or migration). The base copy is
-    //     not attached to any VM and is not a snapshot itself; the parent
-    //     does NOT have to be orphaned or snapshot-free — it can be an
-    //     in-use disk. The only condition is that the parent has no
-    //     reference to the base copy (the base copy uuid is not among the
-    //     parent's snapshot children).
+    // 7b) Orphaned leaf of a VHD chain (sm_config:vhd-parent set): a
+    //     leftover base copy, usually after a failed/aborted coalesce or
+    //     migration. The orphaned flag already encodes the SM garbage
+    //     collector's criteria (xcp-ng sm, cleanup.py findGarbage): no live
+    //     VBD, no physical children (no VDI has vhd-parent pointing at it)
+    //     and not a valid snapshot. The parent does not have to be orphaned
+    //     or snapshot-free — it can be an in-use disk; a healthy mid-chain
+    //     base copy (physical children above it) is never flagged.
     for d in &r.vdis {
         if d.vhd_parent_uuid.is_empty() || !d.orphaned || d.is_snapshot {
             continue;
         }
-        let parent = r.vdis.iter().find(|p| p.uuid == d.vhd_parent_uuid);
-        let orphan_chain = match parent {
-            Some(p) => !p.snapshot_children_uuids.contains(&d.uuid),
-            None => false,
-        };
-        if orphan_chain {
-            out.push(warn(
-                "orphaned-vhd-parent",
-                d.name.clone(),
-                format!(
-                    "VDI {} [{}] is an orphaned base disk with sm_config:vhd-parent={}, but its parent does not reference it back (not among its snapshot children): leftover VHD base-copy chain, the base copy can likely be deleted",
-                    d.name, d.uuid, d.vhd_parent_uuid
-                ),
-            ));
-        }
+        out.push(warn(
+            "orphaned-vhd-parent",
+            d.name.clone(),
+            format!(
+                "VDI {} [{}] is an orphaned base copy with sm_config:vhd-parent={} and nothing depending on it (no live VBD, no VHD child): leftover VHD base-copy chain, the base copy can likely be deleted",
+                d.name, d.uuid, d.vhd_parent_uuid
+            ),
+        ));
     }
 
     // 7c) other-config:leaf-coalesce=false is a temporary workaround for
