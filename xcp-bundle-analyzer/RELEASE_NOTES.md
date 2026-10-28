@@ -4,6 +4,20 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.8 (patch)
+
+- feat: orphaned-vhd-parent findings now distinguish unmanaged (hidden)
+  VDIs — the garbage collector's territory, with a message pointing at
+  /var/log/SMlog and the SR's gc setting — from still-managed leftovers,
+  which are safe `xe vdi-destroy` candidates (issue #41 follow-up).
+- feat: new gc-disabled anomaly — SRs with `other-config:gc=false`, on
+  which the SM garbage collector never runs (gcEnabled in cleanup.py), so
+  hidden leftover VDIs accumulate; a common forgotten troubleshooting
+  measure.
+- feat: VDI reports carry `managed` in JSON output.
+- docs: docs/SNAPSHOTS.md gained a full example workflow (anomalies →
+  triage → verify with object view → `xe vdi-destroy` → rescan).
+
 ## v0.3.7 (patch)
 
 - docs: new docs/SNAPSHOTS.md — definitions of snapshots, base copies,

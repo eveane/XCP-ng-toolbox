@@ -139,7 +139,12 @@ self-contained HTML dashboard (XO-like single page, no external assets).
       matching the SM garbage collector's criteria (xcp-ng `cleanup.py`):
       only VDIs with no children are ever prunable. Mid-chain snapshots and
       base copies (no VBD by design, referenced through the chain) are
-      never flagged; the parent does not have to be orphaned either
+      never flagged. Unmanaged (hidden) leftovers are reported as the GC's
+      territory (investigate why it has not collected them); still-managed
+      ones as safe `xe vdi-destroy` candidates
+  7d. SR with `other-config:gc=false` — the SM garbage collector never runs
+      on it (`gcEnabled` in cleanup.py), so hidden leftover VDIs are never
+      cleaned; commonly a forgotten troubleshooting measure
   7c. VDI or SR with `other-config:leaf-coalesce=false` — a temporary
       workaround for coalesce issues; a leftover value keeps snapshots
       forever, impacts performance and consumes disk. SR-level settings

@@ -736,3 +736,60 @@ mod midchain_vhd_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod gc_managed_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn unmanaged_orphan_points_at_the_gc() {
+        // issue #41 shape: hidden (managed=false, read_only=true) base copy
+        // with vhd-parent, no VBD, no child — the GC should have removed it.
+        let r = report();
+        let a = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "orphaned-vhd-parent" && a.subject == "base copy")
+            .unwrap();
+        assert!(a.detail.contains("unmanaged (hidden)"), "{}", a.detail);
+        assert!(
+            a.detail
+                .contains("garbage collector should have removed it"),
+            "{}",
+            a.detail
+        );
+        assert!(a.detail.contains("SMlog"), "{}", a.detail);
+    }
+
+    #[test]
+    fn managed_orphan_is_a_deletion_candidate() {
+        let r = report();
+        let a = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "orphaned-vhd-parent" && a.subject == "orphaned base copy 2")
+            .unwrap();
+        assert!(a.detail.contains("still managed by xapi"), "{}", a.detail);
+        assert!(a.detail.contains("xe vdi-destroy"), "{}", a.detail);
+    }
+
+    #[test]
+    fn gc_disabled_sr_flagged() {
+        let r = report();
+        let a = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "gc-disabled" && a.subject == "iSCSI shared")
+            .unwrap();
+        assert!(a.detail.contains("gc=false"), "{}", a.detail);
+        assert!(a.detail.contains("xe sr-param-remove"), "{}", a.detail);
+    }
+}

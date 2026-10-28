@@ -129,6 +129,10 @@ pub struct VdiReport {
     pub vm: String,
     /// True when this VDI is a snapshot (is_a_snapshot=true).
     pub is_snapshot: bool,
+    /// True when the VDI is managed by xapi (managed=true). Unmanaged
+    /// (hidden) VDIs are internal SM objects: base copies, coalesce
+    /// intermediates — the GC is responsible for removing them.
+    pub managed: bool,
     /// True when this VDI has at least one snapshot child.
     pub has_snapshots: bool,
     /// UUIDs of the snapshot children of this VDI (its `snapshots` set,

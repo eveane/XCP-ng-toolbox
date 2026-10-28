@@ -172,26 +172,49 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 7b) Orphaned leaf of a VHD chain (sm_config:vhd-parent set): a
-    //     leftover base copy, usually after a failed/aborted coalesce or
-    //     migration. The orphaned flag already encodes the SM garbage
-    //     collector's criteria (xcp-ng sm, cleanup.py findGarbage): no live
-    //     VBD, no physical children (no VDI has vhd-parent pointing at it)
-    //     and not a valid snapshot. The parent does not have to be orphaned
-    //     or snapshot-free — it can be an in-use disk; a healthy mid-chain
-    //     base copy (physical children above it) is never flagged.
+    // 7b) Orphaned leaf of a VHD chain (sm_config:vhd-parent set). The
+    //     orphaned flag encodes the SM garbage collector's prunable shape
+    //     (xcp-ng sm, cleanup.py findGarbage): no live VBD, no physical
+    //     children and not a valid snapshot. Two different situations wear
+    //     this shape, and they call for different actions:
+    //     - unmanaged (hidden) VDI: the GC's own territory — it should have
+    //       collected it already; its presence means the GC did not run
+    //       (SR other-config:gc=false is checked separately), failed (see
+    //       /var/log/SMlog), or the VHD is not actually hidden on disk.
+    //       Investigate; do not hand-delete what the GC owns.
+    //     - still-managed VDI: a leftover xapi object after a failed/aborted
+    //       coalesce or migration — a candidate for `xe vdi-destroy`.
+    //     A healthy mid-chain base copy (physical children above it) is
+    //     never flagged, and the parent's own state is irrelevant.
     for d in &r.vdis {
         if d.vhd_parent_uuid.is_empty() || !d.orphaned || d.is_snapshot {
             continue;
         }
-        out.push(warn(
-            "orphaned-vhd-parent",
-            d.name.clone(),
-            format!(
-                "VDI {} [{}] is an orphaned base copy with sm_config:vhd-parent={} and nothing depending on it (no live VBD, no VHD child): leftover VHD base-copy chain, the base copy can likely be deleted",
-                d.name, d.uuid, d.vhd_parent_uuid
-            ),
-        ));
+        let sr_name = r
+            .srs
+            .iter()
+            .find(|s| s.uuid == d.sr_uuid)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        if d.managed {
+            out.push(warn(
+                "orphaned-vhd-parent",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}]{} is still managed by xapi but is an orphaned base copy (sm_config:vhd-parent={}, no live VBD, no VHD child): a leftover from a failed/aborted coalesce or migration — it can likely be deleted with `xe vdi-destroy uuid={}`",
+                    d.name, d.uuid, sr_label(&sr_name), d.vhd_parent_uuid, d.uuid
+                ),
+            ));
+        } else {
+            out.push(warn(
+                "orphaned-vhd-parent",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}]{} is unmanaged (hidden) and orphaned (sm_config:vhd-parent={}, no live VBD, no VHD child) — the storage manager garbage collector should have removed it; check /var/log/SMlog for GC errors and whether the SR's GC is running (`xe sr-param-list uuid={}` other-config:gc), and investigate why it lingers",
+                    d.name, d.uuid, sr_label(&sr_name), d.vhd_parent_uuid, d.sr_uuid
+                ),
+            ));
+        }
     }
 
     // 7c) other-config:leaf-coalesce=false is a temporary workaround for
@@ -219,6 +242,24 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                 s.name.clone(),
                 format!(
                     "SR {} [{}] has other-config:leaf-coalesce=false; this disables leaf coalescing for every VDI of the SR — snapshots are kept forever, performance is impacted and disk is consumed; remove it as soon as it is no longer needed with: xe sr-param-remove uuid={} param-name=other-config param-key=leaf-coalesce",
+                    s.name, s.uuid, s.uuid
+                ),
+            ));
+        }
+    }
+
+    // 7d) SR with the garbage collector disabled (other-config:gc=false):
+    //     per the SM source (cleanup.py gcEnabled), the GC aborts on such
+    //     SRs — hidden/unmanaged leftover VDIs are never collected and
+    //     accumulate. Commonly set temporarily during troubleshooting and
+    //     forgotten.
+    for s in &r.srs {
+        if map_get(&s.other_config, "gc") == Some("false") {
+            out.push(warn(
+                "gc-disabled",
+                s.name.clone(),
+                format!(
+                    "SR {} [{}] has other-config:gc=false — the storage manager garbage collector never runs on this SR, so unmanaged leftover VDIs (hidden base copies, coalesce intermediates) are never cleaned and disk space is never reclaimed; if this was a temporary troubleshooting measure, remove it with: xe sr-param-remove uuid={} param-name=other-config param-key=gc",
                     s.name, s.uuid, s.uuid
                 ),
             ));
@@ -535,6 +576,15 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
 }
 
 /// Append a template recommendation to an anomaly detail.
+/// SR name suffix for anomaly details (" on <SR>") or empty when unknown.
+fn sr_label(sr_name: &str) -> String {
+    if sr_name.is_empty() {
+        String::new()
+    } else {
+        format!(" on SR {sr_name}")
+    }
+}
+
 fn add_recommendation(
     base: String,
     recommendation: Option<String>,

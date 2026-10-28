@@ -158,15 +158,92 @@ leaf step (the analyzer flags it as needing attention).
 | base copy leftover (no VBD, no child, not a snapshot) | eventually, once hidden | yes — what `orphaned-vhd-parent` flags |
 | broken snapshot (parent gone) | no (outlived its entry) | review manually |
 
+## Example workflow: find and safely delete an orphaned VDI
+
+A complete run-through, from bundle to deletion, using the analyzer's
+output. On the XCP-ng host, collect a status report with
+`xen-bugtool --yestoall -t all`, copy the archive to your workstation,
+then:
+
+```bash
+# 1. Look at the anomalies first
+xcp-bundle-analyzer analyze status-report.tar.bz2 --section anomalies
+```
+
+Sample output:
+
+```
+--- gc-disabled (1) ---
+  [PROBABLY ABNORMAL] iSCSI shared: SR iSCSI shared [sr-uuid-iscsi] has
+  other-config:gc=false — the storage manager garbage collector never runs
+  on this SR ... remove it with: xe sr-param-remove ... param-key=gc
+
+--- orphaned-vhd-parent (2) ---
+  [PROBABLY ABNORMAL] base copy: VDI base copy [vdi-uuid-bc-child] on SR
+  iSCSI shared is unmanaged (hidden) and orphaned (sm_config:vhd-parent=...,
+  no live VBD, no VHD child) — the garbage collector should have removed it;
+  check /var/log/SMlog for GC errors and whether the SR's GC is running ...
+  [PROBABLY ABNORMAL] orphaned base copy 2: VDI orphaned base copy 2
+  [vdi-uuid-bc2] on SR NFS repo is still managed by xapi but is an orphaned
+  base copy ... it can likely be deleted with `xe vdi-destroy uuid=...`
+```
+
+```bash
+# 2. Triage the findings:
+#    a. SR flagged gc-disabled -> the GC was switched off, which is why
+#       nothing gets cleaned. Fix the cause first, on the pool master:
+xe sr-param-remove uuid=<sr-uuid> param-name=other-config param-key=gc
+#       then trigger a scan and let the GC collect the hidden leftovers:
+xe sr-scan uuid=<sr-uuid>
+
+#    b. "unmanaged (hidden) and orphaned" -> the GC's own territory. Do NOT
+#       hand-delete: re-enable the GC (above), rescan, and watch SMlog. If it
+#       still lingers after a successful GC pass, investigate the on-disk
+#       VHD (vhd-util) before touching anything.
+
+#    c. "still managed by xapi but orphaned" -> a leftover xapi object.
+#       Verify with the full chain view that nothing sits on it:
+xcp-bundle-analyzer analyze status-report.tar.bz2 --section vdis
+xcp-bundle-analyzer object vdi <uuid> status-report.tar.bz2
+#       the object view must show: VBDs empty, no snapshot links, and NO
+#       other VDI listing it as vhd-parent
+
+# 3. Only when every check passes, delete through xapi (never rm the file):
+xe vdi-destroy uuid=<uuid>
+
+# 4. Rescan the SR to reclaim the space, then re-run the analyzer to
+#    confirm the finding is gone:
+xe sr-scan uuid=<sr-uuid>
+xcp-bundle-analyzer analyze status-report.tar.bz2 --section anomalies
+```
+
+Golden rules:
+
+- let the GC clean hidden/unmanaged VDIs — your job is to make sure it runs
+  (check `gc-disabled` findings first);
+- only delete what the analyzer marked **still managed** *and* orphaned;
+- always go through `xe`, never delete the backing file directly;
+- after deleting, rescan and re-run the analyzer to confirm.
+
 ## How the analyzer decides (`orphaned` flag)
 
 `orphaned = no live VBD AND vhd_children == 0 AND not a valid snapshot` —
 deliberately the same shape as the GC's own prunable test, computed from
 what a status-report dump can see. The `orphaned-vhd-parent` anomaly flags
-the subset that also has `sm_config:vhd-parent` set (leftover base copies);
+the subset that also has `sm_config:vhd-parent` set, and its message depends
+on the VDI's `managed` state:
+
+- **unmanaged (hidden)** VDIs are the garbage collector's territory — the
+  finding tells you to investigate why the GC has not collected them
+  (see `gc-disabled` below);
+- **still-managed** VDIs are leftover xapi objects, safe deletion
+  candidates for `xe vdi-destroy`.
+
 `broken-snapshot-parent` flags snapshots whose parent is gone; the
 `ORPHANED` marker in the VDI section uses the general flag.
 
-Related checks in the anomalies section: `sr-free-space`,
+Related checks in the anomalies section: `gc-disabled` (SR with
+`other-config:gc=false` — the GC never runs on it, per `gcEnabled` in the
+SM source, so hidden leftovers accumulate), `sr-free-space`,
 `leaf-coalesce-disabled` (a leftover `leaf-coalesce=false` blocks the GC's
 leaf step), and `vdi-tree` for a visual walk of both chains.

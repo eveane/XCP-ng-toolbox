@@ -415,6 +415,9 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .unwrap_or(false)
         }) || db.rows("VBD").any(|(br, vbd)| br == r && has_live_vbd(vbd));
         let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
+        // managed defaults to true: the attribute is absent on older dumps,
+        // and an unmanaged VDI always carries managed="false" explicitly.
+        let managed = get(vdi, "managed") != "false";
         // A valid snapshot (is_a_snapshot with a resolvable snapshot_of
         // parent) is a user-managed object, not garbage — even when it has
         // no VBD (mid-chain snapshots never do). A snapshot whose parent is
@@ -494,6 +497,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             size_bytes: size,
             vm: ref_label(db, "VM", &vm_ref, "name__label"),
             is_snapshot,
+            managed,
             has_snapshots,
             snapshot_children_uuids,
             snapshot_of_uuid: snap_of_uuid,
