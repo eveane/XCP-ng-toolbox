@@ -372,6 +372,15 @@ xcp-bundle-analyzer list host1.tar.bz2 [--grep xapi]
 xcp-bundle-analyzer xapi-db host1.tar.bz2 host
 ```
 
+## Snapshots, base disks and garbage collection
+
+See [docs/SNAPSHOTS.md](docs/SNAPSHOTS.md) for a full guide to VDI chains:
+what a snapshot, a base copy and a mid-chain disk are, the difference
+between the xapi chain (`snapshot_of`) and the physical chain
+(`sm_config:vhd-parent`), when it is safe to delete a VDI (and when you
+never should), and exactly when the Storage Manager garbage collector
+deletes or preserves VDIs (grounded in the xcp-ng `sm` GC source).
+
 ## Notes on the xapi-db.xml format
 
 Each table is dumped as:

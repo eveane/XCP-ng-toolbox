@@ -6,6 +6,10 @@ the major `x` stays static at 0 until the first release-ready version.
 
 ## v0.3.7 (patch)
 
+- docs: new docs/SNAPSHOTS.md — definitions of snapshots, base copies,
+  mid-chain disks and orphans, the two VDI chains (xapi vs physical), when
+  it is safe (or never safe) to delete a VDI, and the SM garbage
+  collector's exact delete/preserve rules from the xcp-ng sm source.
 - fix: regression from 0.3.6 — mid-chain VHD snapshots and base copies were
   flagged as orphaned just because they have no VBD. The orphan criteria now
   match the SM garbage collector (xcp-ng sm, cleanup.py findGarbage): a VDI
