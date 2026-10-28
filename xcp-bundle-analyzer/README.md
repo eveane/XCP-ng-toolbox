@@ -35,15 +35,18 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   Valid objects: vdi, vbd, vif, pbd, pif, sr, network, vm, host. Every field
   of the xapi row is printed; references are resolved to uuid (name), and
   sets/maps (other_config, sm_config, VBDs, PIFs, ...) are decoded.
-- `vdi-tree` subcommand: prints VDI chain trees walking the **physical**
-  chain (`sm_config:vhd-parent` — the dependency graph that decides whether
-  a VDI can be deleted), with xapi status as flags: `SNAPSHOT`,
-  `hidden(unmanaged)`, `*** BROKEN PARENT ***`, and
-  `*** ORPHANED: nothing depends on it ***` on leaves nothing depends on.
-  Snapshots linked only in the xapi chain appear as `SNAPSHOT(xapi)`
-  cross-references. With a VDI uuid it prints the chain containing that
-  VDI, starting from the chain root; without an argument it prints a tree
-  for every root VDI.
+- `vdi-tree` subcommand: prints VDI chain trees, `--chain physical`
+  (default — `sm_config:vhd-parent`, the dependency graph that decides
+  whether a VDI can be deleted) or `--chain xapi` (`snapshot_of`, the
+  view xe/Xen Orchestra show). Nodes carry the xapi status as flags
+  (`SNAPSHOT`, `hidden(unmanaged)`, `*** BROKEN PARENT ***`) and the orphan
+  verdict (`*** ORPHANED: nothing depends on it ***`); a
+  `[chains differ: xapi-parent=…, vhd-parent=…]` note marks VDIs whose two
+  parents do not match (normal while coalescing, worth seeing when
+  comparing views). In the physical view, snapshots linked only in the
+  xapi chain appear as `SNAPSHOT(xapi)` cross-references. With a VDI uuid
+  it prints the chain containing that VDI, starting from the chain root;
+  without an argument it prints a tree for every root VDI.
   Broken parents (snapshot_of pointing to a deleted VDI) are flagged.
 - `--section` option to display only some parts of the report: pool, hosts,
   srs, vms, vdis, vbds, vifs, pifs, or `anomalies` (settings needing

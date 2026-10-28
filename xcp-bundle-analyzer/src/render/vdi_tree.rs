@@ -14,24 +14,34 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 /// Print the chain tree(s) rooted at the given VDI uuid, or all trees when
-/// no uuid is given. Roots are VDIs without a physical parent; children are
-/// the VDIs whose sm_config:vhd-parent points at them (physically on top).
-pub fn render_vdi_tree(r: &BundleReport, uuid: Option<&str>) -> anyhow::Result<String> {
-    // physical children: parent uuid -> VDIs based on it
+/// no uuid is given. With `xapi=true` the xapi chain (snapshot_of, the view
+/// xe/Xen Orchestra show) is drawn instead of the physical one.
+pub fn render_vdi_tree(r: &BundleReport, uuid: Option<&str>, xapi: bool) -> anyhow::Result<String> {
+    // children: parent uuid -> VDIs based on it (via the selected chain)
     let mut children: BTreeMap<String, Vec<&VdiReport>> = BTreeMap::new();
     for d in &r.vdis {
-        if !d.vhd_parent_uuid.is_empty() {
-            children
-                .entry(d.vhd_parent_uuid.clone())
-                .or_default()
-                .push(d);
+        let parent = if xapi {
+            &d.snapshot_of_uuid
+        } else {
+            &d.vhd_parent_uuid
+        };
+        if !parent.is_empty() {
+            children.entry(parent.clone()).or_default().push(d);
         }
     }
     for group in children.values_mut() {
         group.sort_by_key(|a| a.name.to_lowercase());
     }
+    let parent_of = |d: &VdiReport| -> String {
+        if xapi {
+            d.snapshot_of_uuid.clone()
+        } else {
+            d.vhd_parent_uuid.clone()
+        }
+    };
 
     let mut out = String::new();
+    let chain_name = if xapi { "xapi" } else { "physical" };
     match uuid {
         Some(u) => {
             let u = u.strip_prefix("uuid=").unwrap_or(u);
@@ -40,34 +50,31 @@ pub fn render_vdi_tree(r: &BundleReport, uuid: Option<&str>) -> anyhow::Result<S
                 .iter()
                 .find(|d| d.uuid == u)
                 .with_context(|| format!("no VDI with uuid {u} in this bundle"))?;
-            // walk up the physical chain to the true root
+            // walk up the selected chain to the true root
             let mut root = start;
             let mut guard = 0;
-            while !root.vhd_parent_uuid.is_empty() && guard < 1000 {
+            while !parent_of(root).is_empty() && guard < 1000 {
                 guard += 1;
-                match r.vdis.iter().find(|d| d.uuid == root.vhd_parent_uuid) {
+                match r.vdis.iter().find(|d| d.uuid == parent_of(root)) {
                     Some(p) => root = p,
                     None => break, // parent missing from the dump: start here
                 }
             }
-            let _ = writeln!(out, "VDI chain: {}", root.uuid);
-            print_vdi_node(r, &children, root, "", true, &mut out);
+            let _ = writeln!(out, "VDI chain ({chain_name}): {}", root.uuid);
+            print_vdi_node(r, &children, root, "", true, xapi, &mut out);
         }
         None => {
-            // roots = VDIs without a physical parent in the dump
-            let mut roots: Vec<&VdiReport> = r
-                .vdis
-                .iter()
-                .filter(|d| d.vhd_parent_uuid.is_empty())
-                .collect();
+            // roots = VDIs without a parent in the selected chain
+            let mut roots: Vec<&VdiReport> =
+                r.vdis.iter().filter(|d| parent_of(d).is_empty()).collect();
             roots.sort_by_key(|a| a.name.to_lowercase());
             if roots.is_empty() {
                 let _ = writeln!(out, "no VDIs in this dump");
                 return Ok(out);
             }
             for root in roots {
-                let _ = writeln!(out, "\nVDI chain: {}", root.uuid);
-                print_vdi_node(r, &children, root, "", true, &mut out);
+                let _ = writeln!(out, "\nVDI chain ({chain_name}): {}", root.uuid);
+                print_vdi_node(r, &children, root, "", true, xapi, &mut out);
             }
         }
     }
@@ -80,6 +87,7 @@ fn print_vdi_node(
     d: &VdiReport,
     prefix: &str,
     is_last: bool,
+    xapi: bool,
     out: &mut String,
 ) {
     let connector = if prefix.is_empty() {
@@ -94,6 +102,19 @@ fn print_vdi_node(
     let mut flags = String::new();
     if d.is_snapshot {
         flags.push_str(" SNAPSHOT");
+    }
+    // chain mismatch: the two parents differ — common while snapshots are
+    // being coalesced, but worth seeing when comparing the two views
+    if !d.vhd_parent_uuid.is_empty()
+        && !d.snapshot_of_uuid.is_empty()
+        && d.vhd_parent_uuid != d.snapshot_of_uuid
+    {
+        let _ = write!(
+            flags,
+            "  [chains differ: xapi-parent={}, vhd-parent={}]",
+            short(d.snapshot_of_uuid.as_str()),
+            short(d.vhd_parent_uuid.as_str())
+        );
     }
     if !d.managed {
         flags.push_str(" hidden(unmanaged)");
@@ -130,44 +151,63 @@ fn print_vdi_node(
     );
     // xapi snapshot children that are NOT physically on this disk: print
     // them as cross-references so the two chains stay visible in one tree
-    let physical_kids = children.get(&d.uuid).cloned().unwrap_or_default();
+    let chain_kids = children.get(&d.uuid).cloned().unwrap_or_default();
     let mut kid_prefix = if prefix.is_empty() {
         "    ".to_string()
     } else {
         format!("{}{}", prefix, if is_last { "    " } else { "|   " })
     };
-    for (i, kid) in physical_kids.iter().enumerate() {
-        let last = i == physical_kids.len() - 1 && d.snapshot_children_uuids.is_empty();
-        print_vdi_node(r, children, kid, &kid_prefix, last, out);
-        if i == physical_kids.len() - 1 && !d.snapshot_children_uuids.is_empty() {
-            // physical children done; snapshot refs follow at the same level
+    // cross-references: only in the physical view — xapi-only snapshot
+    // children (not physically on this disk) are appended as
+    // SNAPSHOT(xapi) leaves so both chains stay visible in one tree.
+    let xref_count = if xapi {
+        0
+    } else {
+        d.snapshot_children_uuids
+            .iter()
+            .filter(|u| !chain_kids.iter().any(|k| &k.uuid == *u))
+            .count()
+    };
+    for (i, kid) in chain_kids.iter().enumerate() {
+        let last = i == chain_kids.len() - 1 && xref_count == 0;
+        print_vdi_node(r, children, kid, &kid_prefix, last, xapi, out);
+        if i == chain_kids.len() - 1 && xref_count > 0 {
             kid_prefix = format!("{}{}", prefix, if is_last { "    " } else { "|   " });
         }
     }
-    for (i, snap_uuid) in d.snapshot_children_uuids.iter().enumerate() {
-        // only xapi-only snapshots (not already drawn as physical children)
-        if physical_kids.iter().any(|k| &k.uuid == snap_uuid) {
-            continue;
-        }
-        if let Some(s) = r.vdis.iter().find(|v| v.uuid == *snap_uuid) {
-            let last = i == d.snapshot_children_uuids.len() - 1;
-            let _ = writeln!(
-                out,
-                "{}{}{} [{}] SNAPSHOT(xapi) format={} size={} sr={}",
-                kid_prefix,
-                if last { "`-- " } else { "|-- " },
-                s.name,
-                s.uuid,
-                if s.image_format.is_empty() {
-                    "-"
-                } else {
-                    &s.image_format
-                },
-                gib(s.size_bytes),
-                if s.sr.is_empty() { "-" } else { &s.sr }
-            );
+    if !xapi {
+        // physical view: append xapi-only snapshot children as cross-refs
+        let mut shown = 0;
+        let total = xref_count;
+        for snap_uuid in d.snapshot_children_uuids.iter() {
+            if chain_kids.iter().any(|k| &k.uuid == snap_uuid) {
+                continue;
+            }
+            if let Some(s) = r.vdis.iter().find(|v| v.uuid == *snap_uuid) {
+                shown += 1;
+                let _ = writeln!(
+                    out,
+                    "{}{}{} [{}] SNAPSHOT(xapi) format={} size={} sr={}",
+                    kid_prefix,
+                    if shown == total { "`-- " } else { "|-- " },
+                    s.name,
+                    s.uuid,
+                    if s.image_format.is_empty() {
+                        "-"
+                    } else {
+                        &s.image_format
+                    },
+                    gib(s.size_bytes),
+                    if s.sr.is_empty() { "-" } else { &s.sr }
+                );
+            }
         }
     }
+}
+
+/// First 8 chars of a uuid, for compact mismatch notes.
+fn short(uuid: &str) -> &str {
+    &uuid[..uuid.len().min(8)]
 }
 
 #[cfg(test)]
@@ -185,8 +225,8 @@ mod vdi_tree_tests {
         let r = report();
         // the delta sits physically on the mid-chain snapshot, which sits
         // physically on vm1-disk: one chain, not three flat snapshots
-        let out = render_vdi_tree(&r, Some("vdi-uuid-delta")).unwrap();
-        assert!(out.contains("VDI chain: vdi-uuid-1"), "{out}");
+        let out = render_vdi_tree(&r, Some("vdi-uuid-delta"), false).unwrap();
+        assert!(out.contains("VDI chain (physical): vdi-uuid-1"), "{out}");
         // the physical chain: delta on top of the mid-snap on top of the base
         assert!(
             out.contains("|-- vm1-disk mid-snap [vdi-uuid-mid] SNAPSHOT"),
@@ -194,6 +234,12 @@ mod vdi_tree_tests {
         );
         assert!(
             out.contains("`-- vm1-disk newer delta [vdi-uuid-delta] SNAPSHOT"),
+            "{out}"
+        );
+        // the delta's xapi parent (vdi-uuid-1) differs from its physical
+        // parent (vdi-uuid-mid): the mismatch is shown on the node
+        assert!(
+            out.contains("[chains differ: xapi-parent=vdi-uuid, vhd-parent=vdi-uuid]"),
             "{out}"
         );
         // the mid-chain snapshot carries no ORPHANED marker
@@ -206,7 +252,7 @@ mod vdi_tree_tests {
     #[test]
     fn vdi_tree_marks_orphans_and_hidden_disks() {
         let r = report();
-        let out = render_vdi_tree(&r, None).unwrap();
+        let out = render_vdi_tree(&r, None, false).unwrap();
         // the #41-style hidden leftover base copy, flagged as orphaned
         assert!(
             out.contains(
@@ -228,7 +274,7 @@ mod vdi_tree_tests {
     #[test]
     fn vdi_tree_unknown_uuid_errors() {
         let r = report();
-        assert!(render_vdi_tree(&r, Some("no-such-uuid")).is_err());
+        assert!(render_vdi_tree(&r, Some("no-such-uuid"), false).is_err());
     }
 
     #[test]

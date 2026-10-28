@@ -23,7 +23,12 @@ number-one cause of misreading a dump:
 The two chains usually follow each other, but **not always** — during
 snapshots, coalescing, migrations and clones the physical chain temporarily
 contains disks the xapi chain does not know about (base copies), and
-mid-chain disks have a different xapi parent than physical parent. The
+mid-chain disks have a different xapi parent than physical parent.
+`vdi-tree` draws either chain (`--chain physical` — the default,
+deletion-safety view — or `--chain xapi`, the xe/XO view) and marks nodes
+whose two parents differ with a `[chains differ: xapi-parent=…,
+vhd-parent=…]` note: that situation is normal while snapshots are being
+coalesced, but seeing it spelled out makes comparing the two views safe. The
 analyzer shows both: the VDI section displays the xapi relationships, and
 `vdi-tree` walks the physical chain.
 

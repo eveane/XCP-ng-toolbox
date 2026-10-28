@@ -20,6 +20,14 @@ enum Format {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum ChainKind {
+    /// sm_config:vhd-parent — the physical chain; the dependency graph
+    Physical,
+    /// snapshot_of — the xapi chain, like xe/Xen Orchestra show
+    Xapi,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
 enum CompletionShell {
     Bash,
     Zsh,
@@ -213,13 +221,18 @@ enum Commands {
         /// VM UUID, given as uuid=<uuid> or just <uuid>
         uuid: String,
     },
-    /// Print VDI snapshot trees (all VDIs, or one tree for the given VDI uuid)
+    /// Print VDI chain trees (all VDIs, or one tree for the given VDI uuid)
     VdiTree {
         bundle: PathBuf,
         /// VDI UUID (uuid=<uuid> or bare). When omitted, a tree is printed
         /// for every root VDI in the dump.
         #[arg(requires = "bundle")]
         uuid: Option<String>,
+        /// Which chain to draw: `physical` (sm_config:vhd-parent — the
+        /// dependency graph that decides whether a VDI can be deleted) or
+        /// `xapi` (snapshot_of — the view xe/xo show). Default: physical.
+        #[arg(long, value_enum, default_value_t = ChainKind::Physical)]
+        chain: ChainKind,
     },
     /// Print a shell completion script for the given shell
     Completions {
@@ -406,7 +419,11 @@ fn main() -> Result<()> {
             bundle,
         } => cmd_object_display(&object, &uuid, &bundle),
         Commands::VmDisplay { bundle, uuid } => cmd_vm_display(&bundle, &uuid),
-        Commands::VdiTree { bundle, uuid } => cmd_vdi_tree(&bundle, uuid.as_deref()),
+        Commands::VdiTree {
+            bundle,
+            uuid,
+            chain,
+        } => cmd_vdi_tree(&bundle, uuid.as_deref(), chain),
         Commands::Completions { shell } => {
             generate(
                 shell.clap_shell(),
@@ -419,7 +436,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn cmd_vdi_tree(bundle_path: &Path, uuid: Option<&str>) -> Result<()> {
+fn cmd_vdi_tree(bundle_path: &Path, uuid: Option<&str>, chain: ChainKind) -> Result<()> {
     // Accept uuid= prefix, and the argument in either position.
     let bp = bundle_path.display().to_string();
     let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
@@ -429,7 +446,7 @@ fn cmd_vdi_tree(bundle_path: &Path, uuid: Option<&str>) -> Result<()> {
     };
     let uuid = uuid.map(|u| u.strip_prefix("uuid=").unwrap_or(u));
     let rep = analyze_one(bundle_path)?;
-    let text = render::render_vdi_tree(&rep, uuid)?;
+    let text = render::render_vdi_tree(&rep, uuid, chain == ChainKind::Xapi)?;
     print!("{text}");
     Ok(())
 }
