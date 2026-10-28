@@ -4,8 +4,14 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
-## v0.3.8 (patch)
+## v0.3.9 (patch)
 
+- feat: `vdi-tree` now walks the physical chain (sm_config:vhd-parent) —
+  the dependency graph that decides whether a VDI can be deleted — instead
+  of the flat xapi snapshot list. Nodes carry the xapi status as flags
+  (SNAPSHOT, hidden(unmanaged), BROKEN PARENT) and the orphan verdict
+  (*** ORPHANED: nothing depends on it ***); xapi-only snapshots appear as
+  SNAPSHOT(xapi) cross-references.
 - feat: orphaned-vhd-parent findings now distinguish unmanaged (hidden)
   VDIs — the garbage collector's territory, with a message pointing at
   /var/log/SMlog and the SR's gc setting — from still-managed leftovers,
