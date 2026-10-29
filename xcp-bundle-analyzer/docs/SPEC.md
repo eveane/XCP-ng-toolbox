@@ -39,6 +39,23 @@ Conventions that apply to every field:
 | `warnings` | `[string]` | Non-fatal problems (missing files, parse issues) |
 | `bundle_origin_host` | string | Hostname the bundle was collected on ("" if unknown) |
 
+## `VdiClass` and `VdiClassSummary`
+
+Each VDI carries a `vdi_class` field (enum serialized as
+`"Required"`/`"Gc"`/`"Deletable"`/`"ExpectedUnattached"`), computed from
+the same criteria the SM garbage collector uses:
+
+| Class | Meaning | Display flag |
+|---|---|---|
+| `Required` | Attached to a VM, has physical children, or a valid snapshot | `R` |
+| `Gc` | Unmanaged (hidden) orphan — GC should remove it | `GC` |
+| `Deletable` | Still-managed orphan — safe `xe vdi-destroy` candidate | `D` |
+| `ExpectedUnattached` | HA mechanism objects, removable media | (none) |
+
+`PoolSummary.vdi_class_summary` aggregates counts per class plus
+reclaimable sizes (`gc_reclaimable_bytes`, `deletable_reclaimable_bytes`,
+sum of `virtual_size` per class).
+
 ## `TaskReport` (key fields)
 
 - Identity: `uuid`, `opaque_ref`, `name` (e.g. `Async.VM.clone`),

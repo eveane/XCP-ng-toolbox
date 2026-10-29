@@ -97,6 +97,28 @@ comma-separated list; the default is the full report):
     xcp-bundle-analyzer analyze --section pool,storage XenServer-host1.tar.bz2
     xcp-bundle-analyzer analyze --section anomalies host1.tar.bz2 host2.tar.bz2
 
+VDI CLASSIFICATION (--vdi-class R|GC|D):
+
+  Every VDI is classified for deletion safety, using the same criteria
+  as the SM garbage collector (see docs/SNAPSHOTS.md):
+    R   required — attached to a VM, has physical children (mid-chain
+        base), or a valid snapshot. Never deletable.
+    GC  garbage-collector territory — unmanaged (hidden) orphan. The GC
+        should remove it; do not hand-delete, investigate why it lingers.
+    D   user-deletable — still-managed orphan (leftover xapi object after
+        a failed/aborted coalesce or migration). Safe `xe vdi-destroy`
+        candidate.
+  VDIs expected to be unattached (HA statefiles, SR metadata, CDs, ISO
+  SRs, tools ISOs) carry no flag.
+  The flags appear on every VDI line in the vdis section and on every
+  node in vdi-tree. The STORAGE header shows a synthetic summary with
+  counts per class and reclaimable sizes.
+
+  Examples:
+    xcp-bundle-analyzer analyze --section vdis --vdi-class GC host1.tar.bz2
+    xcp-bundle-analyzer analyze --section vdis --vdi-class D host1.tar.bz2
+    xcp-bundle-analyzer analyze --section storage --vdi-class R host1.tar.bz2
+
 OUTPUT OPTIONS (-f/--format plus optional -o/--output):
 
   -f text (default)  plain-text report on stdout
@@ -191,6 +213,11 @@ enum Commands {
         /// Compact JSON
         #[arg(short, long, default_value = "false")]
         compact: bool,
+        /// Filter the VDIs section by deletion-safety class:
+        /// R (required), GC (garbage-collector territory), D (user-deletable).
+        /// Only affects the vdis section (and the VDI sub-section of storage).
+        #[arg(long)]
+        vdi_class: Option<String>,
     },
     /// List all entries in a bundle
     List {
@@ -306,6 +333,7 @@ fn cmd_analyze(
     output: Option<&Path>,
     compact: bool,
     section: Option<Vec<String>>,
+    vdi_class: Option<&str>,
 ) -> Result<()> {
     if bundles.is_empty() {
         bail!("no bundle given");
@@ -314,6 +342,13 @@ fn cmd_analyze(
     for b in bundles {
         reports.push(analyze_one(b).with_context(|| format!("analyzing {}", b.display()))?);
     }
+
+    let vdi_filter = match vdi_class {
+        Some(s) => Some(render::VdiClassFilter::parse(s).ok_or_else(|| {
+            anyhow::anyhow!("unknown VDI class '{s}' (valid: R/required, GC/garbage, D/deletable)")
+        })?),
+        None => None,
+    };
 
     match format {
         Format::Text => {
@@ -334,7 +369,10 @@ fn cmd_analyze(
             };
             let has = |sec: render::Section| secs.contains(&sec);
             if reports.len() == 1 {
-                write_output(output, &render::render_sections(&reports[0], &secs))
+                write_output(
+                    output,
+                    &render::render_sections_filtered(&reports[0], &secs, vdi_filter),
+                )
             } else if has(render::Section::Anomalies) && !has(render::Section::All) {
                 let c = report::consolidate(reports);
                 write_output(output, &render::render_consolidated_anomalies(&c))
@@ -342,7 +380,10 @@ fn cmd_analyze(
                 let c = report::consolidate(reports);
                 write_output(output, &render::render_consolidated_text(&c))
             } else {
-                write_output(output, &render::render_sections(&reports[0], &secs))
+                write_output(
+                    output,
+                    &render::render_sections_filtered(&reports[0], &secs, vdi_filter),
+                )
             }
         }
         Format::Json => {
@@ -411,7 +452,15 @@ fn main() -> Result<()> {
             output,
             compact,
             section,
-        } => cmd_analyze(&bundles, format, output.as_deref(), compact, section),
+            vdi_class,
+        } => cmd_analyze(
+            &bundles,
+            format,
+            output.as_deref(),
+            compact,
+            section,
+            vdi_class.as_deref(),
+        ),
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
         Commands::Object {

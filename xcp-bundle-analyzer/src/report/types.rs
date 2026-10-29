@@ -103,6 +103,54 @@ pub struct MultipathHost {
     pub raw: String,
 }
 
+/// Deletion-safety classification of a VDI, computed from the same
+/// criteria the SM garbage collector uses (see docs/SNAPSHOTS.md).
+/// Displayed as a single-letter flag: R / GC / D / - (expected unattached).
+#[derive(Serialize, Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VdiClass {
+    /// Required: attached to a VM, has physical children (mid-chain base),
+    /// or a valid snapshot. Never deletable.
+    #[default]
+    Required,
+    /// GC territory: unmanaged (hidden) orphan — the garbage collector
+    /// should remove it. Do not hand-delete; investigate why it lingers.
+    Gc,
+    /// Deletable by the user: still-managed orphan (leftover xapi object
+    /// after a failed/aborted coalesce or migration) — safe
+    /// `xe vdi-destroy` candidate.
+    Deletable,
+    /// Expected unattached: HA mechanism objects (statefiles, SR metadata,
+    /// redo logs) and removable media (CDs, ISO/udev SRs, tools ISOs).
+    /// Not garbage; shown without a flag.
+    ExpectedUnattached,
+}
+
+impl VdiClass {
+    /// Single-letter display flag: R, GC, D, or empty for expected-unattached.
+    pub fn flag(&self) -> &'static str {
+        match self {
+            VdiClass::Required => "R",
+            VdiClass::Gc => "GC",
+            VdiClass::Deletable => "D",
+            VdiClass::ExpectedUnattached => "",
+        }
+    }
+}
+
+/// Aggregate counts and reclaimable sizes per VDI class, for the synthetic
+/// storage summary header.
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct VdiClassSummary {
+    pub required_count: usize,
+    pub gc_count: usize,
+    pub deletable_count: usize,
+    pub expected_unattached_count: usize,
+    /// Sum of virtual_size of GC-class VDIs (what the GC should reclaim).
+    pub gc_reclaimable_bytes: u64,
+    /// Sum of virtual_size of deletable-class VDIs (what the user can reclaim).
+    pub deletable_reclaimable_bytes: u64,
+}
+
 #[derive(Serialize, Default, Debug, Clone)]
 pub struct VdiReport {
     pub name: String,
@@ -162,6 +210,9 @@ pub struct VdiReport {
     /// True when this VDI is not attached to any VM (no VBD, or VBDs
     /// pointing to VM rows that no longer exist in the dump).
     pub orphaned: bool,
+    /// Deletion-safety classification (R/GC/D flag), derived from orphaned,
+    /// managed, vhd_children, is_snapshot, is_ha_internal, is_removable_media.
+    pub vdi_class: VdiClass,
     /// UUID from sm_config:vhd-parent when set (VHD base-copy chain).
     /// Empty when not set.
     pub vhd_parent_uuid: String,
@@ -370,6 +421,8 @@ pub struct PoolSummary {
     pub sr_total_size_bytes: u64,
     pub sr_total_used_bytes: u64,
     pub vdi_total_size_bytes: u64,
+    /// Synthetic VDI classification counts + reclaimable sizes per class.
+    pub vdi_class_summary: VdiClassSummary,
 }
 
 /// Everything extracted from a single bugtool bundle.

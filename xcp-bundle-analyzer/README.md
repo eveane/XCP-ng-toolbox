@@ -40,12 +40,14 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   (default — `sm_config:vhd-parent`, the dependency graph that decides
   whether a VDI can be deleted) or `--chain xapi` (`snapshot_of`, the
   view xe/Xen Orchestra show). Nodes carry the xapi status as flags
-  (`SNAPSHOT`, `hidden(unmanaged)`, `*** BROKEN PARENT ***`) and the orphan
+  (`snap`, `hidden(unmanaged)`, `*** BROKEN PARENT ***`) and the orphan
   verdict (`*** ORPHANED: nothing depends on it ***`); a
   `[chains differ: xapi-parent=…, vhd-parent=…]` note marks VDIs whose two
   parents do not match (normal while coalescing, worth seeing when
-  comparing views). In the physical view, snapshots linked only in the
-  xapi chain appear as `SNAPSHOT(xapi)` cross-references. With a VDI uuid
+  comparing views). Node lines are compact: `name [uuid] [class] flags
+  format size sr=...` (e.g. `vm1-disk [uuid] [R] vhd 20.00 GiB sr=NFS repo`).
+  In the physical view, snapshots linked only in the
+  xapi chain appear as `snap(xapi)` cross-references. With a VDI uuid
   it prints the chain containing that VDI, starting from the chain root;
   without an argument it prints a tree for every root VDI.
   Broken parents (snapshot_of pointing to a deleted VDI) are flagged.
@@ -131,6 +133,25 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   finished ones sorted by finish time (most recent first). Failed tasks
   are flagged `*** FAILED ***`. Tasks are also in the JSON output and
   explorable with `object task <uuid>`.
+- **VDI deletion-safety classification**: every VDI is classified using
+  the same criteria as the SM garbage collector (see
+  [docs/SNAPSHOTS.md](docs/SNAPSHOTS.md)) and carries a flag in the VDIs
+  section and in `vdi-tree`:
+  - `[R]` **required** — attached to a VM, has physical children
+    (mid-chain base), or is a valid snapshot. Never deletable.
+  - `[GC]` **garbage-collector territory** — unmanaged (hidden) orphan.
+    The GC should remove it; do not hand-delete, investigate why it
+    lingers (check `gc-disabled` anomalies and `/var/log/SMlog`).
+  - `[D]` **user-deletable** — still-managed orphan (leftover xapi object
+    after a failed/aborted coalesce or migration). Safe
+    `xe vdi-destroy` candidate.
+  - no flag — expected unattached: HA statefiles, SR metadata, CDs,
+    ISO/udev SRs, tools ISOs.
+  The STORAGE header shows a synthetic summary with counts per class and
+  reclaimable sizes (`reclaimable: X GiB (GC should reclaim Y, user can
+  delete Z)`). The VDIs section header shows the same breakdown.
+  `--vdi-class R|GC|D` filters the VDI listing to one class:
+  `xcp-bundle-analyzer analyze --section vdis --vdi-class GC host.tar.bz2`.
 - Shell completion: `xcp-bundle-analyzer completions <shell>` prints an
   auto-completion script for bash, zsh, fish, elvish, and PowerShell
   (see the "Shell completion" section).
@@ -328,6 +349,10 @@ xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2 hos
 xcp-bundle-analyzer analyze --section vms XenServer-host1-20260616.tar.bz2
 xcp-bundle-analyzer analyze --section pool,storage XenServer-host1-20260616.tar.bz2
 xcp-bundle-analyzer analyze --section tasks XenServer-host1-20260616.tar.bz2
+
+# VDIs by deletion-safety class (R=required, GC=garbage collector, D=user-deletable)
+xcp-bundle-analyzer analyze --section vdis --vdi-class GC XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer analyze --section vdis --vdi-class D XenServer-host1-20260616.tar.bz2
 
 # settings that probably need attention (opt-in, never shown by default)
 xcp-bundle-analyzer analyze --section anomalies XenServer-host1-20260616.tar.bz2
