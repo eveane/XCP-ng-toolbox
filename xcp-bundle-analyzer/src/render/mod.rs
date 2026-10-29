@@ -15,7 +15,7 @@ mod vm_display;
 pub use html::render_html;
 pub use json::render_json;
 pub use object_display::{object_table, render_object_display, OBJECTS};
-pub use vdi_tree::render_vdi_tree;
+pub use vdi_tree::{render_vdi_tree, render_vdi_tree_html, render_vdi_tree_json};
 pub use vm_display::render_vm_display;
 
 use crate::report::{BundleReport, ConsolidatedReport};

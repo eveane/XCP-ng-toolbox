@@ -466,16 +466,13 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
             || differs(|h| h.kernel_version.clone())
             || differs(|h| h.xapi_version.clone());
         if mismatch {
-            let detail = versions
-                .iter()
-                .map(|(h, v)| format!("{}: {v}", h.hostname))
-                .collect::<Vec<_>>()
-                .join("; ");
-            out.push(warn(
-                "pool-version-mismatch",
-                r.pool.name.clone(),
-                format!("hosts run inconsistent versions in the same pool: {detail}"),
-            ));
+            // Multi-line table: one host per line with its versions, so the
+            // discrepancy is easy to read at a glance.
+            let mut detail = String::from("hosts run inconsistent versions in the same pool:");
+            for (h, v) in &versions {
+                detail.push_str(&format!("\n    {}: {v}", h.hostname));
+            }
+            out.push(warn("pool-version-mismatch", r.pool.name.clone(), detail));
         }
     }
 
