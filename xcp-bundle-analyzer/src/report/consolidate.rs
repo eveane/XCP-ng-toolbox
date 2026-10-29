@@ -1225,3 +1225,61 @@ mod expected_unattached_tests {
             .any(|a| a.detail.contains("vdi-uuid-bc2")));
     }
 }
+
+#[cfg(test)]
+mod version_mismatch_detail_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    #[test]
+    fn pool_version_mismatch_lists_one_host_per_line() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        let m = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "pool-version-mismatch")
+            .unwrap();
+        // one host per line, with its full version set
+        let host1 = m
+            .detail
+            .lines()
+            .find(|l| l.contains("host1.example.com"))
+            .unwrap();
+        assert!(host1.contains("product 8.3.0"), "{host1}");
+        assert!(host1.contains("xapi 26.1"), "{host1}");
+        let host2 = m
+            .detail
+            .lines()
+            .find(|l| l.contains("host2.example.com"))
+            .unwrap();
+        assert!(host2.contains("product 8.2.1"), "{host2}");
+        assert!(host2.contains("xapi 22.45.0"), "{host2}");
+        // no semicolon-joined single-line form anymore
+        assert!(!m.detail.contains("; "), "{}", m.detail);
+    }
+}
+
+#[cfg(test)]
+mod vdi_vm_link_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    #[test]
+    fn attached_vdi_carries_its_vm_name() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        // vm1-disk is attached to vm1 via vbd1; the VDI row lists the VBD
+        // in its VBDs set with the full OpaqueRef: prefix
+        let base = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-1").unwrap();
+        assert_eq!(base.vm, "vm1", "vm1-disk must resolve to vm1");
+        assert_eq!(base.vbd_devices, vec!["xvda(Disk)".to_string()]);
+        // unattached VDIs have no vm
+        let orphan = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-orphan").unwrap();
+        assert!(orphan.vm.is_empty());
+    }
+}

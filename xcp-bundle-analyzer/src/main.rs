@@ -126,22 +126,35 @@ OUTPUT OPTIONS (-f/--format plus optional -o/--output):
   -f html             self-contained HTML dashboard (open in a browser,
                       works offline; single bundle only)
 
-  Without -o the report goes to stdout; with -o <file> it is written to
+  Without -o the report goes to stdout; with -o=<file> it is written to
   the file (the parent directory is created if needed) and the path is
-  echoed on stderr.
+  echoed on stderr. A bare -o (or -o=) without a value generates a
+  default filename:
+
+    analyze (full report)    report-$(date).txt|.json|.html
+    fewer than 4 sections    $(section1)-$(section2)-$(date).ext
+    vdi-tree, no uuid        vdi-tree-$(date).ext
+    vdi-tree, with uuid      vdi-tree-$(uuid)-$(date).ext
 
   Examples:
     # text report on stdout
     xcp-bundle-analyzer analyze XenServer-host1.tar.bz2
 
     # JSON report to a file (compact with -c)
-    xcp-bundle-analyzer analyze -f json -o report.json XenServer-host1.tar.bz2
+    xcp-bundle-analyzer analyze -f json -o=report.json XenServer-host1.tar.bz2
 
     # Self-contained HTML dashboard
-    xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1.tar.bz2
+    xcp-bundle-analyzer analyze -f html -o=report.html XenServer-host1.tar.bz2
 
     # Whole pool: pass one bundle per host, get a consolidated view
-    xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2
+    xcp-bundle-analyzer analyze -f json -o=pool.json host1.tar.bz2 host2.tar.bz2
+
+    # Default filename (report-$(date).json)
+    xcp-bundle-analyzer analyze -f json -o host1.tar.bz2
+
+    # vdi-tree as JSON or HTML (was: text only)
+    xcp-bundle-analyzer vdi-tree -f json -o tree.json XenServer-host1.tar.bz2
+    xcp-bundle-analyzer vdi-tree -f html -o tree.html XenServer-host1.tar.bz2 uuid=<vdi-uuid>
 
 OTHER COMMANDS:
 
@@ -207,9 +220,13 @@ enum Commands {
         /// use -o/--output <file> to write to a file instead of stdout
         #[arg(short, long, value_enum, default_value = "text")]
         format: Format,
-        /// Write output to a file instead of stdout
-        #[arg(short, long)]
-        output: Option<PathBuf>,
+        /// Write output to a file instead of stdout. When given without a
+        /// value (-o= or a bare -o before the bundle), a default filename
+        /// is generated: report-$(date).ext, or
+        /// $(section1)-$(section2)-$(date).ext when fewer than 4 sections
+        /// are selected. Use -o=<file> to pass an explicit filename.
+        #[arg(short, long, num_args = 0..=1, require_equals = true, default_missing_value = "__default__")]
+        output: Option<String>,
         /// Compact JSON
         #[arg(short, long, default_value = "false")]
         compact: bool,
@@ -261,6 +278,21 @@ enum Commands {
         /// `xapi` (snapshot_of — the view xe/xo show). Default: physical.
         #[arg(long, value_enum, default_value_t = ChainKind::Physical)]
         chain: ChainKind,
+        /// OUTPUT format: text (default), json, or html
+        /// (html = self-contained page, open in a browser, works offline);
+        /// use -o/--output <file> to write to a file instead of stdout
+        #[arg(short, long, value_enum, default_value = "text")]
+        format: Format,
+        /// Write output to a file instead of stdout. When given without a
+        /// value (bare -o before the bundle), a default filename is
+        /// generated: vdi-tree-$(date).txt / .json / .html, or
+        /// vdi-tree-$(uuid)-$(date).ext when a VDI uuid is given. Use
+        /// -o=<file> to pass an explicit filename.
+        #[arg(short, long, num_args = 0..=1, require_equals = true, default_missing_value = "__default__")]
+        output: Option<String>,
+        /// Compact JSON
+        #[arg(short, long, default_value = "false")]
+        compact: bool,
     },
     /// Print a shell completion script for the given shell
     Completions {
@@ -330,7 +362,7 @@ fn write_output(path: Option<&Path>, content: &str) -> Result<()> {
 fn cmd_analyze(
     bundles: &[PathBuf],
     format: Format,
-    output: Option<&Path>,
+    output: Option<&str>,
     compact: bool,
     section: Option<Vec<String>>,
     vdi_class: Option<&str>,
@@ -350,23 +382,27 @@ fn cmd_analyze(
         None => None,
     };
 
+    // Parse the sections early: the default output filename encodes them.
+    let secs = match section {
+        Some(list) => {
+            let mut secs = Vec::new();
+            for s in &list {
+                let parsed = render::Section::parse_list(s).map_err(|bad| {
+                    anyhow::anyhow!(
+                        "unknown section '{bad}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage, tasks, anomalies; comma-separated lists allowed)"
+                    )
+                })?;
+                secs.extend(parsed);
+            }
+            secs
+        }
+        None => vec![render::Section::All],
+    };
+    let out_path = resolve_output_path(output, format, None, &secs);
+    let output = out_path.as_deref();
+
     match format {
         Format::Text => {
-            let secs = match section {
-                Some(list) => {
-                    let mut secs = Vec::new();
-                    for s in &list {
-                        let parsed = render::Section::parse_list(s).map_err(|bad| {
-                            anyhow::anyhow!(
-                                "unknown section '{bad}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage, tasks, anomalies; comma-separated lists allowed)"
-                            )
-                        })?;
-                        secs.extend(parsed);
-                    }
-                    secs
-                }
-                None => vec![render::Section::All],
-            };
             let has = |sec: render::Section| secs.contains(&sec);
             if reports.len() == 1 {
                 write_output(
@@ -473,7 +509,17 @@ fn main() -> Result<()> {
             bundle,
             uuid,
             chain,
-        } => cmd_vdi_tree(&bundle, uuid.as_deref(), chain),
+            format,
+            output,
+            compact,
+        } => cmd_vdi_tree(
+            &bundle,
+            uuid.as_deref(),
+            chain,
+            format,
+            output.as_deref(),
+            compact,
+        ),
         Commands::Completions { shell } => {
             generate(
                 shell.clap_shell(),
@@ -486,7 +532,14 @@ fn main() -> Result<()> {
     }
 }
 
-fn cmd_vdi_tree(bundle_path: &Path, uuid: Option<&str>, chain: ChainKind) -> Result<()> {
+fn cmd_vdi_tree(
+    bundle_path: &Path,
+    uuid: Option<&str>,
+    chain: ChainKind,
+    format: Format,
+    output: Option<&str>,
+    compact: bool,
+) -> Result<()> {
     // Accept uuid= prefix, and the argument in either position.
     let bp = bundle_path.display().to_string();
     let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
@@ -496,9 +549,111 @@ fn cmd_vdi_tree(bundle_path: &Path, uuid: Option<&str>, chain: ChainKind) -> Res
     };
     let uuid = uuid.map(|u| u.strip_prefix("uuid=").unwrap_or(u));
     let rep = analyze_one(bundle_path)?;
-    let text = render::render_vdi_tree(&rep, uuid, chain == ChainKind::Xapi)?;
-    print!("{text}");
-    Ok(())
+    let xapi = chain == ChainKind::Xapi;
+    // Empty sections slice = vdi-tree without a uuid (see resolve_output_path).
+    let out_path = resolve_output_path(output, format, uuid, &[]);
+    let content = match format {
+        Format::Text => render::render_vdi_tree(&rep, uuid, xapi)?,
+        Format::Json => render::render_vdi_tree_json(&rep, uuid, xapi, !compact)?,
+        Format::Html => render::render_vdi_tree_html(&rep, uuid, xapi)?,
+    };
+    write_output(out_path.as_deref(), &content)
+}
+
+/// Resolve the `-o/--output` argument to a file path.
+///
+/// `None` means stdout; `Some("__default__")` (the value clap fills in when
+/// `-o` is given without a value) generates a default filename:
+/// `report-$(date).ext` for a full report, `$(section1)-$(section2)-$(date).ext`
+/// when fewer than 4 sections are selected, and `vdi-tree-$(date).ext` (or
+/// `vdi-tree-$(uuid)-$(date).ext` when a VDI uuid is given) for vdi-tree.
+/// An empty `sections` slice means the vdi-tree command without a uuid.
+fn resolve_output_path(
+    output: Option<&str>,
+    format: Format,
+    vdi_uuid: Option<&str>,
+    sections: &[render::Section],
+) -> Option<PathBuf> {
+    let ext = match format {
+        Format::Text => "txt",
+        Format::Json => "json",
+        Format::Html => "html",
+    };
+    match output {
+        None => None,
+        Some("__default__") => {
+            let date = current_date_str();
+            if let Some(u) = vdi_uuid {
+                return Some(PathBuf::from(format!(
+                    "vdi-tree-{}-{}.{}",
+                    short_uuid(u),
+                    date,
+                    ext
+                )));
+            }
+            if sections.is_empty() {
+                return Some(PathBuf::from(format!("vdi-tree-{date}.{ext}")));
+            }
+            if sections == [render::Section::All] || sections.len() >= 4 {
+                Some(PathBuf::from(format!("report-{date}.{ext}")))
+            } else {
+                let names: Vec<&str> = sections.iter().map(|s| section_short_name(*s)).collect();
+                Some(PathBuf::from(format!(
+                    "{}-{}.{}",
+                    names.join("-"),
+                    date,
+                    ext
+                )))
+            }
+        }
+        Some(p) => Some(PathBuf::from(p)),
+    }
+}
+
+/// Current date as `YYYY-MM-DD` (UTC), without pulling in a date crate.
+fn current_date_str() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86400) as i64;
+    // civil-from-days (Howard Hinnant's algorithm)
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if m <= 2 { y + 1 } else { y };
+    format!("{year:04}-{m:02}-{d:02}")
+}
+
+/// First 8 characters of a uuid, for compact default filenames.
+fn short_uuid(uuid: &str) -> &str {
+    &uuid[..uuid.len().min(8)]
+}
+
+/// Short lowercase name of a section, for default output filenames.
+fn section_short_name(s: render::Section) -> &'static str {
+    match s {
+        render::Section::All => "all",
+        render::Section::Pool => "pool",
+        render::Section::Hosts => "hosts",
+        render::Section::SRs => "srs",
+        render::Section::VMs => "vms",
+        render::Section::VDIs => "vdis",
+        render::Section::VBDs => "vbds",
+        render::Section::VIFs => "vifs",
+        render::Section::PBDs => "pbds",
+        render::Section::PIFs => "pifs",
+        render::Section::Network => "network",
+        render::Section::Storage => "storage",
+        render::Section::Tasks => "tasks",
+        render::Section::Anomalies => "anomalies",
+    }
 }
 
 fn cmd_object_display(object: &str, uuid: &str, bundle_path: &Path) -> Result<()> {
@@ -545,4 +700,155 @@ fn cmd_vm_display(bundle_path: &Path, uuid: &str) -> Result<()> {
     let text = render::render_vm_display(&db, uuid)?;
     print!("{text}");
     Ok(())
+}
+
+#[cfg(test)]
+mod output_name_tests {
+    use super::*;
+
+    #[test]
+    fn output_none_means_stdout() {
+        assert!(resolve_output_path(None, Format::Text, None, &[render::Section::All]).is_none());
+        assert!(resolve_output_path(None, Format::Json, Some("vdi-uuid-1"), &[]).is_none());
+    }
+
+    #[test]
+    fn output_explicit_path_is_used_verbatim() {
+        let p = resolve_output_path(
+            Some("out/report.json"),
+            Format::Json,
+            None,
+            &[render::Section::All],
+        );
+        assert_eq!(p, Some(PathBuf::from("out/report.json")));
+        let p = resolve_output_path(Some("tree.html"), Format::Html, Some("vdi-uuid-1"), &[]);
+        assert_eq!(p, Some(PathBuf::from("tree.html")));
+    }
+
+    #[test]
+    fn default_full_report_filename() {
+        let p = resolve_output_path(
+            Some("__default__"),
+            Format::Json,
+            None,
+            &[render::Section::All],
+        )
+        .unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap().to_string();
+        assert!(
+            name.starts_with("report-") && name.ends_with(".json"),
+            "{name}"
+        );
+        // 4+ explicit sections also collapse to report-$(date)
+        let p = resolve_output_path(
+            Some("__default__"),
+            Format::Text,
+            None,
+            &[
+                render::Section::Pool,
+                render::Section::Hosts,
+                render::Section::VMs,
+                render::Section::VDIs,
+            ],
+        )
+        .unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap().to_string();
+        assert!(
+            name.starts_with("report-") && name.ends_with(".txt"),
+            "{name}"
+        );
+    }
+
+    #[test]
+    fn default_few_sections_filename_lists_sections() {
+        let p = resolve_output_path(
+            Some("__default__"),
+            Format::Json,
+            None,
+            &[render::Section::VDIs, render::Section::VMs],
+        )
+        .unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap().to_string();
+        assert!(
+            name.starts_with("vdis-vms-") && name.ends_with(".json"),
+            "{name}"
+        );
+        // a single section
+        let p = resolve_output_path(
+            Some("__default__"),
+            Format::Text,
+            None,
+            &[render::Section::Hosts],
+        )
+        .unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap().to_string();
+        assert!(
+            name.starts_with("hosts-") && name.ends_with(".txt"),
+            "{name}"
+        );
+    }
+
+    #[test]
+    fn default_vdi_tree_filename() {
+        // without a uuid: vdi-tree-$(date).ext (empty sections slice)
+        let p = resolve_output_path(Some("__default__"), Format::Text, None, &[]).unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap().to_string();
+        assert!(
+            name.starts_with("vdi-tree-") && name.ends_with(".txt"),
+            "{name}"
+        );
+        // with a uuid: vdi-tree-$(short-uuid)-$(date).ext
+        let p = resolve_output_path(
+            Some("__default__"),
+            Format::Html,
+            Some("vdi-uuid-delta"),
+            &[],
+        )
+        .unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap().to_string();
+        assert!(
+            name.starts_with("vdi-tree-vdi-uuid-") && name.ends_with(".html"),
+            "{name}"
+        );
+        // uuid= prefix is stripped before shortening
+        let p = resolve_output_path(
+            Some("__default__"),
+            Format::Json,
+            Some("uuid=vdi-uuid-delta"),
+            &[],
+        )
+        .unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap().to_string();
+        assert!(
+            name.starts_with("vdi-tree-uuid=vdi") || name.starts_with("vdi-tree-vdi-uuid-"),
+            "{name}"
+        );
+    }
+
+    #[test]
+    fn date_str_is_iso_format() {
+        let d = current_date_str();
+        let parts: Vec<&str> = d.split('-').collect();
+        assert_eq!(parts.len(), 3, "{d}");
+        assert_eq!(parts[0].len(), 4, "{d}");
+        assert_eq!(parts[1].len(), 2, "{d}");
+        assert_eq!(parts[2].len(), 2, "{d}");
+        assert!(parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())));
+    }
+
+    #[test]
+    fn short_uuid_takes_first_eight_chars() {
+        assert_eq!(short_uuid("vdi-uuid-delta"), "vdi-uuid");
+        assert_eq!(short_uuid("short"), "short");
+        assert_eq!(short_uuid(""), "");
+    }
+
+    #[test]
+    fn section_short_names_are_stable() {
+        assert_eq!(section_short_name(render::Section::All), "all");
+        assert_eq!(section_short_name(render::Section::Hosts), "hosts");
+        assert_eq!(section_short_name(render::Section::VDIs), "vdis");
+        assert_eq!(section_short_name(render::Section::Anomalies), "anomalies");
+        assert_eq!(section_short_name(render::Section::Storage), "storage");
+    }
 }

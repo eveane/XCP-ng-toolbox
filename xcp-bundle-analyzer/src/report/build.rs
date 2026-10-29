@@ -377,7 +377,11 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
         let sr_ref = ref_of(vdi, "SR");
         // Find an owning VM through VBDs (prefer an attached disk VBD).
-        let vbd_refs = decode_set(get(vdi, "VBDs"));
+        // decode_set keeps the OpaqueRef: prefix; table keys are stripped.
+        let vbd_refs: Vec<String> = decode_set(get(vdi, "VBDs"))
+            .iter()
+            .map(|v| v.strip_prefix("OpaqueRef:").unwrap_or(v).to_string())
+            .collect();
         let vm_ref = vbd_refs
             .iter()
             .filter_map(|v| db.table("VBD").and_then(|t| t.get(v)))
@@ -396,10 +400,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         // dump. The VBD link is looked up both ways: through this VDI's VBDs
         // set (real dumps) and by scanning the VBD table for rows pointing
         // back at this VDI (older formats store no set on the VDI row).
-        let vbd_keys: Vec<String> = vbd_refs
-            .iter()
-            .map(|v| v.strip_prefix("OpaqueRef:").unwrap_or(v).to_string())
-            .collect();
+        let vbd_keys: Vec<String> = vbd_refs.clone();
         let has_live_vbd = |vbd: &Row| {
             let vmr = ref_of(vbd, "VM");
             !vmr.is_empty() && db.table("VM").and_then(|t| t.get(&vmr)).is_some()

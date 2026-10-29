@@ -75,16 +75,25 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
         }
         if let Some(est) = &h.release_estimate {
             let product = if est.is_xcpng { "XCP-ng" } else { "XenServer" };
-            let _ = writeln!(
-                out,
-                "  release: {product} {} shipped {} — {} release(s) behind the newest known",
-                est.matched_version, est.release_date, est.releases_behind
-            );
             if let Some(u) = &est.update_estimate {
+                // LTS releases (XCP-ng 8.3) get monthly updates without a
+                // product-version change: the xapi/xen timeline gives a much
+                // better "shipped" estimate than the GA date.
                 let _ = writeln!(
                     out,
-                    "  last updated: ~{} (from the xapi/xen update timeline, see {})",
-                    u.date, u.source
+                    "  release: {product} {} (est. updated ~{}; GA shipped {}) — {} release(s) behind the newest known",
+                    est.matched_version, u.date, est.release_date, est.releases_behind
+                );
+                let _ = writeln!(
+                    out,
+                    "  estimate source: {} (xapi/xen update timeline)",
+                    u.source
+                );
+            } else {
+                let _ = writeln!(
+                    out,
+                    "  release: {product} {} shipped {} — {} release(s) behind the newest known",
+                    est.matched_version, est.release_date, est.releases_behind
                 );
             }
             if est.newer_than_table {
@@ -1026,4 +1035,55 @@ pub(crate) fn render_consolidated_text(c: &ConsolidatedReport) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod host_release_line_tests {
+    use crate::inventory::Inventory;
+    use crate::render::render_sections;
+    use crate::render::Section;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn hosts_text() -> String {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        render_sections(&r, &[Section::Hosts])
+    }
+
+    #[test]
+    fn host_with_update_estimate_uses_the_estimated_update_date() {
+        let text = hosts_text();
+        // host1 is 8.3.0 with xapi 26.1: the LTS monthly-update timeline
+        // refines the GA date — the line leads with the estimated update
+        // date, not "shipped 2024-10-07"
+        let line = text
+            .lines()
+            .find(|l| l.contains("XCP-ng 8.3") && l.contains("release:"))
+            .unwrap();
+        assert!(line.contains("est. updated ~"), "{line}");
+        assert!(line.contains("GA shipped 2024-10-07"), "{line}");
+        assert!(line.contains("0 release(s) behind"), "{line}");
+        assert!(!line.contains("shipped 2024-10-07 —"), "{line}");
+        // the source link is on the following line
+        let src = text
+            .lines()
+            .find(|l| l.contains("estimate source:"))
+            .unwrap();
+        assert!(src.contains("https://xcp-ng.org/"), "{src}");
+    }
+
+    #[test]
+    fn host_without_update_estimate_keeps_the_ga_date() {
+        let text = hosts_text();
+        // host2 is 8.2.1: no update timeline -> plain "shipped" line
+        let line = text.lines().find(|l| l.contains("XCP-ng 8.2.1")).unwrap();
+        assert!(
+            line.contains("release: XCP-ng 8.2.1 shipped 2022-02-28"),
+            "{line}"
+        );
+        assert!(line.contains("1 release(s) behind"), "{line}");
+        assert!(!line.contains("est. updated"), "{line}");
+    }
 }

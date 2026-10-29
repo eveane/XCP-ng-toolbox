@@ -390,6 +390,44 @@ pub struct TaskReport {
     pub other_config: Vec<(String, String)>,
 }
 
+/// A node in a VDI chain tree, for JSON/HTML export of `vdi-tree`.
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct VdiTreeNode {
+    pub name: String,
+    pub uuid: String,
+    pub opaque_ref: String,
+    /// Image format (vhd / qcow2 / raw / ...), empty when unknown.
+    pub image_format: String,
+    pub size_bytes: u64,
+    pub sr: String,
+    pub vm: String,
+    /// VBD devices attached to this VDI, e.g. "xvda".
+    pub vbd_devices: Vec<String>,
+    pub is_snapshot: bool,
+    pub managed: bool,
+    pub broken_parent: bool,
+    pub orphaned: bool,
+    pub is_ha_statefile: bool,
+    pub vdi_class: VdiClass,
+    /// Parent uuid in the selected chain (vhd-parent or snapshot_of).
+    pub parent_uuid: String,
+    /// Child nodes (recursive).
+    pub children: Vec<VdiTreeNode>,
+    /// True for cross-reference nodes (xapi-only snapshots in the physical view).
+    pub is_xapi_xref: bool,
+}
+
+/// A VDI chain tree (root + metadata), for JSON/HTML export of `vdi-tree`.
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct VdiTreeData {
+    /// Chain kind: "physical" or "xapi".
+    pub chain: String,
+    /// Root VDI uuid of this tree.
+    pub root_uuid: String,
+    /// Root node (recursive children).
+    pub root: VdiTreeNode,
+}
+
 /// A setting that probably needs attention (only shown in the dedicated
 /// anomalies section, never in the default report).
 #[derive(Serialize, Default, Debug, Clone, PartialEq, Eq)]

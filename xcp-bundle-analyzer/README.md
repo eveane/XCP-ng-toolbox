@@ -51,6 +51,10 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   it prints the chain containing that VDI, starting from the chain root;
   without an argument it prints a tree for every root VDI.
   Broken parents (snapshot_of pointing to a deleted VDI) are flagged.
+  `vdi-tree` also supports `-f json` (a serializable tree structure with
+  the class flags, sizes, formats and attachments on every node) and
+  `-f html` (a self-contained page rendering the same tree, works
+  offline).
 - `--section` option to display only some parts of the report: pool, hosts,
   srs, vms, vdis, vbds, vifs, pifs, tasks, or `anomalies` (settings needing
   attention, opt-in only). Accepts a single name or a comma-separated list
@@ -336,13 +340,17 @@ scp root@host1:/var/opt/xen/bug-report/XenServer-host1-*.tar.bz2 .
 xcp-bundle-analyzer analyze XenServer-host1-20260616.tar.bz2
 
 # JSON report
-xcp-bundle-analyzer analyze -f json -o report.json XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer analyze -f json -o=report.json XenServer-host1-20260616.tar.bz2
 
 # web dashboard — open report.html in your browser, works fully offline
-xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer analyze -f html -o=report.html XenServer-host1-20260616.tar.bz2
 
 # whole pool: pass every host's bundle, get a consolidated view
-xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2 host3.tar.bz2
+xcp-bundle-analyzer analyze -f json -o=pool.json host1.tar.bz2 host2.tar.bz2 host3.tar.bz2
+
+# bare -o generates a default filename (report-$(date).json, or
+# $(section1)-$(section2)-$(date).ext when fewer than 4 sections are selected)
+xcp-bundle-analyzer analyze -f json -o XenServer-host1-20260616.tar.bz2
 
 # only display some sections (pool, hosts, srs, vms, vdis, vbds, vifs, pifs,
 # tasks); a comma-separated list shows several sections in one run
@@ -413,13 +421,25 @@ include those two lines.
 xcp-bundle-analyzer analyze XenServer-host1-20250101.tar.bz2
 
 # JSON to a file
-xcp-bundle-analyzer analyze -f json -o report.json host1.tar.bz2
+xcp-bundle-analyzer analyze -f json -o=report.json host1.tar.bz2
 
 # HTML dashboard (single file, open in a browser, works offline)
-xcp-bundle-analyzer analyze -f html -o report.html host1.tar.bz2
+xcp-bundle-analyzer analyze -f html -o=report.html host1.tar.bz2
 
 # consolidated pool view from several bundles
-xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2
+xcp-bundle-analyzer analyze -f json -o=pool.json host1.tar.bz2 host2.tar.bz2
+
+# bare -o: a default filename is generated
+#   report-$(date).json / .html / .txt  (full report)
+#   $(section1)-$(section2)-$(date).ext (fewer than 4 --section values)
+xcp-bundle-analyzer analyze -f json -o host1.tar.bz2
+xcp-bundle-analyzer analyze -o --section vdis,vms host1.tar.bz2
+
+# vdi-tree exported as JSON or HTML
+xcp-bundle-analyzer vdi-tree -f json -o=tree.json host1.tar.bz2
+xcp-bundle-analyzer vdi-tree -f html -o=tree.html host1.tar.bz2 uuid=<vdi-uuid>
+# bare -o: vdi-tree-$(date).ext, or vdi-tree-$(uuid)-$(date).ext with a uuid
+xcp-bundle-analyzer vdi-tree -f json -o host1.tar.bz2 uuid=<vdi-uuid>
 
 # list interesting entries in a bundle
 xcp-bundle-analyzer list host1.tar.bz2 [--grep xapi]

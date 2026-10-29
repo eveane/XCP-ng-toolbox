@@ -4,6 +4,34 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.5.0 (minor)
+
+- feat: `vdi-tree` now supports `-f json` and `-f html` export (text
+  remains the default). The JSON export is a serializable tree structure
+  (`VdiTreeData`/`VdiTreeNode`: name, uuid, format, size, SR, VM, VBD
+  devices, class flag, parent, children) for both `--chain physical` and
+  `--chain xapi`; the HTML export is a self-contained page (embedded data
+  + renderer, no external resources, works offline) with the same class
+  flags as the text tree.
+- feat: `-o/--output` accepts a bare flag (no value) and generates a
+  default filename: `report-$(date).ext` for a full report,
+  `$(section1)-$(section2)-$(date).ext` when fewer than 4 sections are
+  selected, and `vdi-tree-$(date).ext` (or `vdi-tree-$(uuid)-$(date).ext`
+  with a VDI uuid) for `vdi-tree`. Explicit filenames now use the
+  `-o=<file>` form (`-o <file>` would swallow the bundle argument).
+- fix: the `vm` field on VDIs was always empty: the VBD lookup used the
+  `OpaqueRef:`-prefixed set entries as table keys, but table keys are
+  stored stripped. Attached VDIs now correctly resolve their VM name
+  (shows in the text tree as `vm=<name>` and in the JSON/HTML exports).
+- refactor: the host `release:` line uses the LTS monthly-update estimate
+  from PR #52 when available — `XCP-ng 8.3 (est. updated ~2026-07-28;
+  GA shipped 2024-10-07)` — instead of only the GA date, which is
+  misleading for XCP-ng 8.3 hosts that receive updates without a
+  product-version change.
+- refactor: the `pool-version-mismatch` anomaly now lists one host per
+  line with its full version set (product/xen/kernel/xapi) instead of a
+  semicolon-joined single line.
+
 ## v0.4.2 (patch)
 
 - refactor: `vdi-tree` node lines are more compact for readability:
