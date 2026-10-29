@@ -32,8 +32,8 @@ pub(crate) fn render_pool(r: &BundleReport, out: &mut String) {
     );
     let _ = writeln!(
         out,
-        "Hosts: {}   VMs: {} running / {} total   Networks: {}",
-        r.pool.host_count, r.pool.vm_running, r.pool.vm_total, r.networks
+        "Hosts: {}   VMs: {} running / {} total   Networks: {}   disk VDIs: {} (CD/ISO excluded)",
+        r.pool.host_count, r.pool.vm_running, r.pool.vm_total, r.networks, r.pool.vdi_count
     );
     let _ = writeln!(
         out,
@@ -158,7 +158,7 @@ pub(crate) fn render_storage(r: &BundleReport, out: &mut String) {
     let _ = writeln!(out, "\n=== STORAGE ===");
     let vdi_base = r.vdis.iter().filter(|d| !d.is_snapshot).count();
     let vdi_snap = r.vdis.iter().filter(|d| d.is_snapshot).count();
-    let vdi_orphan = r.vdis.iter().filter(|d| d.orphaned).count();
+    let vdi_orphan = r.vdis.iter().filter(|d| is_orphan_garbage(d)).count();
     let _ = writeln!(
         out,
         "SRs: {}   VDIs: {} ({} base, {} snapshots, {} orphaned)   PBDs: {}   inconsistencies: {}",
@@ -351,6 +351,13 @@ pub(crate) fn render_vms(r: &BundleReport, out: &mut String) {
     }
 }
 
+/// Garbage-visibility for the VDIs section: the raw orphaned flag minus
+/// HA-internal VDIs and removable media, which are expected to be
+/// unattached and must not read as garbage.
+fn is_orphan_garbage(d: &VdiReport) -> bool {
+    d.orphaned && !d.is_ha_internal && !d.is_removable_media
+}
+
 pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
     // ISO SRs and removable media (udev optical drives) are excluded from the
     // VDI listing: their VDIs are just passthrough ISO/DVD images.
@@ -365,7 +372,7 @@ pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
 
     let vdi_base = listed.iter().filter(|d| !d.is_snapshot).count();
     let vdi_snap = listed.iter().filter(|d| d.is_snapshot).count();
-    let vdi_orphan = listed.iter().filter(|d| d.orphaned).count();
+    let vdi_orphan = listed.iter().filter(|d| is_orphan_garbage(d)).count();
     let excluded = r.vdis.len() - listed.len();
     let _ = writeln!(
         out,
@@ -408,7 +415,7 @@ pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
         let total: u64 = group.iter().map(|d| d.size_bytes).sum();
         let base = group.iter().filter(|d| !d.is_snapshot).count();
         let snap = group.iter().filter(|d| d.is_snapshot).count();
-        let orphan = group.iter().filter(|d| d.orphaned).count();
+        let orphan = group.iter().filter(|d| is_orphan_garbage(d)).count();
         let stats = format!(
             "\n  SR: {} ({} VDIs: {} base, {} snapshots, {} orphaned, {} total)\n",
             sr,
@@ -430,8 +437,10 @@ pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
             if d.broken_parent {
                 flags.push_str(" *** BROKEN PARENT (snapshot_of points to a missing VDI) ***");
             }
-            if d.orphaned {
+            if is_orphan_garbage(d) {
                 flags.push_str(" ORPHANED (not attached to any VM)");
+            } else if d.orphaned {
+                flags.push_str(" (expected unattached: HA mechanism/removable media)");
             }
             let mut extra = String::new();
             if d.cbt_enabled {
@@ -448,15 +457,21 @@ pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
             } else {
                 d.image_format.clone()
             };
+            let vbd = if d.vbd_devices.is_empty() {
+                String::new()
+            } else {
+                format!(" vbd={}", d.vbd_devices.join(","))
+            };
             let _ = writeln!(
                 out,
-                "    {} [{}] format={} size={}{}{}",
+                "    {} [{}] format={} size={}{}{}{}",
                 d.name,
                 d.uuid,
                 fmt,
                 gib(d.size_bytes),
                 flags,
-                extra
+                extra,
+                vbd
             );
         }
     }

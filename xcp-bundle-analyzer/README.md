@@ -35,9 +35,18 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   Valid objects: vdi, vbd, vif, pbd, pif, sr, network, vm, host. Every field
   of the xapi row is printed; references are resolved to uuid (name), and
   sets/maps (other_config, sm_config, VBDs, PIFs, ...) are decoded.
-- `vdi-tree` subcommand: prints VDI snapshot trees (`VDI.snapshot_of` chains).
-  With a VDI uuid it prints the tree containing that VDI, starting from the
-  chain root; without an argument it prints a tree for every root VDI.
+- `vdi-tree` subcommand: prints VDI chain trees, `--chain physical`
+  (default — `sm_config:vhd-parent`, the dependency graph that decides
+  whether a VDI can be deleted) or `--chain xapi` (`snapshot_of`, the
+  view xe/Xen Orchestra show). Nodes carry the xapi status as flags
+  (`SNAPSHOT`, `hidden(unmanaged)`, `*** BROKEN PARENT ***`) and the orphan
+  verdict (`*** ORPHANED: nothing depends on it ***`); a
+  `[chains differ: xapi-parent=…, vhd-parent=…]` note marks VDIs whose two
+  parents do not match (normal while coalescing, worth seeing when
+  comparing views). In the physical view, snapshots linked only in the
+  xapi chain appear as `SNAPSHOT(xapi)` cross-references. With a VDI uuid
+  it prints the chain containing that VDI, starting from the chain root;
+  without an argument it prints a tree for every root VDI.
   Broken parents (snapshot_of pointing to a deleted VDI) are flagged.
 - `--section` option to display only some parts of the report: pool, hosts,
   srs, vms, vdis, vbds, vifs, pifs, or `anomalies` (settings needing
@@ -133,11 +142,25 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   5. inconsistent multipath path counts between hosts
   6. dom0 memory not matching between pool hosts
   7. VDI snapshot chain with a missing parent (`snapshot_of` set, parent gone)
-  7b. orphaned base disk with `sm-config:vhd-parent` whose parent does not
-      reference it back (the base copy is not among the parent's snapshot
-      children): a leftover VHD base-copy chain, the base copy can likely be
-      deleted. The parent does not have to be orphaned — it can be an
-      in-use disk; only the missing back-reference matters
+  7b. orphaned VHD base copy: a leaf of a VHD chain with nothing depending
+      on it — no live VBD, no VDI physically on top of it (no
+      sm-config:vhd-parent pointing at it) and not a valid snapshot —
+      matching the SM garbage collector's criteria (xcp-ng `cleanup.py`):
+      only VDIs with no children are ever prunable. Mid-chain snapshots and
+      base copies (no VBD by design, referenced through the chain) are
+      never flagged. Unmanaged (hidden) leftovers are reported as the GC's
+      territory (investigate why it has not collected them); still-managed
+      ones as safe `xe vdi-destroy` candidates
+  7d. SR with `other-config:gc=false` — the SM garbage collector never runs
+      on it (`gcEnabled` in cleanup.py), so hidden leftover VDIs are never
+      cleaned; commonly a forgotten troubleshooting measure
+  7e. every orphaned VDI or snapshot is listed — not only the vhd-parent
+      chain leftovers (7b): orphaned snapshots (broken xapi parent) and
+      plain unattached disks with nothing depending on them are garbage
+      too, each with the appropriate removal command. Objects expected to
+      be unattached are excluded: HA-mechanism VDIs (statefiles, SR
+      metadata, redo logs) and removable media (CDs, ISO/udev SRs, tools
+      ISOs — only temporarily attached for installs)
   7c. VDI or SR with `other-config:leaf-coalesce=false` — a temporary
       workaround for coalesce issues; a leftover value keeps snapshots
       forever, impacts performance and consumes disk. SR-level settings
@@ -369,6 +392,15 @@ xcp-bundle-analyzer list host1.tar.bz2 [--grep xapi]
 # dump one raw table of xapi-db.xml (all fields, as parsed)
 xcp-bundle-analyzer xapi-db host1.tar.bz2 host
 ```
+
+## Snapshots, base disks and garbage collection
+
+See [docs/SNAPSHOTS.md](docs/SNAPSHOTS.md) for a full guide to VDI chains:
+what a snapshot, a base copy and a mid-chain disk are, the difference
+between the xapi chain (`snapshot_of`) and the physical chain
+(`sm_config:vhd-parent`), when it is safe to delete a VDI (and when you
+never should), and exactly when the Storage Manager garbage collector
+deletes or preserves VDIs (grounded in the xcp-ng `sm` GC source).
 
 ## Notes on the xapi-db.xml format
 

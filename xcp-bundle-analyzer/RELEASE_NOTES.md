@@ -4,6 +4,73 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.13 (patch)
+
+- fix: orphan findings no longer flag objects expected to be unattached:
+  HA-mechanism VDIs (statefiles, "Metadata for HA" SR metadata, redo logs)
+  and removable media (CD type, ISO/udev optical SRs, XCP-ng/XS tools
+  ISOs). The VDIs section shows them as "expected unattached" instead of
+  ORPHANED, and they are excluded from the garbage counts. VDI reports
+  gain `is_ha_internal` and `is_removable_media` in JSON output.
+
+## v0.3.12 (patch)
+
+- feat: new orphaned-vdi anomaly — every orphaned VDI or snapshot is now
+  listed in the anomalies section, not only the vhd-parent chain leftovers
+  (orphaned-vhd-parent): orphaned snapshots (broken xapi parent) and plain
+  unattached disks with nothing depending on them each get a finding with
+  the appropriate removal command. No duplicates: VDIs covered by the
+  richer orphaned-vhd-parent messages are skipped. HA statefiles stay
+  excluded (legitimate unattached objects).
+
+## v0.3.11 (patch)
+
+- feat: vdi-tree marks VDIs attached to a VM with a compact `>>device`
+  (e.g. `>>xvda`) on the node line — mid-chain snapshots and base copies
+  (no VBD by design) stay unmarked.
+- feat: the VDIs section shows the VBD device on each line
+  (`vbd=xvda(Disk)`, `vbd=xvdd(CD)`); empty for unattached VDIs.
+- feat: the pool section counts disk VDIs relevant to VMs
+  ("disk VDIs: N (CD/ISO excluded)") — CD/ISO and optical-drive VDIs are
+  excluded, mirroring the sr-free-space criteria. VDI reports gain
+  `vbd_devices` in JSON output.
+
+## v0.3.10 (patch)
+
+- feat: `vdi-tree` now walks the physical chain (sm_config:vhd-parent) —
+  the dependency graph that decides whether a VDI can be deleted — instead
+  of the flat xapi snapshot list. Nodes carry the xapi status as flags
+  (SNAPSHOT, hidden(unmanaged), BROKEN PARENT) and the orphan verdict
+  (*** ORPHANED: nothing depends on it ***); xapi-only snapshots appear as
+  SNAPSHOT(xapi) cross-references.
+- feat: orphaned-vhd-parent findings now distinguish unmanaged (hidden)
+  VDIs — the garbage collector's territory, with a message pointing at
+  /var/log/SMlog and the SR's gc setting — from still-managed leftovers,
+  which are safe `xe vdi-destroy` candidates (issue #41 follow-up).
+- feat: new gc-disabled anomaly — SRs with `other-config:gc=false`, on
+  which the SM garbage collector never runs (gcEnabled in cleanup.py), so
+  hidden leftover VDIs accumulate; a common forgotten troubleshooting
+  measure.
+- feat: VDI reports carry `managed` in JSON output.
+- docs: docs/SNAPSHOTS.md gained a full example workflow (anomalies →
+  triage → verify with object view → `xe vdi-destroy` → rescan).
+
+## v0.3.7 (patch)
+
+- docs: new docs/SNAPSHOTS.md — definitions of snapshots, base copies,
+  mid-chain disks and orphans, the two VDI chains (xapi vs physical), when
+  it is safe (or never safe) to delete a VDI, and the SM garbage
+  collector's exact delete/preserve rules from the xcp-ng sm source.
+- fix: regression from 0.3.6 — mid-chain VHD snapshots and base copies were
+  flagged as orphaned just because they have no VBD. The orphan criteria now
+  match the SM garbage collector (xcp-ng sm, cleanup.py findGarbage): a VDI
+  is garbage only when nothing depends on it — no live VBD, no physical
+  child (no sm_config:vhd-parent pointing at it) and not a valid snapshot
+  (is_a_snapshot with a resolvable parent). The orphaned-vhd-parent check
+  no longer compares against the xapi snapshot-children set (the physical
+  chain and the xapi chain are different trees). VDI reports gain
+  `vhd_children` (physical child count) in JSON output.
+
 ## v0.3.6 (patch)
 
 - fix: orphaned base copies with an in-use parent are now detected — the

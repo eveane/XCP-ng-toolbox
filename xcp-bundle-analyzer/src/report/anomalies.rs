@@ -172,30 +172,51 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
-    // 7b) Orphaned base disk with an sm_config:vhd-parent whose parent does
-    //     not reference it back: a leftover VHD base-copy chain (usually
-    //     after a failed/aborted coalesce or migration). The base copy is
-    //     not attached to any VM and is not a snapshot itself; the parent
-    //     does NOT have to be orphaned or snapshot-free — it can be an
-    //     in-use disk. The only condition is that the parent has no
-    //     reference to the base copy (the base copy uuid is not among the
-    //     parent's snapshot children).
+    // 7b) Orphaned leaf of a VHD chain (sm_config:vhd-parent set). The
+    //     orphaned flag encodes the SM garbage collector's prunable shape
+    //     (xcp-ng sm, cleanup.py findGarbage): no live VBD, no physical
+    //     children and not a valid snapshot. Two different situations wear
+    //     this shape, and they call for different actions:
+    //     - unmanaged (hidden) VDI: the GC's own territory — it should have
+    //       collected it already; its presence means the GC did not run
+    //       (SR other-config:gc=false is checked separately), failed (see
+    //       /var/log/SMlog), or the VHD is not actually hidden on disk.
+    //       Investigate; do not hand-delete what the GC owns.
+    //     - still-managed VDI: a leftover xapi object after a failed/aborted
+    //       coalesce or migration — a candidate for `xe vdi-destroy`.
+    //     A healthy mid-chain base copy (physical children above it) is
+    //     never flagged, and the parent's own state is irrelevant.
     for d in &r.vdis {
-        if d.vhd_parent_uuid.is_empty() || !d.orphaned || d.is_snapshot {
+        if d.vhd_parent_uuid.is_empty()
+            || !d.orphaned
+            || d.is_snapshot
+            || d.is_ha_internal
+            || d.is_removable_media
+        {
             continue;
         }
-        let parent = r.vdis.iter().find(|p| p.uuid == d.vhd_parent_uuid);
-        let orphan_chain = match parent {
-            Some(p) => !p.snapshot_children_uuids.contains(&d.uuid),
-            None => false,
-        };
-        if orphan_chain {
+        let sr_name = r
+            .srs
+            .iter()
+            .find(|s| s.uuid == d.sr_uuid)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        if d.managed {
             out.push(warn(
                 "orphaned-vhd-parent",
                 d.name.clone(),
                 format!(
-                    "VDI {} [{}] is an orphaned base disk with sm_config:vhd-parent={}, but its parent does not reference it back (not among its snapshot children): leftover VHD base-copy chain, the base copy can likely be deleted",
-                    d.name, d.uuid, d.vhd_parent_uuid
+                    "VDI {} [{}]{} is still managed by xapi but is an orphaned base copy (sm_config:vhd-parent={}, no live VBD, no VHD child): a leftover from a failed/aborted coalesce or migration — it can likely be deleted with `xe vdi-destroy uuid={}`",
+                    d.name, d.uuid, sr_label(&sr_name), d.vhd_parent_uuid, d.uuid
+                ),
+            ));
+        } else {
+            out.push(warn(
+                "orphaned-vhd-parent",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}]{} is unmanaged (hidden) and orphaned (sm_config:vhd-parent={}, no live VBD, no VHD child) — the storage manager garbage collector should have removed it; check /var/log/SMlog for GC errors and whether the SR's GC is running (`xe sr-param-list uuid={}` other-config:gc), and investigate why it lingers",
+                    d.name, d.uuid, sr_label(&sr_name), d.vhd_parent_uuid, d.sr_uuid
                 ),
             ));
         }
@@ -227,6 +248,77 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                 format!(
                     "SR {} [{}] has other-config:leaf-coalesce=false; this disables leaf coalescing for every VDI of the SR — snapshots are kept forever, performance is impacted and disk is consumed; remove it as soon as it is no longer needed with: xe sr-param-remove uuid={} param-name=other-config param-key=leaf-coalesce",
                     s.name, s.uuid, s.uuid
+                ),
+            ));
+        }
+    }
+
+    // 7d) SR with the garbage collector disabled (other-config:gc=false):
+    //     per the SM source (cleanup.py gcEnabled), the GC aborts on such
+    //     SRs — hidden/unmanaged leftover VDIs are never collected and
+    //     accumulate. Commonly set temporarily during troubleshooting and
+    //     forgotten.
+    for s in &r.srs {
+        if map_get(&s.other_config, "gc") == Some("false") {
+            out.push(warn(
+                "gc-disabled",
+                s.name.clone(),
+                format!(
+                    "SR {} [{}] has other-config:gc=false — the storage manager garbage collector never runs on this SR, so unmanaged leftover VDIs (hidden base copies, coalesce intermediates) are never cleaned and disk space is never reclaimed; if this was a temporary troubleshooting measure, remove it with: xe sr-param-remove uuid={} param-name=other-config param-key=gc",
+                    s.name, s.uuid, s.uuid
+                ),
+            ));
+        }
+    }
+
+    // 7e) Every orphaned VDI or snapshot is listed — not only the
+    //     vhd-parent leftovers (7b): a snapshot whose xapi parent is gone
+    //     (broken chain) or a plain unattached, unmanaged disk is also
+    //     garbage the GC could not or did not collect. HA statefiles are
+    //     excluded (they are legitimate unattached objects). VDIs already
+    //     reported by 7b (with their richer chain message) are skipped so
+    //     each orphan appears exactly once.
+    for d in &r.vdis {
+        if !d.orphaned || d.is_ha_internal || d.is_removable_media {
+            continue;
+        }
+        // already covered by 7b (vhd-parent leftover, richer message)
+        if !d.vhd_parent_uuid.is_empty() && !d.is_snapshot {
+            continue;
+        }
+        let sr_name = r
+            .srs
+            .iter()
+            .find(|s| s.uuid == d.sr_uuid)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        if d.is_snapshot {
+            out.push(warn(
+                "orphaned-vdi",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}]{} is an orphaned snapshot (is_a_snapshot=true, parent {}): not attached to any VM and nothing depends on it — delete it with `xe snapshot-destroy`/`xe vdi-destroy uuid={}` after checking no backup job still needs it",
+                    d.name,
+                    d.uuid,
+                    sr_label(&sr_name),
+                    if d.snapshot_of_uuid.is_empty() {
+                        "gone from the dump".to_string()
+                    } else {
+                        d.snapshot_of_uuid.clone()
+                    },
+                    d.uuid
+                ),
+            ));
+        } else {
+            out.push(warn(
+                "orphaned-vdi",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}]{} is orphaned: not attached to any VM, no snapshot parent, nothing physically on top of it — it can likely be deleted with `xe vdi-destroy uuid={}`",
+                    d.name,
+                    d.uuid,
+                    sr_label(&sr_name),
+                    d.uuid
                 ),
             ));
         }
@@ -542,6 +634,15 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
 }
 
 /// Append a template recommendation to an anomaly detail.
+/// SR name suffix for anomaly details (" on <SR>") or empty when unknown.
+fn sr_label(sr_name: &str) -> String {
+    if sr_name.is_empty() {
+        String::new()
+    } else {
+        format!(" on SR {sr_name}")
+    }
+}
+
 fn add_recommendation(
     base: String,
     recommendation: Option<String>,

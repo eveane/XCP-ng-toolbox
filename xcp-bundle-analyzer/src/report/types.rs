@@ -127,8 +127,15 @@ pub struct VdiReport {
     pub vdi_type: String,
     pub size_bytes: u64,
     pub vm: String,
+    /// VBD devices attached to this VDI, e.g. "xvda(Disk)" — empty when
+    /// the VDI has no live VBD (mid-chain snapshots and base copies).
+    pub vbd_devices: Vec<String>,
     /// True when this VDI is a snapshot (is_a_snapshot=true).
     pub is_snapshot: bool,
+    /// True when the VDI is managed by xapi (managed=true). Unmanaged
+    /// (hidden) VDIs are internal SM objects: base copies, coalesce
+    /// intermediates — the GC is responsible for removing them.
+    pub managed: bool,
     /// True when this VDI has at least one snapshot child.
     pub has_snapshots: bool,
     /// UUIDs of the snapshot children of this VDI (its `snapshots` set,
@@ -143,12 +150,25 @@ pub struct VdiReport {
     pub broken_parent: bool,
     /// True for HA statefile disks (type=ha_statefile, "Statefile for HA").
     pub is_ha_statefile: bool,
+    /// True for internal HA-mechanism VDIs — never VM disks, expected to be
+    /// unattached: statefiles, "Metadata for HA" (SR metadata VDIs), redo
+    /// logs. Excluded from orphan findings.
+    pub is_ha_internal: bool,
+    /// True for VDIs on removable media — temporarily attached for
+    /// installs, expected to be unattached most of the time: type=cd,
+    /// ISO/udev (optical drive) SRs, XCP-ng tools ISOs. Excluded from
+    /// orphan findings.
+    pub is_removable_media: bool,
     /// True when this VDI is not attached to any VM (no VBD, or VBDs
     /// pointing to VM rows that no longer exist in the dump).
     pub orphaned: bool,
     /// UUID from sm_config:vhd-parent when set (VHD base-copy chain).
     /// Empty when not set.
     pub vhd_parent_uuid: String,
+    /// Number of VDIs whose sm_config:vhd-parent points at this VDI
+    /// (physical children in the SM-level chain). A VDI with physical
+    /// children is the base of an active chain and is never garbage.
+    pub vhd_children: usize,
     /// True when other-config:leaf-coalesce is explicitly set to false.
     /// This is only meant to be set while the VM/VDI is being migrated;
     /// a leftover value disables leaf coalescing on the VDI.
@@ -301,6 +321,9 @@ pub struct PoolSummary {
     pub host_count: usize,
     pub vm_running: usize,
     pub vm_total: usize,
+    /// Number of disk VDIs relevant to VMs — CD/ISO and optical-drive
+    /// VDIs excluded (vdi_type=cd, SRs of type iso/udev).
+    pub vdi_count: usize,
     /// Pool-level HA status from the pool row (pool.ha_enabled).
     /// None when the field is absent or unparseable in the dump.
     pub ha_enabled: Option<bool>,

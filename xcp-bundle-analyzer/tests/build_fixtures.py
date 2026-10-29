@@ -13,6 +13,9 @@ XAPI_DB = """
 
 
 
+
+
+
 <?xml version="1.0"?>
 <database>
 <table name="pool">
@@ -29,7 +32,7 @@ XAPI_DB = """
 <table name="SR">
 <row ref="OpaqueRef:sr-local" uuid="sr-uuid-local" name__label="Local storage" type="lvm" shared="false" physical_size="21474836480" physical_utilisation="19327352832" PBDs="('OpaqueRef:pbd1' 'OpaqueRef:pbd2')" VDIs="('OpaqueRef:vdi2')"/>
 <row ref="OpaqueRef:sr-nfs" uuid="sr-uuid-nfs" name__label="NFS repo" type="nfs" shared="true" physical_size="2199023255552" physical_utilisation="1099511627776" PBDs="('OpaqueRef:pbd3' 'OpaqueRef:pbd4')" VDIs="('OpaqueRef:vdi1')" other_config="(('auto-scan-interval' '300'))"/>
-<row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI shared" type="lvmoiscsi" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd5' 'OpaqueRef:pbd6')" VDIs="()" other_config="(('leaf-coalesce' 'false'))"/>
+<row ref="OpaqueRef:sr-iscsi" uuid="sr-uuid-iscsi" name__label="iSCSI shared" type="lvmoiscsi" shared="true" physical_size="1099511627776" physical_utilisation="107374182400" PBDs="('OpaqueRef:pbd5' 'OpaqueRef:pbd6')" VDIs="()" other_config="(('leaf-coalesce' 'false')%.('gc' 'false'))"/>
 <row ref="OpaqueRef:sr-dvd" uuid="sr-uuid-dvd" name__label="DVD drives" type="udev" shared="false" physical_size="1073741824" physical_utilisation="1073741824" PBDs="()" VDIs="('OpaqueRef:vdi-dvd2')"/>
 </table>
 <table name="PBD">
@@ -43,19 +46,22 @@ XAPI_DB = """
 <table name="VDI">
 <row ref="OpaqueRef:vdi1" uuid="vdi-uuid-1" name__label="vm1-disk" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="('OpaqueRef:vbd1')" snapshots="('OpaqueRef:vdi-snap')" sm_config="(('vdi_type' 'vhd')%.('image-format' 'vhd'))" physical_utilisation="12884901888" cbt-enabled="true"/>
 <row ref="OpaqueRef:vdi2" uuid="vdi-uuid-2" name__label="vm2-disk" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd2')" other_config="(('leaf-coalesce' 'false'))" sm_config="(('image-format' 'qcow2'))" physical_utilisation="7516192768" sharable="true"/>
+<row ref="OpaqueRef:vdi-hameta" uuid="vdi-uuid-hameta" name__label="Metadata for HA" type="metadata" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="()" managed="false" physical_utilisation="1048576"/>
 <row ref="OpaqueRef:vdi-ha" uuid="vdi-uuid-ha" name__label="Statefile for HA" type="ha_statefile" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="()" is_a_snapshot="false"/>
+<row ref="OpaqueRef:vdi-mid" uuid="vdi-uuid-mid" name__label="vm1-disk mid-snap" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi1" snapshot_time="20260917T07:33:35Z" sm_config="(('image-format' 'vhd')%.('vhd-parent' 'vdi-uuid-1'))" physical_utilisation="33154048"/>
+<row ref="OpaqueRef:vdi-delta" uuid="vdi-uuid-delta" name__label="vm1-disk newer delta" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi1" snapshot_time="20260918T07:33:35Z" sm_config="(('image-format' 'vhd')%.('vhd-parent' 'vdi-uuid-mid'))" physical_utilisation="33154048"/>
 <row ref="OpaqueRef:vdi-bc2" uuid="vdi-uuid-bc2" name__label="orphaned base copy 2" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-nfs" VBDs="()" sm_config="(('image-format' 'vhd')%.('vhd-parent' 'vdi-uuid-1'))" physical_utilisation="10485760"/>
 <row ref="OpaqueRef:vdi-snap" uuid="vdi-uuid-snap" name__label="vm1-disk snapshot" type="user" virtual_size="21474836480" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi1"/>
 <row ref="OpaqueRef:vdi-orphan" uuid="vdi-uuid-orphan" name__label="orphaned snapshot" type="user" virtual_size="10737418240" SR="OpaqueRef:sr-nfs" VBDs="()" is_a_snapshot="true" snapshot_of="OpaqueRef:vdi-gone"/>
 <row ref="OpaqueRef:vdi-bc-parent" uuid="vdi-uuid-bc-parent" name__label="base copy" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-iscsi" VBDs="()" sm_config="(('image-format' 'vhd'))" physical_utilisation="1082130432"/>
-<row ref="OpaqueRef:vdi-bc-child" uuid="vdi-uuid-bc-child" name__label="base copy" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-iscsi" VBDs="()" sm_config="(('image-format' 'vhd')%.('vhd-parent' 'vdi-uuid-bc-parent'))" physical_utilisation="33329152"/>
+<row ref="OpaqueRef:vdi-bc-child" uuid="vdi-uuid-bc-child" name__label="base copy" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-iscsi" VBDs="()" managed="false" read_only="true" sm_config="(('image-format' 'vhd')%.('vhd-parent' 'vdi-uuid-bc-parent'))" physical_utilisation="33329152"/>
 <row ref="OpaqueRef:vdi-dom0" uuid="vdi-uuid-dom0" name__label="dom0 extra disk" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd-dom0')"/>
 <row ref="OpaqueRef:vdi-dvd" uuid="vdi-uuid-dvd" name__label="XCP-ng tools DVD" type="user" virtual_size="629145600" SR="OpaqueRef:sr-local" VBDs="('OpaqueRef:vbd-cd')"/>
 <row ref="OpaqueRef:vdi-dvd2" uuid="vdi-uuid-dvd2" name__label="disk on dvd sr" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-dvd" VBDs="('OpaqueRef:vbd-dvd2')"/>
 </table>
 <table name="VBD">
 <row ref="OpaqueRef:vdi-bc-parent" uuid="vdi-uuid-bc-parent" name__label="base copy" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-iscsi" VBDs="()" sm_config="(('image-format' 'vhd'))" physical_utilisation="1082130432"/>
-<row ref="OpaqueRef:vdi-bc-child" uuid="vdi-uuid-bc-child" name__label="base copy" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-iscsi" VBDs="()" sm_config="(('image-format' 'vhd')%.('vhd-parent' 'vdi-uuid-bc-parent'))" physical_utilisation="33329152"/>
+<row ref="OpaqueRef:vdi-bc-child" uuid="vdi-uuid-bc-child" name__label="base copy" type="user" virtual_size="1073741824" SR="OpaqueRef:sr-iscsi" VBDs="()" managed="false" read_only="true" sm_config="(('image-format' 'vhd')%.('vhd-parent' 'vdi-uuid-bc-parent'))" physical_utilisation="33329152"/>
 <row ref="OpaqueRef:vbd1" uuid="vbd-uuid-1" VDI="OpaqueRef:vdi1" VM="OpaqueRef:vm1" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="true"/>
 <row ref="OpaqueRef:vbd-cd" uuid="vbd-uuid-cd" VDI="OpaqueRef:vdi-dvd" VM="OpaqueRef:vm2" device="xvdd" type="CD" mode="RO" bootable="false" currently_attached="true"/>
 <row ref="OpaqueRef:vbd2" uuid="vbd-uuid-2" VDI="OpaqueRef:vdi2" VM="OpaqueRef:vm2" device="xvda" type="Disk" mode="RW" bootable="true" currently_attached="false"/>

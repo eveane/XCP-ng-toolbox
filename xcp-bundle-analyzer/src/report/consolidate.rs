@@ -20,6 +20,7 @@ pub fn consolidate(reports: Vec<BundleReport>) -> ConsolidatedReport {
     let mut seen_hosts: BTreeMap<String, HostReport> = BTreeMap::new();
     let mut seen_srs: BTreeMap<String, SrReport> = BTreeMap::new();
     let mut seen_vms: BTreeMap<String, VmReport> = BTreeMap::new();
+    let mut seen_vdis: BTreeMap<String, VdiReport> = BTreeMap::new();
 
     for rep in &reports {
         consolidated.warnings.extend(rep.warnings.iter().cloned());
@@ -27,6 +28,9 @@ pub fn consolidate(reports: Vec<BundleReport>) -> ConsolidatedReport {
             seen_hosts
                 .entry(h.uuid.clone())
                 .or_insert_with(|| h.clone());
+        }
+        for d in &rep.vdis {
+            seen_vdis.entry(d.uuid.clone()).or_insert_with(|| d.clone());
         }
         for s in &rep.srs {
             seen_srs.entry(s.uuid.clone()).or_insert_with(|| s.clone());
@@ -46,6 +50,20 @@ pub fn consolidate(reports: Vec<BundleReport>) -> ConsolidatedReport {
         .count();
     consolidated.pool.sr_total_size_bytes = seen_srs.values().map(|s| s.size_bytes).sum();
     consolidated.pool.sr_total_used_bytes = seen_srs.values().map(|s| s.used_bytes).sum();
+    // pool-level disk-VDI count: CD/ISO and optical-drive VDIs excluded,
+    // same criteria as the per-bundle count (see build.rs)
+    consolidated.pool.vdi_count = seen_vdis
+        .values()
+        .filter(|d| {
+            let sr_type = d.sr_type.trim().to_lowercase();
+            let name = d.name.trim().to_lowercase();
+            d.vdi_type != "cd"
+                && sr_type != "iso"
+                && sr_type != "udev"
+                && !name.contains("dvd")
+                && !name.contains("cd")
+        })
+        .count();
     consolidated.bundles = reports;
     consolidated.hosts = seen_hosts.into_values().collect();
     consolidated.srs = seen_srs.into_values().collect();
@@ -262,7 +280,10 @@ mod tests {
         let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
         assert!(ha.orphaned, "HA statefile has no VBD");
         let snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-snap").unwrap();
-        assert!(snap.orphaned, "snapshot has no VBD");
+        assert!(
+            !snap.orphaned,
+            "a valid snapshot with a resolvable parent is not orphaned, even without a VBD"
+        );
         let vm2 = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-2").unwrap();
         assert!(!vm2.orphaned, "vm2-disk is attached via vbd2");
         // leaf-coalesce=false surfaced on the report and in anomalies
@@ -509,7 +530,10 @@ mod orphaned_vhd_parent_tests {
             .snapshot_children_uuids
             .contains(&"vdi-uuid-snap".to_string()));
         let snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-snap").unwrap();
-        assert!(snap.orphaned, "snapshot has no VBD");
+        assert!(
+            !snap.orphaned,
+            "a valid snapshot with a resolvable parent is not orphaned, even without a VBD"
+        );
         assert_eq!(snap.snapshot_of_uuid, "vdi-uuid-1");
         assert!(!r
             .anomalies
@@ -669,5 +693,240 @@ mod generic_template_tests {
             .unwrap();
         assert_eq!(ub.severity, "info");
         assert!(ub.detail.contains("Ubuntu 24 04"), "{}", ub.detail);
+    }
+}
+
+#[cfg(test)]
+mod midchain_vhd_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn midchain_snapshot_and_base_are_not_orphaned() {
+        // Regression: a mid-chain VHD snapshot has no VBD by design, but
+        // it has a physical child (delta above it) and a resolvable xapi
+        // snapshot_of parent — it is valid, never garbage. Same for the
+        // in-use base below it (physical children, no snapshot status).
+        let r = report();
+        let mid = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-mid").unwrap();
+        assert_eq!(mid.vhd_parent_uuid, "vdi-uuid-1");
+        assert!(mid.vhd_children == 1, "delta sits physically on top");
+        assert!(!mid.orphaned, "mid-chain snapshot must not be orphaned");
+        assert!(!r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "orphaned-vhd-parent" && a.subject.contains("mid-snap")));
+
+        let delta = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-delta").unwrap();
+        assert!(!delta.orphaned, "valid snapshot leaf of a live chain");
+
+        // the in-use root with physical children on top is fine too
+        let root = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-1").unwrap();
+        assert!(!root.orphaned);
+        assert!(root.vhd_children >= 1);
+        assert!(!r
+            .anomalies
+            .iter()
+            .any(|a| a.category == "orphaned-vhd-parent" && a.detail.contains("vdi-uuid-1]")));
+    }
+
+    #[test]
+    fn true_leftover_leaves_still_flagged() {
+        // The two fixture leftovers (no VBD, no physical child, no valid
+        // snapshot link) must still be flagged as orphaned-vhd-parent.
+        let r = report();
+        for uuid in ["vdi-uuid-bc-child", "vdi-uuid-bc2"] {
+            let d = r.vdis.iter().find(|d| d.uuid == uuid).unwrap();
+            assert!(d.orphaned, "{uuid} should be orphaned");
+            assert!(
+                r.anomalies
+                    .iter()
+                    .any(|a| a.category == "orphaned-vhd-parent" && a.detail.contains(uuid)),
+                "anomaly missing for {uuid}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod gc_managed_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn unmanaged_orphan_points_at_the_gc() {
+        // issue #41 shape: hidden (managed=false, read_only=true) base copy
+        // with vhd-parent, no VBD, no child — the GC should have removed it.
+        let r = report();
+        let a = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "orphaned-vhd-parent" && a.subject == "base copy")
+            .unwrap();
+        assert!(a.detail.contains("unmanaged (hidden)"), "{}", a.detail);
+        assert!(
+            a.detail
+                .contains("garbage collector should have removed it"),
+            "{}",
+            a.detail
+        );
+        assert!(a.detail.contains("SMlog"), "{}", a.detail);
+    }
+
+    #[test]
+    fn managed_orphan_is_a_deletion_candidate() {
+        let r = report();
+        let a = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "orphaned-vhd-parent" && a.subject == "orphaned base copy 2")
+            .unwrap();
+        assert!(a.detail.contains("still managed by xapi"), "{}", a.detail);
+        assert!(a.detail.contains("xe vdi-destroy"), "{}", a.detail);
+    }
+
+    #[test]
+    fn gc_disabled_sr_flagged() {
+        let r = report();
+        let a = r
+            .anomalies
+            .iter()
+            .find(|a| a.category == "gc-disabled" && a.subject == "iSCSI shared")
+            .unwrap();
+        assert!(a.detail.contains("gc=false"), "{}", a.detail);
+        assert!(a.detail.contains("xe sr-param-remove"), "{}", a.detail);
+    }
+}
+
+#[cfg(test)]
+mod orphaned_vdi_listing_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn every_orphaned_vdi_is_listed_exactly_once() {
+        let r = report();
+        let listed: Vec<&str> = r
+            .anomalies
+            .iter()
+            .filter(|a| a.category == "orphaned-vdi" || a.category == "orphaned-vhd-parent")
+            .map(|a| a.subject.as_str())
+            .collect();
+        // all orphaned VDIs minus the HA statefile appear
+        for uuid in ["vdi-uuid-bc-child", "vdi-uuid-bc2", "vdi-uuid-orphan"] {
+            let d = r.vdis.iter().find(|d| d.uuid == uuid).unwrap();
+            assert!(d.orphaned, "{uuid} should be orphaned");
+            assert!(
+                listed.iter().any(|s| s.contains(uuid)
+                    || *s == r.vdis.iter().find(|d| d.uuid == uuid).unwrap().name),
+                "{uuid} must be listed in the anomalies, got {listed:?}"
+            );
+        }
+        // the broken snapshot (no vhd-parent) is in the general category
+        assert!(r.anomalies.iter().any(|a| a.category == "orphaned-vdi"
+            && a.detail.contains("vdi-uuid-orphan")
+            && a.detail.contains("orphaned snapshot")));
+        // no duplicates: each orphan uuid appears in exactly one finding
+        for uuid in ["vdi-uuid-bc-child", "vdi-uuid-bc2", "vdi-uuid-orphan"] {
+            let n = r
+                .anomalies
+                .iter()
+                .filter(|a| {
+                    (a.category == "orphaned-vdi" || a.category == "orphaned-vhd-parent")
+                        && a.detail.contains(uuid)
+                })
+                .count();
+            assert_eq!(n, 1, "{uuid} listed {n} times");
+        }
+    }
+
+    #[test]
+    fn ha_statefiles_and_valid_disks_not_listed() {
+        let r = report();
+        // the HA statefile is orphaned by design: not garbage
+        let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
+        assert!(ha.orphaned);
+        assert!(!r.anomalies.iter().any(|a| (a.category == "orphaned-vdi"
+            || a.category == "orphaned-vhd-parent")
+            && a.detail.contains("vdi-uuid-ha")));
+        // valid mid-chain disks are not listed
+        assert!(!r.anomalies.iter().any(|a| (a.category == "orphaned-vdi"
+            || a.category == "orphaned-vhd-parent")
+            && a.detail.contains("vdi-uuid-mid")));
+    }
+}
+
+#[cfg(test)]
+mod expected_unattached_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn ha_metadata_and_removable_media_not_flagged_as_garbage() {
+        let r = report();
+        // "Metadata for HA": HA mechanism object, expected unattached
+        let md = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-hameta").unwrap();
+        assert!(md.is_ha_internal, "SR metadata VDI must be HA-internal");
+        assert!(md.orphaned, "raw flag: no VBD");
+        assert!(
+            !r.anomalies
+                .iter()
+                .any(|a| a.detail.contains("vdi-uuid-hameta")),
+            "HA metadata must not appear in anomalies"
+        );
+        // HA statefile: same
+        let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
+        assert!(ha.is_ha_internal);
+        // tools DVD / DVD-sr VDIs: removable media, expected unattached
+        for uuid in ["vdi-uuid-dvd", "vdi-uuid-dvd2"] {
+            let d = r.vdis.iter().find(|d| d.uuid == uuid).unwrap();
+            assert!(d.is_removable_media, "{uuid} must be removable media");
+        }
+        // none of them appear in the orphan findings
+        for uuid in [
+            "vdi-uuid-hameta",
+            "vdi-uuid-ha",
+            "vdi-uuid-dvd",
+            "vdi-uuid-dvd2",
+        ] {
+            assert!(
+                !r.anomalies.iter().any(|a| (a.category == "orphaned-vdi"
+                    || a.category == "orphaned-vhd-parent")
+                    && a.detail.contains(uuid)),
+                "{uuid} must not be flagged"
+            );
+        }
+        // true garbage still flagged
+        assert!(r
+            .anomalies
+            .iter()
+            .any(|a| a.detail.contains("vdi-uuid-bc2")));
     }
 }

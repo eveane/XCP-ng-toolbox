@@ -354,7 +354,22 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
     }
 
-    // VDIs
+    // VDIs. Physical (SM-level) chain: sm_config:vhd-parent links a VHD
+    // to its base copy. Mid-chain snapshots and base copies have no VBD by
+    // design — they are referenced through the chain — so "no live VBD"
+    // alone does not make them garbage. Per the SM garbage collector
+    // (xcp-ng sm, cleanup.py findGarbage), a VDI is only prunable when
+    // nothing depends on it: no live VBD AND no physical child.
+    let vhd_parent_count: BTreeMap<String, usize> = {
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for (_, v) in db.rows("VDI") {
+            let sm = decode_map(get(v, "sm_config"));
+            if let Some(p) = map_get(&sm, "vhd-parent").filter(|p| !p.is_empty()) {
+                *counts.entry(p.to_string()).or_default() += 1;
+            }
+        }
+        counts
+    };
     for (r, vdi) in db.rows("VDI") {
         let uuid = get(vdi, "uuid").to_string();
         if uuid.is_empty() {
@@ -389,15 +404,53 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             let vmr = ref_of(vbd, "VM");
             !vmr.is_empty() && db.table("VM").and_then(|t| t.get(&vmr)).is_some()
         };
-        let orphaned = !vbd_keys.iter().any(|k| {
+        // VBD devices attached to this VDI (device + type), live VBDs only.
+        let vbd_devices: Vec<String> = vbd_keys
+            .iter()
+            .filter_map(|k| db.table("VBD").and_then(|t| t.get(k)))
+            .filter(|vbd| has_live_vbd(vbd))
+            .map(|vbd| format!("{}({})", get(vbd, "device"), get(vbd, "type")))
+            .collect();
+        // disk VDIs only: CD/ISO and optical-drive VDIs excluded (mirrors
+        // the sr-free-space exclusion), for the pool-level vdi_count
+        let sr_type_lc = db
+            .table("SR")
+            .and_then(|t| t.get(&sr_ref))
+            .map(|sr| get(sr, "type").trim().to_lowercase())
+            .unwrap_or_default();
+        let is_relevant_vdi = get(vdi, "type") != "cd"
+            && sr_type_lc != "iso"
+            && sr_type_lc != "udev"
+            && !get2(vdi, "name__label").to_lowercase().contains("dvd")
+            && !get2(vdi, "name__label").to_lowercase().contains("cd");
+        if is_relevant_vdi {
+            report.pool.vdi_count += 1;
+        }
+        // Physical children: VDIs whose sm_config:vhd-parent points here.
+        // A VDI with physical children is the base of an active chain and
+        // is never garbage, even without a VBD.
+        let vhd_children = vhd_parent_count.get(&uuid).copied().unwrap_or(0);
+        let has_live_vbd_link = vbd_keys.iter().any(|k| {
             db.table("VBD")
                 .and_then(|t| t.get(k))
                 .map(has_live_vbd)
                 .unwrap_or(false)
-        }) && !db.rows("VBD").any(|(br, vbd)| br == r && has_live_vbd(vbd));
+        }) || db.rows("VBD").any(|(br, vbd)| br == r && has_live_vbd(vbd));
+        let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
+        // managed defaults to true: the attribute is absent on older dumps,
+        // and an unmanaged VDI always carries managed="false" explicitly.
+        let managed = get(vdi, "managed") != "false";
+        // A valid snapshot (is_a_snapshot with a resolvable snapshot_of
+        // parent) is a user-managed object, not garbage — even when it has
+        // no VBD (mid-chain snapshots never do). A snapshot whose parent is
+        // gone is reported by the broken-snapshot-parent check instead.
+        let valid_snapshot = is_snapshot && {
+            let p = ref_of(vdi, "snapshot_of");
+            !p.is_empty() && db.table("VDI").and_then(|t| t.get(&p)).is_some()
+        };
+        let orphaned = !has_live_vbd_link && vhd_children == 0 && !valid_snapshot;
         let size = as_u64(get(vdi, "virtual_size")).unwrap_or(0);
         report.pool.vdi_total_size_bytes = report.pool.vdi_total_size_bytes.saturating_add(size);
-        let is_snapshot = as_bool(get(vdi, "is_a_snapshot")).unwrap_or(false);
         let snapshot_children_uuids: Vec<String> = ref_set(get(vdi, "snapshots"))
             .iter()
             .filter_map(|sr| {
@@ -420,6 +473,23 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             !snap_of.is_empty() && db.table("VDI").and_then(|t| t.get(&snap_of)).is_none();
         let is_ha_statefile =
             get(vdi, "type") == "ha_statefile" || get(vdi, "name__label") == "Statefile for HA";
+        // Internal HA-mechanism VDIs (never VM disks, expected unattached):
+        // statefiles, SR metadata ("Metadata for HA"), redo logs.
+        let vdi_type_lc = get(vdi, "type").trim().to_lowercase();
+        let vdi_name_lc = get2(vdi, "name__label").trim().to_lowercase();
+        let is_ha_internal = is_ha_statefile
+            || vdi_type_lc == "metadata"
+            || vdi_type_lc == "redo_log"
+            || vdi_name_lc == "metadata for ha";
+        // Removable media: CDs, ISO/udev optical SRs, tools ISOs — only
+        // temporarily attached for installs, orphaned-looking by design.
+        let is_removable_media = vdi_type_lc == "cd"
+            || sr_type_lc == "iso"
+            || sr_type_lc == "udev"
+            || vdi_name_lc.contains("dvd")
+            || vdi_name_lc.contains("cd")
+            || vdi_name_lc.contains("xcp-ng tools")
+            || vdi_name_lc.contains("xs-tools");
         let vdi_other = decode_map(get(vdi, "other_config"));
         let leaf_coalesce_disabled = map_get(&vdi_other, "leaf-coalesce") == Some("false");
         let sm_config = decode_map(get(vdi, "sm_config"));
@@ -465,14 +535,19 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vdi_type: get(vdi, "type").to_string(),
             size_bytes: size,
             vm: ref_label(db, "VM", &vm_ref, "name__label"),
+            vbd_devices,
             is_snapshot,
+            managed,
             has_snapshots,
             snapshot_children_uuids,
             snapshot_of_uuid: snap_of_uuid,
             broken_parent,
             is_ha_statefile,
+            is_ha_internal,
+            is_removable_media,
             orphaned,
             vhd_parent_uuid,
+            vhd_children,
             leaf_coalesce_disabled,
         });
     }
