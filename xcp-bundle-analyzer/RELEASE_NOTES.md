@@ -4,7 +4,7 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
-## v0.5.0 (minor)
+## v0.4.3 (patch)
 
 - feat: `vdi-tree` now supports `-f json` and `-f html` export (text
   remains the default). The JSON export is a serializable tree structure
