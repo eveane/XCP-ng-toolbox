@@ -84,26 +84,32 @@ VMs, VIFs, PIFs, PBDs, dom0 config) and outputs text, JSON or a self-contained H
 dashboard. Supports a consolidated pool view when several bundles are given.
 See `xcp-bundle-analyzer/README.md`.
 
-## Orphaned VHD base-copy cleanup
+## Orphaned VDI cleanup
 
-Python script that detects and removes the leftover VHD base-copy chains reported
-by xcp-bundle-analyzer (issue #41): a VDI with
-`sm_config:vhd-parent` set that is not attached to any VM, is not a snapshot, and whose
-parent does not reference it back. The parent itself may be in use and is kept.
+Python script that detects and removes orphaned VDIs. Its detection follows the
+reworked xcp-bundle-analyzer (>= 0.3.7) orphan logic, which mirrors the storage
+manager garbage collector: a VDI is orphaned when it has no live VBD, no physical
+VHD child and is not a valid snapshot. HA-internal (statefile, metadata, redo
+log) and removable-media (CD/DVD/ISO/tools) VDIs are never flagged.
+
+**Status: UNSAFE, under review** - the detection was reworked and has not been
+validated on real pools yet. Deletion requires the `--unsafe` flag, and unmanaged
+(hidden) VDIs are never deleted: they belong to the SM garbage collector; check
+`/var/log/SMlog` and the SR `other-config:gc` setting instead.
 
 Only the Python standard library is used; it talks to the pool through the local
 `xe` CLI, so run it as root on an XCP-ng host.
 
 ```
-# list the orphaned chains (default, safe)
+# list the orphaned VDIs (default, safe)
 ./orphaned-vdi-cleanup.py
 
 # summary of what would be deleted
 ./orphaned-vdi-cleanup.py --dry-run
 
-# delete, with confirmation
-./orphaned-vdi-cleanup.py --delete
+# delete the deletable findings, with confirmation
+./orphaned-vdi-cleanup.py --delete --unsafe
 
 # delete without confirmation
-./orphaned-vdi-cleanup.py --force
+./orphaned-vdi-cleanup.py --force --unsafe
 ```
