@@ -187,7 +187,12 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
     //     A healthy mid-chain base copy (physical children above it) is
     //     never flagged, and the parent's own state is irrelevant.
     for d in &r.vdis {
-        if d.vhd_parent_uuid.is_empty() || !d.orphaned || d.is_snapshot {
+        if d.vhd_parent_uuid.is_empty()
+            || !d.orphaned
+            || d.is_snapshot
+            || d.is_ha_internal
+            || d.is_removable_media
+        {
             continue;
         }
         let sr_name = r
@@ -274,7 +279,7 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
     //     reported by 7b (with their richer chain message) are skipped so
     //     each orphan appears exactly once.
     for d in &r.vdis {
-        if !d.orphaned || d.is_ha_statefile {
+        if !d.orphaned || d.is_ha_internal || d.is_removable_media {
             continue;
         }
         // already covered by 7b (vhd-parent leftover, richer message)

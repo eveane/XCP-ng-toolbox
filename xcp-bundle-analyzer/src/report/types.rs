@@ -150,6 +150,15 @@ pub struct VdiReport {
     pub broken_parent: bool,
     /// True for HA statefile disks (type=ha_statefile, "Statefile for HA").
     pub is_ha_statefile: bool,
+    /// True for internal HA-mechanism VDIs — never VM disks, expected to be
+    /// unattached: statefiles, "Metadata for HA" (SR metadata VDIs), redo
+    /// logs. Excluded from orphan findings.
+    pub is_ha_internal: bool,
+    /// True for VDIs on removable media — temporarily attached for
+    /// installs, expected to be unattached most of the time: type=cd,
+    /// ISO/udev (optical drive) SRs, XCP-ng tools ISOs. Excluded from
+    /// orphan findings.
+    pub is_removable_media: bool,
     /// True when this VDI is not attached to any VM (no VBD, or VBDs
     /// pointing to VM rows that no longer exist in the dump).
     pub orphaned: bool,

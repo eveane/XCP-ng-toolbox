@@ -296,14 +296,14 @@ mod vdi_tree_tests {
         // STORAGE header counts all VDIs: 9 base, 4 snapshots, 4 orphaned
         // (mid-chain snapshots are no longer counted as garbage)
         assert!(
-            text.contains("VDIs: 13 (9 base, 4 snapshots, 4 orphaned)"),
+            text.contains("VDIs: 14 (10 base, 4 snapshots, 3 orphaned)"),
             "{text}"
         );
         // VDI section excludes the VDI on the udev optical SR: 12 listed
         let vdis = crate::render::render_sections(&r, &[crate::render::Section::VDIs]);
         assert!(
             vdis.contains(
-                "--- VDIs (12) — 8 base, 4 snapshots, 4 orphaned, 1 on ISO/removable SRs not shown ---"
+                "--- VDIs (13) — 9 base, 4 snapshots, 3 orphaned, 1 on ISO/removable SRs not shown ---"
             ),
             "{vdis}"
         );
@@ -357,6 +357,6 @@ mod vbd_mark_tests {
         let text = crate::render::render_sections(&r, &[crate::render::Section::Pool]);
         // 13 VDIs total, minus the tools DVD, the DVD-sr disk and the ISO
         // VDIs -> only disk VDIs relevant to VMs are counted
-        assert!(text.contains("disk VDIs: 11 (CD/ISO excluded)"), "{text}");
+        assert!(text.contains("disk VDIs: 12 (CD/ISO excluded)"), "{text}");
     }
 }

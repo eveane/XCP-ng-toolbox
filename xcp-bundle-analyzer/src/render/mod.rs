@@ -186,7 +186,7 @@ mod uptime_utc_tests {
         // per-SR stats mirror the global header format
         assert!(
             text.contains(
-                "SR: Local storage (3 VDIs: 3 base, 0 snapshots, 0 orphaned, 11.59 GiB total)"
+                "SR: Local storage (4 VDIs: 4 base, 0 snapshots, 0 orphaned, 12.59 GiB total)"
             ),
             "{text}"
         );

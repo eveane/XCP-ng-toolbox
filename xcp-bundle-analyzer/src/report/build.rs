@@ -473,6 +473,23 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             !snap_of.is_empty() && db.table("VDI").and_then(|t| t.get(&snap_of)).is_none();
         let is_ha_statefile =
             get(vdi, "type") == "ha_statefile" || get(vdi, "name__label") == "Statefile for HA";
+        // Internal HA-mechanism VDIs (never VM disks, expected unattached):
+        // statefiles, SR metadata ("Metadata for HA"), redo logs.
+        let vdi_type_lc = get(vdi, "type").trim().to_lowercase();
+        let vdi_name_lc = get2(vdi, "name__label").trim().to_lowercase();
+        let is_ha_internal = is_ha_statefile
+            || vdi_type_lc == "metadata"
+            || vdi_type_lc == "redo_log"
+            || vdi_name_lc == "metadata for ha";
+        // Removable media: CDs, ISO/udev optical SRs, tools ISOs — only
+        // temporarily attached for installs, orphaned-looking by design.
+        let is_removable_media = vdi_type_lc == "cd"
+            || sr_type_lc == "iso"
+            || sr_type_lc == "udev"
+            || vdi_name_lc.contains("dvd")
+            || vdi_name_lc.contains("cd")
+            || vdi_name_lc.contains("xcp-ng tools")
+            || vdi_name_lc.contains("xs-tools");
         let vdi_other = decode_map(get(vdi, "other_config"));
         let leaf_coalesce_disabled = map_get(&vdi_other, "leaf-coalesce") == Some("false");
         let sm_config = decode_map(get(vdi, "sm_config"));
@@ -526,6 +543,8 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             snapshot_of_uuid: snap_of_uuid,
             broken_parent,
             is_ha_statefile,
+            is_ha_internal,
+            is_removable_media,
             orphaned,
             vhd_parent_uuid,
             vhd_children,

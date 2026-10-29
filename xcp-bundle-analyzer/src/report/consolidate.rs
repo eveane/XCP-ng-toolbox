@@ -876,3 +876,57 @@ mod orphaned_vdi_listing_tests {
             && a.detail.contains("vdi-uuid-mid")));
     }
 }
+
+#[cfg(test)]
+mod expected_unattached_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn ha_metadata_and_removable_media_not_flagged_as_garbage() {
+        let r = report();
+        // "Metadata for HA": HA mechanism object, expected unattached
+        let md = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-hameta").unwrap();
+        assert!(md.is_ha_internal, "SR metadata VDI must be HA-internal");
+        assert!(md.orphaned, "raw flag: no VBD");
+        assert!(
+            !r.anomalies
+                .iter()
+                .any(|a| a.detail.contains("vdi-uuid-hameta")),
+            "HA metadata must not appear in anomalies"
+        );
+        // HA statefile: same
+        let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
+        assert!(ha.is_ha_internal);
+        // tools DVD / DVD-sr VDIs: removable media, expected unattached
+        for uuid in ["vdi-uuid-dvd", "vdi-uuid-dvd2"] {
+            let d = r.vdis.iter().find(|d| d.uuid == uuid).unwrap();
+            assert!(d.is_removable_media, "{uuid} must be removable media");
+        }
+        // none of them appear in the orphan findings
+        for uuid in [
+            "vdi-uuid-hameta",
+            "vdi-uuid-ha",
+            "vdi-uuid-dvd",
+            "vdi-uuid-dvd2",
+        ] {
+            assert!(
+                !r.anomalies.iter().any(|a| (a.category == "orphaned-vdi"
+                    || a.category == "orphaned-vhd-parent")
+                    && a.detail.contains(uuid)),
+                "{uuid} must not be flagged"
+            );
+        }
+        // true garbage still flagged
+        assert!(r
+            .anomalies
+            .iter()
+            .any(|a| a.detail.contains("vdi-uuid-bc2")));
+    }
+}

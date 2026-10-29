@@ -4,6 +4,15 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.13 (patch)
+
+- fix: orphan findings no longer flag objects expected to be unattached:
+  HA-mechanism VDIs (statefiles, "Metadata for HA" SR metadata, redo logs)
+  and removable media (CD type, ISO/udev optical SRs, XCP-ng/XS tools
+  ISOs). The VDIs section shows them as "expected unattached" instead of
+  ORPHANED, and they are excluded from the garbage counts. VDI reports
+  gain `is_ha_internal` and `is_removable_media` in JSON output.
+
 ## v0.3.12 (patch)
 
 - feat: new orphaned-vdi anomaly — every orphaned VDI or snapshot is now
