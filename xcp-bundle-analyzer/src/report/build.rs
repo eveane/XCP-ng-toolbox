@@ -404,6 +404,28 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             let vmr = ref_of(vbd, "VM");
             !vmr.is_empty() && db.table("VM").and_then(|t| t.get(&vmr)).is_some()
         };
+        // VBD devices attached to this VDI (device + type), live VBDs only.
+        let vbd_devices: Vec<String> = vbd_keys
+            .iter()
+            .filter_map(|k| db.table("VBD").and_then(|t| t.get(k)))
+            .filter(|vbd| has_live_vbd(vbd))
+            .map(|vbd| format!("{}({})", get(vbd, "device"), get(vbd, "type")))
+            .collect();
+        // disk VDIs only: CD/ISO and optical-drive VDIs excluded (mirrors
+        // the sr-free-space exclusion), for the pool-level vdi_count
+        let sr_type_lc = db
+            .table("SR")
+            .and_then(|t| t.get(&sr_ref))
+            .map(|sr| get(sr, "type").trim().to_lowercase())
+            .unwrap_or_default();
+        let is_relevant_vdi = get(vdi, "type") != "cd"
+            && sr_type_lc != "iso"
+            && sr_type_lc != "udev"
+            && !get2(vdi, "name__label").to_lowercase().contains("dvd")
+            && !get2(vdi, "name__label").to_lowercase().contains("cd");
+        if is_relevant_vdi {
+            report.pool.vdi_count += 1;
+        }
         // Physical children: VDIs whose sm_config:vhd-parent points here.
         // A VDI with physical children is the base of an active chain and
         // is never garbage, even without a VBD.
@@ -496,6 +518,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             vdi_type: get(vdi, "type").to_string(),
             size_bytes: size,
             vm: ref_label(db, "VM", &vm_ref, "name__label"),
+            vbd_devices,
             is_snapshot,
             managed,
             has_snapshots,

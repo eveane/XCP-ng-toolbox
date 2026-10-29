@@ -127,6 +127,9 @@ pub struct VdiReport {
     pub vdi_type: String,
     pub size_bytes: u64,
     pub vm: String,
+    /// VBD devices attached to this VDI, e.g. "xvda(Disk)" — empty when
+    /// the VDI has no live VBD (mid-chain snapshots and base copies).
+    pub vbd_devices: Vec<String>,
     /// True when this VDI is a snapshot (is_a_snapshot=true).
     pub is_snapshot: bool,
     /// True when the VDI is managed by xapi (managed=true). Unmanaged
@@ -309,6 +312,9 @@ pub struct PoolSummary {
     pub host_count: usize,
     pub vm_running: usize,
     pub vm_total: usize,
+    /// Number of disk VDIs relevant to VMs — CD/ISO and optical-drive
+    /// VDIs excluded (vdi_type=cd, SRs of type iso/udev).
+    pub vdi_count: usize,
     /// Pool-level HA status from the pool row (pool.ha_enabled).
     /// None when the field is absent or unparseable in the dump.
     pub ha_enabled: Option<bool>,

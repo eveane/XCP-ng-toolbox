@@ -128,9 +128,20 @@ fn print_vdi_node(
     if d.orphaned {
         flags.push_str("  *** ORPHANED: nothing depends on it ***");
     }
+    // compact attached mark: >>device on VDIs with a live VBD
+    let attached = if d.vbd_devices.is_empty() {
+        String::new()
+    } else {
+        let devs: Vec<&str> = d
+            .vbd_devices
+            .iter()
+            .map(|v| v.split('(').next().unwrap_or(v))
+            .collect();
+        format!(" >>{}", devs.join(","))
+    };
     let _ = writeln!(
         out,
-        "{}{}{} [{}]{} format={} size={} sr={}{}",
+        "{}{}{} [{}]{} format={} size={} sr={}{}{}",
         prefix,
         connector,
         d.name,
@@ -147,7 +158,8 @@ fn print_vdi_node(
             String::new()
         } else {
             format!("  vm={}", d.vm)
-        }
+        },
+        attached
     );
     // xapi snapshot children that are NOT physically on this disk: print
     // them as cross-references so the two chains stay visible in one tree
@@ -296,5 +308,55 @@ mod vdi_tree_tests {
             "{vdis}"
         );
         assert!(vdis.contains("ORPHANED (not attached to any VM)"), "{vdis}");
+    }
+}
+
+#[cfg(test)]
+mod vbd_mark_tests {
+    use super::*;
+
+    fn report() -> BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test")
+    }
+
+    #[test]
+    fn attached_vdi_shows_the_vbd_mark() {
+        let r = report();
+        // vm1-disk is attached via vbd1 (device xvda): compact >>xvda mark
+        let out = render_vdi_tree(&r, Some("vdi-uuid-1"), false).unwrap();
+        assert!(
+            out.contains("vm1-disk [vdi-uuid-1] format=vhd size=20.00 GiB sr=NFS repo >>xvda"),
+            "{out}"
+        );
+        // mid-chain snapshot (no VBD by design) carries no mark
+        assert!(
+            !out.contains(
+                "mid-snap [vdi-uuid-mid] SNAPSHOT format=vhd size=20.00 GiB sr=NFS repo >>"
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn vdis_section_shows_the_vbd_field() {
+        let r = report();
+        let text = crate::render::render_sections(&r, &[crate::render::Section::VDIs]);
+        assert!(
+            text.contains("vm1-disk [vdi-uuid-1] format=vhd size=20.00 GiB HAS-SNAPSHOTS cbt used=12.00 GiB vbd=xvda(Disk)"),
+            "{text}"
+        );
+        // the tools DVD keeps its CD device
+        assert!(text.contains("vbd=xvdd(CD)"), "{text}");
+    }
+
+    #[test]
+    fn pool_section_counts_disk_vdis() {
+        let r = report();
+        let text = crate::render::render_sections(&r, &[crate::render::Section::Pool]);
+        // 13 VDIs total, minus the tools DVD, the DVD-sr disk and the ISO
+        // VDIs -> only disk VDIs relevant to VMs are counted
+        assert!(text.contains("disk VDIs: 11 (CD/ISO excluded)"), "{text}");
     }
 }

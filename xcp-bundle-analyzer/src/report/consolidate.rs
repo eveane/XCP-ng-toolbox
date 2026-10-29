@@ -20,6 +20,7 @@ pub fn consolidate(reports: Vec<BundleReport>) -> ConsolidatedReport {
     let mut seen_hosts: BTreeMap<String, HostReport> = BTreeMap::new();
     let mut seen_srs: BTreeMap<String, SrReport> = BTreeMap::new();
     let mut seen_vms: BTreeMap<String, VmReport> = BTreeMap::new();
+    let mut seen_vdis: BTreeMap<String, VdiReport> = BTreeMap::new();
 
     for rep in &reports {
         consolidated.warnings.extend(rep.warnings.iter().cloned());
@@ -27,6 +28,9 @@ pub fn consolidate(reports: Vec<BundleReport>) -> ConsolidatedReport {
             seen_hosts
                 .entry(h.uuid.clone())
                 .or_insert_with(|| h.clone());
+        }
+        for d in &rep.vdis {
+            seen_vdis.entry(d.uuid.clone()).or_insert_with(|| d.clone());
         }
         for s in &rep.srs {
             seen_srs.entry(s.uuid.clone()).or_insert_with(|| s.clone());
@@ -46,6 +50,20 @@ pub fn consolidate(reports: Vec<BundleReport>) -> ConsolidatedReport {
         .count();
     consolidated.pool.sr_total_size_bytes = seen_srs.values().map(|s| s.size_bytes).sum();
     consolidated.pool.sr_total_used_bytes = seen_srs.values().map(|s| s.used_bytes).sum();
+    // pool-level disk-VDI count: CD/ISO and optical-drive VDIs excluded,
+    // same criteria as the per-bundle count (see build.rs)
+    consolidated.pool.vdi_count = seen_vdis
+        .values()
+        .filter(|d| {
+            let sr_type = d.sr_type.trim().to_lowercase();
+            let name = d.name.trim().to_lowercase();
+            d.vdi_type != "cd"
+                && sr_type != "iso"
+                && sr_type != "udev"
+                && !name.contains("dvd")
+                && !name.contains("cd")
+        })
+        .count();
     consolidated.bundles = reports;
     consolidated.hosts = seen_hosts.into_values().collect();
     consolidated.srs = seen_srs.into_values().collect();

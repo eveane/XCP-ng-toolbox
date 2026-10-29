@@ -32,8 +32,8 @@ pub(crate) fn render_pool(r: &BundleReport, out: &mut String) {
     );
     let _ = writeln!(
         out,
-        "Hosts: {}   VMs: {} running / {} total   Networks: {}",
-        r.pool.host_count, r.pool.vm_running, r.pool.vm_total, r.networks
+        "Hosts: {}   VMs: {} running / {} total   Networks: {}   disk VDIs: {} (CD/ISO excluded)",
+        r.pool.host_count, r.pool.vm_running, r.pool.vm_total, r.networks, r.pool.vdi_count
     );
     let _ = writeln!(
         out,
@@ -448,15 +448,21 @@ pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
             } else {
                 d.image_format.clone()
             };
+            let vbd = if d.vbd_devices.is_empty() {
+                String::new()
+            } else {
+                format!(" vbd={}", d.vbd_devices.join(","))
+            };
             let _ = writeln!(
                 out,
-                "    {} [{}] format={} size={}{}{}",
+                "    {} [{}] format={} size={}{}{}{}",
                 d.name,
                 d.uuid,
                 fmt,
                 gib(d.size_bytes),
                 flags,
-                extra
+                extra,
+                vbd
             );
         }
     }

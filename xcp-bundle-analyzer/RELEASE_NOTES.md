@@ -4,6 +4,18 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.11 (patch)
+
+- feat: vdi-tree marks VDIs attached to a VM with a compact `>>device`
+  (e.g. `>>xvda`) on the node line — mid-chain snapshots and base copies
+  (no VBD by design) stay unmarked.
+- feat: the VDIs section shows the VBD device on each line
+  (`vbd=xvda(Disk)`, `vbd=xvdd(CD)`); empty for unattached VDIs.
+- feat: the pool section counts disk VDIs relevant to VMs
+  ("disk VDIs: N (CD/ISO excluded)") — CD/ISO and optical-drive VDIs are
+  excluded, mirroring the sr-free-space criteria. VDI reports gain
+  `vbd_devices` in JSON output.
+
 ## v0.3.10 (patch)
 
 - feat: `vdi-tree` now walks the physical chain (sm_config:vhd-parent) —
