@@ -40,12 +40,14 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   (default — `sm_config:vhd-parent`, the dependency graph that decides
   whether a VDI can be deleted) or `--chain xapi` (`snapshot_of`, the
   view xe/Xen Orchestra show). Nodes carry the xapi status as flags
-  (`SNAPSHOT`, `hidden(unmanaged)`, `*** BROKEN PARENT ***`) and the orphan
+  (`snap`, `hidden(unmanaged)`, `*** BROKEN PARENT ***`) and the orphan
   verdict (`*** ORPHANED: nothing depends on it ***`); a
   `[chains differ: xapi-parent=…, vhd-parent=…]` note marks VDIs whose two
   parents do not match (normal while coalescing, worth seeing when
-  comparing views). In the physical view, snapshots linked only in the
-  xapi chain appear as `SNAPSHOT(xapi)` cross-references. With a VDI uuid
+  comparing views). Node lines are compact: `name [uuid] [class] flags
+  format size sr=...` (e.g. `vm1-disk [uuid] [R] vhd 20.00 GiB sr=NFS repo`).
+  In the physical view, snapshots linked only in the
+  xapi chain appear as `snap(xapi)` cross-references. With a VDI uuid
   it prints the chain containing that VDI, starting from the chain root;
   without an argument it prints a tree for every root VDI.
   Broken parents (snapshot_of pointing to a deleted VDI) are flagged.

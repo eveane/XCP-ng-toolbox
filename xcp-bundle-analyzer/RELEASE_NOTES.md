@@ -4,6 +4,13 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.4.2 (patch)
+
+- refactor: `vdi-tree` node lines are more compact for readability:
+  `format=vhd size=20.00 GiB` is now just `vhd 20.00 GiB` (bare format
+  and size values), and the `SNAPSHOT` flag is shortened to `snap`
+  (including `snap(xapi)` cross-references).
+
 ## v0.4.1 (patch)
 
 - feat: VDI deletion-safety classification. Every VDI is classified using

@@ -101,7 +101,7 @@ fn print_vdi_node(
     // is what makes a node a user-visible object)
     let mut flags = String::new();
     if d.is_snapshot {
-        flags.push_str(" SNAPSHOT");
+        flags.push_str(" snap");
     }
     // chain mismatch: the two parents differ — common while snapshots are
     // being coalesced, but worth seeing when comparing the two views
@@ -145,20 +145,21 @@ fn print_vdi_node(
     } else {
         format!(" [{class_flag}]")
     };
+    let fmt = if d.image_format.is_empty() {
+        "-".to_string()
+    } else {
+        d.image_format.clone()
+    };
     let _ = writeln!(
         out,
-        "{}{}{} [{}]{}{} format={} size={} sr={}{}{}",
+        "{}{}{} [{}]{}{} {} {} sr={}{}{}",
         prefix,
         connector,
         d.name,
         d.uuid,
         class_str,
         flags,
-        if d.image_format.is_empty() {
-            "-".to_string()
-        } else {
-            d.image_format.clone()
-        },
+        fmt,
         gib(d.size_bytes),
         if d.sr.is_empty() { "-" } else { &d.sr },
         if d.vm.is_empty() {
@@ -178,7 +179,7 @@ fn print_vdi_node(
     };
     // cross-references: only in the physical view — xapi-only snapshot
     // children (not physically on this disk) are appended as
-    // SNAPSHOT(xapi) leaves so both chains stay visible in one tree.
+    // snap(xapi) leaves so both chains stay visible in one tree.
     let xref_count = if xapi {
         0
     } else {
@@ -204,18 +205,19 @@ fn print_vdi_node(
             }
             if let Some(s) = r.vdis.iter().find(|v| v.uuid == *snap_uuid) {
                 shown += 1;
+                let fmt = if s.image_format.is_empty() {
+                    "-"
+                } else {
+                    &s.image_format
+                };
                 let _ = writeln!(
                     out,
-                    "{}{}{} [{}] SNAPSHOT(xapi) format={} size={} sr={}",
+                    "{}{}{} [{}] snap(xapi) {} {} sr={}",
                     kid_prefix,
                     if shown == total { "`-- " } else { "|-- " },
                     s.name,
                     s.uuid,
-                    if s.image_format.is_empty() {
-                        "-"
-                    } else {
-                        &s.image_format
-                    },
+                    fmt,
                     gib(s.size_bytes),
                     if s.sr.is_empty() { "-" } else { &s.sr }
                 );
@@ -248,11 +250,11 @@ mod vdi_tree_tests {
         assert!(out.contains("VDI chain (physical): vdi-uuid-1"), "{out}");
         // the physical chain: delta on top of the mid-snap on top of the base
         assert!(
-            out.contains("|-- vm1-disk mid-snap [vdi-uuid-mid] [R] SNAPSHOT"),
+            out.contains("|-- vm1-disk mid-snap [vdi-uuid-mid] [R] snap"),
             "{out}"
         );
         assert!(
-            out.contains("`-- vm1-disk newer delta [vdi-uuid-delta] [R] SNAPSHOT"),
+            out.contains("`-- vm1-disk newer delta [vdi-uuid-delta] [R] snap"),
             "{out}"
         );
         // the delta's xapi parent (vdi-uuid-1) differs from its physical
@@ -263,7 +265,7 @@ mod vdi_tree_tests {
         );
         // the mid-chain snapshot carries no ORPHANED marker
         assert!(
-            !out.contains("mid-snap [vdi-uuid-mid] [R] SNAPSHOT  *** ORPHANED"),
+            !out.contains("mid-snap [vdi-uuid-mid] [R] snap  *** ORPHANED"),
             "{out}"
         );
     }
@@ -285,7 +287,7 @@ mod vdi_tree_tests {
             "{out}"
         );
         assert!(
-            !out.contains("vm1-disk mid-snap [vdi-uuid-mid] [R] SNAPSHOT  *** ORPHANED"),
+            !out.contains("vm1-disk mid-snap [vdi-uuid-mid] [R] snap  *** ORPHANED"),
             "{out}"
         );
     }
@@ -334,14 +336,12 @@ mod vbd_mark_tests {
         // vm1-disk is attached via vbd1 (device xvda): compact >>xvda mark
         let out = render_vdi_tree(&r, Some("vdi-uuid-1"), false).unwrap();
         assert!(
-            out.contains("vm1-disk [vdi-uuid-1] [R] format=vhd size=20.00 GiB sr=NFS repo >>xvda"),
+            out.contains("vm1-disk [vdi-uuid-1] [R] vhd 20.00 GiB sr=NFS repo >>xvda"),
             "{out}"
         );
         // mid-chain snapshot (no VBD by design) carries no mark
         assert!(
-            !out.contains(
-                "mid-snap [vdi-uuid-mid] [R] SNAPSHOT format=vhd size=20.00 GiB sr=NFS repo >>"
-            ),
+            !out.contains("mid-snap [vdi-uuid-mid] [R] snap vhd 20.00 GiB sr=NFS repo >>"),
             "{out}"
         );
     }
