@@ -154,7 +154,16 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn render_storage(r: &BundleReport, out: &mut String) {
+    render_storage_filtered(r, out, None);
+}
+
+pub(crate) fn render_storage_filtered(
+    r: &BundleReport,
+    out: &mut String,
+    vdi_filter: Option<super::VdiClassFilter>,
+) {
     let _ = writeln!(out, "\n=== STORAGE ===");
     let vdi_base = r.vdis.iter().filter(|d| !d.is_snapshot).count();
     let vdi_snap = r.vdis.iter().filter(|d| d.is_snapshot).count();
@@ -170,6 +179,23 @@ pub(crate) fn render_storage(r: &BundleReport, out: &mut String) {
         r.pbds.len(),
         r.pbd_inconsistencies.len()
     );
+    // Synthetic VDI classification: R/GC/D counts + reclaimable sizes.
+    let cs = &r.pool.vdi_class_summary;
+    let reclaimable = cs.gc_reclaimable_bytes + cs.deletable_reclaimable_bytes;
+    let _ = writeln!(
+        out,
+        "VDI classes: {} required (R), {} GC-territory (GC), {} user-deletable (D), {} expected-unattached",
+        cs.required_count, cs.gc_count, cs.deletable_count, cs.expected_unattached_count
+    );
+    if reclaimable > 0 {
+        let _ = writeln!(
+            out,
+            "  reclaimable: {} (GC should reclaim {}, user can delete {})",
+            gib(reclaimable),
+            gib(cs.gc_reclaimable_bytes),
+            gib(cs.deletable_reclaimable_bytes)
+        );
+    }
 
     // Host adapters (FC HBAs, iSCSI targets, NFS servers)
     let any_adapter = r.hosts.iter().any(|h| !h.storage_adapters.is_empty());
@@ -194,7 +220,7 @@ pub(crate) fn render_storage(r: &BundleReport, out: &mut String) {
     {
         let mut inner = String::new();
         render_srs_body(r, &mut inner);
-        render_vdis_body(r, &mut inner);
+        render_vdis_body_filtered(r, &mut inner, vdi_filter);
         render_pbds_body(r, &mut inner);
         // strip the duplicated outer headers, keep sub-sections
         out.push_str(&inner);
@@ -358,13 +384,32 @@ fn is_orphan_garbage(d: &VdiReport) -> bool {
     d.orphaned && !d.is_ha_internal && !d.is_removable_media
 }
 
+#[allow(dead_code)]
 pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
+    render_vdis_body_filtered(r, out, None);
+}
+
+pub(crate) fn render_vdis_body_filtered(
+    r: &BundleReport,
+    out: &mut String,
+    vdi_filter: Option<super::VdiClassFilter>,
+) {
     // ISO SRs and removable media (udev optical drives) are excluded from the
     // VDI listing: their VDIs are just passthrough ISO/DVD images.
     let sr_t = |d: &VdiReport| d.sr_type.trim().to_lowercase();
     let is_excluded =
         |d: &VdiReport| sr_t(d) == "iso" || sr_t(d) == "udev" || d.sr_category == "iso";
-    let listed: Vec<&VdiReport> = r.vdis.iter().filter(|d| !is_excluded(d)).collect();
+    // Optional class filter (--vdi-class R|GC|D): only VDIs of the given
+    // deletion-safety class are listed.
+    let listed: Vec<&VdiReport> = r
+        .vdis
+        .iter()
+        .filter(|d| !is_excluded(d))
+        .filter(|d| match vdi_filter {
+            Some(f) => f.matches(d.vdi_class),
+            None => true,
+        })
+        .collect();
     // HA statefiles listed separately, on top
     let statefiles: Vec<_> = listed.iter().filter(|d| d.is_ha_statefile).collect();
     let mut normal: Vec<_> = listed.iter().filter(|d| !d.is_ha_statefile).collect();
@@ -386,6 +431,34 @@ pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
         } else {
             String::new()
         }
+    );
+    // Class legend + per-class counts for the listed VDIs.
+    let cs_r = listed
+        .iter()
+        .filter(|d| d.vdi_class == crate::report::VdiClass::Required)
+        .count();
+    let cs_gc = listed
+        .iter()
+        .filter(|d| d.vdi_class == crate::report::VdiClass::Gc)
+        .count();
+    let cs_d = listed
+        .iter()
+        .filter(|d| d.vdi_class == crate::report::VdiClass::Deletable)
+        .count();
+    let cs_eu = listed
+        .iter()
+        .filter(|d| d.vdi_class == crate::report::VdiClass::ExpectedUnattached)
+        .count();
+    let filter_note = match vdi_filter {
+        Some(super::VdiClassFilter::Required) => "  [filter: R only]",
+        Some(super::VdiClassFilter::Gc) => "  [filter: GC only]",
+        Some(super::VdiClassFilter::Deletable) => "  [filter: D only]",
+        None => "",
+    };
+    let _ = writeln!(
+        out,
+        "  classes: {} R (required), {} GC (garbage collector), {} D (user-deletable), {} expected-unattached{}",
+        cs_r, cs_gc, cs_d, cs_eu, filter_note
     );
     if !statefiles.is_empty() {
         let _ = writeln!(out, "\n  *** HA STATEFILES ({}) ***", statefiles.len());
@@ -462,13 +535,20 @@ pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
             } else {
                 format!(" vbd={}", d.vbd_devices.join(","))
             };
+            let class_flag = d.vdi_class.flag();
+            let class_str = if class_flag.is_empty() {
+                String::new()
+            } else {
+                format!(" [{class_flag}]")
+            };
             let _ = writeln!(
                 out,
-                "    {} [{}] format={} size={}{}{}{}",
+                "    {} [{}] format={} size={}{}{}{}{}",
                 d.name,
                 d.uuid,
                 fmt,
                 gib(d.size_bytes),
+                class_str,
                 flags,
                 extra,
                 vbd

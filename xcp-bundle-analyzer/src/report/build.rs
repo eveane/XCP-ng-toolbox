@@ -449,6 +449,13 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             !p.is_empty() && db.table("VDI").and_then(|t| t.get(&p)).is_some()
         };
         let orphaned = !has_live_vbd_link && vhd_children == 0 && !valid_snapshot;
+        // Deletion-safety class (R/GC/D flag). Order matters:
+        //   1. HA-internal / removable media -> expected unattached (no flag)
+        //   2. orphaned + unmanaged        -> GC territory
+        //   3. orphaned + managed          -> user-deletable
+        //   4. everything else             -> required
+        // HA-internal and removable-media checks need vdi_type/name/SR
+        // which are computed below, so we compute the class after them.
         let size = as_u64(get(vdi, "virtual_size")).unwrap_or(0);
         report.pool.vdi_total_size_bytes = report.pool.vdi_total_size_bytes.saturating_add(size);
         let snapshot_children_uuids: Vec<String> = ref_set(get(vdi, "snapshots"))
@@ -512,6 +519,31 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 classify_sr(get(sr, "type"), &dc)
             })
             .unwrap_or_default();
+        // Deletion-safety classification, now that is_ha_internal and
+        // is_removable_media are known.
+        let vdi_class = if is_ha_internal || is_removable_media {
+            VdiClass::ExpectedUnattached
+        } else if orphaned && !managed {
+            VdiClass::Gc
+        } else if orphaned {
+            VdiClass::Deletable
+        } else {
+            VdiClass::Required
+        };
+        // Update the pool-level class summary.
+        let s = &mut report.pool.vdi_class_summary;
+        match vdi_class {
+            VdiClass::Required => s.required_count += 1,
+            VdiClass::Gc => {
+                s.gc_count += 1;
+                s.gc_reclaimable_bytes = s.gc_reclaimable_bytes.saturating_add(size);
+            }
+            VdiClass::Deletable => {
+                s.deletable_count += 1;
+                s.deletable_reclaimable_bytes = s.deletable_reclaimable_bytes.saturating_add(size);
+            }
+            VdiClass::ExpectedUnattached => s.expected_unattached_count += 1,
+        }
         report.vdis.push(VdiReport {
             name: get2(vdi, "name__label").to_string(),
             uuid,
@@ -546,6 +578,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             is_ha_internal,
             is_removable_media,
             orphaned,
+            vdi_class,
             vhd_parent_uuid,
             vhd_children,
             leaf_coalesce_disabled,

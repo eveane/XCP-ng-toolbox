@@ -4,6 +4,22 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.4.1 (patch)
+
+- feat: VDI deletion-safety classification. Every VDI is classified using
+  the same criteria as the SM garbage collector (docs/SNAPSHOTS.md) and
+  carries a flag in the VDIs section and in `vdi-tree`:
+  `[R]` required (attached, has physical children, or valid snapshot),
+  `[GC]` garbage-collector territory (unmanaged/hidden orphan — the GC
+  should remove it), `[D]` user-deletable (still-managed orphan — safe
+  `xe vdi-destroy` candidate). VDIs expected to be unattached (HA
+  statefiles, SR metadata, CDs, ISO SRs, tools ISOs) carry no flag.
+  The STORAGE header and the VDIs section header show a synthetic
+  summary with counts per class and reclaimable sizes. New
+  `--vdi-class R|GC|D` option filters the VDI listing to one class.
+  `vdi_class` is a new field on `VdiReport` in JSON output, and
+  `vdi_class_summary` is a new field on `PoolSummary`.
+
 ## v0.4.0 (minor)
 
 - feat: new `--section tasks` section and `task` object type. Lists xapi
