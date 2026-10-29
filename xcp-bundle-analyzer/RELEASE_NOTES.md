@@ -4,7 +4,7 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
-## v0.3.14 (patch)
+## v0.4.0 (minor)
 
 - feat: new `--section tasks` section and `task` object type. Lists xapi
   asynchronous tasks still recorded in the xapi-db.xml dump (recently
