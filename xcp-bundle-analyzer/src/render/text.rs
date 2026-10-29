@@ -4,8 +4,8 @@ use super::anomalies::{merge_for_anomalies, print_anomalies_header};
 use super::util::{gib, mib, utc_timestamp};
 use crate::build_info::VERSION;
 use crate::report::{
-    BundleReport, ConsolidatedReport, PbdReport, PifReport, VbdReport, VdiReport, VifReport,
-    VmReport,
+    BundleReport, ConsolidatedReport, PbdReport, PifReport, TaskReport, VbdReport, VdiReport,
+    VifReport, VmReport,
 };
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -595,6 +595,114 @@ pub(crate) fn render_pbds_body(r: &BundleReport, out: &mut String) {
                 p.host, p.attached, p.uuid, extras
             );
         }
+    }
+}
+
+pub(crate) fn render_tasks(r: &BundleReport, out: &mut String) {
+    let _ = writeln!(out, "\n--- TASKS ({}) ---", r.tasks.len());
+    if r.tasks.is_empty() {
+        let _ = writeln!(out, "  (no tasks recorded in the dump)");
+        return;
+    }
+    // Summary counts by status on top.
+    let mut by_status: BTreeMap<&str, usize> = BTreeMap::new();
+    for t in &r.tasks {
+        *by_status.entry(t.status.as_str()).or_default() += 1;
+    }
+    let summary: Vec<String> = by_status.iter().map(|(s, n)| format!("{s}: {n}")).collect();
+    let _ = writeln!(out, "  {}", summary.join("   "));
+
+    // Pending/stuck tasks first (most interesting), then finished ones
+    // sorted by finish time descending (most recent first).
+    let mut pending: Vec<&TaskReport> = r
+        .tasks
+        .iter()
+        .filter(|t| t.status == "pending" || t.status == "cancelling")
+        .collect();
+    let mut finished: Vec<&TaskReport> = r
+        .tasks
+        .iter()
+        .filter(|t| t.status != "pending" && t.status != "cancelling")
+        .collect();
+    pending.sort_by_key(|t| t.created.unwrap_or(0));
+    finished.sort_by_key(|t| std::cmp::Reverse(t.finished.unwrap_or(t.created.unwrap_or(0))));
+
+    if !pending.is_empty() {
+        let _ = writeln!(out, "\n  *** IN PROGRESS ({}) ***", pending.len());
+        for t in &pending {
+            render_task_line(out, t);
+        }
+    }
+    if !finished.is_empty() {
+        let _ = writeln!(out, "\n  finished ({})", finished.len());
+        for t in &finished {
+            render_task_line(out, t);
+        }
+    }
+}
+
+fn render_task_line(out: &mut String, t: &TaskReport) {
+    let progress = if t.progress >= 0.0 {
+        format!("{:.0}%", t.progress * 100.0)
+    } else {
+        "-".to_string()
+    };
+    let created = t
+        .created
+        .map(utc_timestamp)
+        .unwrap_or_else(|| "-".to_string());
+    let finished = t
+        .finished
+        .map(utc_timestamp)
+        .unwrap_or_else(|| "-".to_string());
+    let duration = match (t.created, t.finished) {
+        (Some(c), Some(f)) if f >= c => {
+            let d = f - c;
+            if d < 60 {
+                format!("{}s", d)
+            } else if d < 3600 {
+                format!("{}m{}s", d / 60, d % 60)
+            } else {
+                format!("{}h{}m", d / 3600, (d % 3600) / 60)
+            }
+        }
+        _ => "-".to_string(),
+    };
+    let mut flags = String::new();
+    if t.status == "failure" {
+        flags.push_str(" *** FAILED ***");
+    } else if t.status == "cancelled" || t.status == "cancelling" {
+        flags.push_str(" *** CANCELLED ***");
+    }
+    let host = if t.resident_host.is_empty() {
+        String::new()
+    } else {
+        format!(" host={}", t.resident_host)
+    };
+    let _ = writeln!(
+        out,
+        "  {} [{}] status={} progress={} created={} finished={} dur={}{}{}",
+        t.name, t.uuid, t.status, progress, created, finished, duration, host, flags
+    );
+    if !t.description.is_empty() {
+        let _ = writeln!(out, "    desc: {}", t.description);
+    }
+    if !t.error_info.is_empty() {
+        let _ = writeln!(out, "    errors: {}", t.error_info.join(", "));
+    }
+    if !t.result.is_empty() {
+        let result = if !t.result_type.is_empty() {
+            format!("{} ({})", t.result, t.result_type)
+        } else {
+            t.result.clone()
+        };
+        let _ = writeln!(out, "    result: {}", result);
+    }
+    if !t.subtask_of_uuid.is_empty() {
+        let _ = writeln!(out, "    subtask-of: {}", t.subtask_of_uuid);
+    }
+    if !t.subtask_uuids.is_empty() {
+        let _ = writeln!(out, "    subtasks: {}", t.subtask_uuids.join(", "));
     }
 }
 

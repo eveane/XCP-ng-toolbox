@@ -299,6 +299,46 @@ pub struct PifReport {
     pub bond_members: Vec<String>,
 }
 
+/// An xapi asynchronous task (the `task` table: long-running operations
+/// like VM.clone, VDI.copy, pool join, ...). Tasks are usually short-lived
+/// and destroyed after completion; the dump only shows the ones still
+/// recorded at dump time (recently finished or stuck).
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct TaskReport {
+    pub uuid: String,
+    pub opaque_ref: String,
+    /// Human-readable name, e.g. "Async.VM.clone" (name__label).
+    pub name: String,
+    /// Notes/description (name__description), often empty.
+    pub description: String,
+    /// pending / success / failure / cancelling / cancelled.
+    pub status: String,
+    /// Estimated fraction complete, 0.0-1.0. -1.0 when absent/unparseable.
+    pub progress: f64,
+    /// Unix timestamp of task creation (xapi datetime created).
+    pub created: Option<u64>,
+    /// Unix timestamp of task completion (xapi datetime finished).
+    /// None when the task is still pending or the field is absent.
+    pub finished: Option<u64>,
+    /// Hostname of the host the task is running on (resident_on),
+    /// resolved via the host table. Empty when unknown/NULL.
+    pub resident_host: String,
+    /// Result value when the task completed successfully (Void or an
+    /// OpaqueRef). Empty otherwise.
+    pub result: String,
+    /// Type of the encoded result (class name whose reference is in
+    /// `result`), e.g. "VDI", "VM". Empty when not set.
+    pub result_type: String,
+    /// Error strings when the task failed (error_info set).
+    pub error_info: Vec<String>,
+    /// UUID of the parent task (subtask_of), when set and resolvable.
+    pub subtask_of_uuid: String,
+    /// UUIDs of the subtasks (subtasks set), resolved.
+    pub subtask_uuids: Vec<String>,
+    /// Task other_config entries.
+    pub other_config: Vec<(String, String)>,
+}
+
 /// A setting that probably needs attention (only shown in the dedicated
 /// anomalies section, never in the default report).
 #[derive(Serialize, Default, Debug, Clone, PartialEq, Eq)]
@@ -355,6 +395,9 @@ pub struct BundleReport {
     /// Settings that probably need attention; only displayed when the
     /// anomalies section is explicitly requested.
     pub anomalies: Vec<Anomaly>,
+    /// xapi asynchronous tasks still recorded at dump time (recently
+    /// finished or stuck).
+    pub tasks: Vec<TaskReport>,
     pub networks: usize,
     pub warnings: Vec<String>,
 }

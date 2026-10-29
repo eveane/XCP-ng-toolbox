@@ -35,8 +35,24 @@ Conventions that apply to every field:
 | `network_details` | `[NetworkReport]` | Networks with purpose classification |
 | `anomalies` | `[Anomaly]` | Heuristic findings (see below) |
 | `pbd_inconsistencies` | `[PbdInconsistency]` | SRs whose PBDs disagree across hosts |
+| `tasks` | `[TaskReport]` | xapi async tasks still recorded at dump time |
 | `warnings` | `[string]` | Non-fatal problems (missing files, parse issues) |
 | `bundle_origin_host` | string | Hostname the bundle was collected on ("" if unknown) |
+
+## `TaskReport` (key fields)
+
+- Identity: `uuid`, `opaque_ref`, `name` (e.g. `Async.VM.clone`),
+  `description`.
+- State: `status` (`pending`/`success`/`failure`/`cancelling`/`cancelled`),
+  `progress` (0.0-1.0, -1.0 when absent).
+- Times: `created`, `finished` (Unix epoch from xapi datetime; `finished`
+  is null for pending tasks).
+- `resident_host` (hostname resolved from `resident_on`).
+- `result`, `result_type` (class name of the result reference).
+- `error_info` (string set, populated on failure).
+- `subtask_of_uuid`, `subtask_uuids` (task-table self-references resolved
+  to uuids).
+- `other_config` (map).
 
 ## `PoolSummary`
 

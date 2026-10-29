@@ -15,6 +15,7 @@ pub const OBJECTS: &[(&str, &str)] = &[
     ("network", "network"),
     ("vm", "VM"),
     ("host", "host"),
+    ("task", "task"),
 ];
 
 pub fn object_table(object: &str) -> Option<&'static str> {
@@ -158,6 +159,7 @@ fn guess_table_for_field(key: &str) -> Option<&'static str> {
         "vm" | "vms" | "snapshot_of" | "parent" | "children" | "snapshots" => "VM",
         "host" | "hosts" | "master" | "resident_on" | "affinity" => "host",
         "network" | "networks" => "network",
+        "subtask_of" | "subtasks" => "task",
         _ => return None,
     };
     Some(table)

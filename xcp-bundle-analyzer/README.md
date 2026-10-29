@@ -32,9 +32,10 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   `%%` = `%`).
 - `object` subcommand: shows all details of one object, like
   `xe <object>-param-list`: `xcp-bundle-analyzer object vdi <uuid> <bundle>`.
-  Valid objects: vdi, vbd, vif, pbd, pif, sr, network, vm, host. Every field
-  of the xapi row is printed; references are resolved to uuid (name), and
-  sets/maps (other_config, sm_config, VBDs, PIFs, ...) are decoded.
+  Valid objects: vdi, vbd, vif, pbd, pif, sr, network, vm, host, task.
+  Every field of the xapi row is printed; references are resolved to
+  uuid (name), and sets/maps (other_config, sm_config, VBDs, PIFs, ...)
+  are decoded.
 - `vdi-tree` subcommand: prints VDI chain trees, `--chain physical`
   (default — `sm_config:vhd-parent`, the dependency graph that decides
   whether a VDI can be deleted) or `--chain xapi` (`snapshot_of`, the
@@ -49,7 +50,7 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   without an argument it prints a tree for every root VDI.
   Broken parents (snapshot_of pointing to a deleted VDI) are flagged.
 - `--section` option to display only some parts of the report: pool, hosts,
-  srs, vms, vdis, vbds, vifs, pifs, or `anomalies` (settings needing
+  srs, vms, vdis, vbds, vifs, pifs, tasks, or `anomalies` (settings needing
   attention, opt-in only). Accepts a single name or a comma-separated list
   (e.g. `--section pool,storage,anomalies`).
 - The host the bundle was collected from is highlighted (`<<< THIS BUNDLE` in
@@ -122,6 +123,14 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     (`paths=[8, 8]`) on multipathed SRs. Pool inconsistencies are
     highlighted on top: a shared SR missing a PBD on one of the pool
     hosts, or a shared SR whose PBD is unplugged on a host.
+- **Tasks** section: xapi asynchronous operations still recorded at dump
+  time (recently finished or stuck). Shows name (e.g. `Async.VM.clone`),
+  status (pending/success/failure/cancelled), progress, created/finished
+  timestamps, duration, resident host, result, error_info, and subtask
+  relationships. Pending tasks are listed first (most interesting), then
+  finished ones sorted by finish time (most recent first). Failed tasks
+  are flagged `*** FAILED ***`. Tasks are also in the JSON output and
+  explorable with `object task <uuid>`.
 - Shell completion: `xcp-bundle-analyzer completions <shell>` prints an
   auto-completion script for bash, zsh, fish, elvish, and PowerShell
   (see the "Shell completion" section).
@@ -314,10 +323,11 @@ xcp-bundle-analyzer analyze -f html -o report.html XenServer-host1-20260616.tar.
 # whole pool: pass every host's bundle, get a consolidated view
 xcp-bundle-analyzer analyze -f json -o pool.json host1.tar.bz2 host2.tar.bz2 host3.tar.bz2
 
-# only display some sections (pool, hosts, srs, vms, vdis, vbds, vifs, pifs);
-# a comma-separated list shows several sections in one run
+# only display some sections (pool, hosts, srs, vms, vdis, vbds, vifs, pifs,
+# tasks); a comma-separated list shows several sections in one run
 xcp-bundle-analyzer analyze --section vms XenServer-host1-20260616.tar.bz2
 xcp-bundle-analyzer analyze --section pool,storage XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer analyze --section tasks XenServer-host1-20260616.tar.bz2
 
 # settings that probably need attention (opt-in, never shown by default)
 xcp-bundle-analyzer analyze --section anomalies XenServer-host1-20260616.tar.bz2

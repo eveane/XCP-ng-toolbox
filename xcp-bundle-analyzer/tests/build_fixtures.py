@@ -110,6 +110,12 @@ XAPI_DB = """
 <row ref="OpaqueRef:net0" uuid="net-uuid-0" name__label="Pool-wide%.network%.associated%.with%.eth0" bridge="xenbr0" MTU="9000" purpose="('nbd')"/>
 <row ref="OpaqueRef:net-bk" uuid="net-uuid-bk" name__label="backup%.network" bridge="xenbakbr0" MTU="9000"/>
 </table>
+<table name="task">
+<row ref="OpaqueRef:task1" uuid="task-uuid-1" name__label="Async.VM.clone" name__description="Cloning%.VM%.vm1" created="20260615T10:00:00Z" finished="20260615T10:02:30Z" status="success" progress="1.0" resident_on="OpaqueRef:host1" type="VM" result="OpaqueRef:vm-new" other_config="()" subtask_of="OpaqueRef:NULL" subtasks="('OpaqueRef:task2')"/>
+<row ref="OpaqueRef:task2" uuid="task-uuid-2" name__label="Async.VDI.copy" name__description="" created="20260615T10:00:30Z" finished="20260615T10:02:30Z" status="success" progress="1.0" resident_on="OpaqueRef:host1" type="VDI" result="OpaqueRef:vdi-new" other_config="()" subtask_of="OpaqueRef:task1" subtasks="()"/>
+<row ref="OpaqueRef:task3" uuid="task-uuid-3" name__label="Async.VM.start" name__description="Starting%.VM%.vm3" created="20260615T11:00:00Z" finished="" status="pending" progress="0.45" resident_on="OpaqueRef:host2" type="<none/>" result="" error_info="()" other_config="()" subtask_of="OpaqueRef:NULL" subtasks="()"/>
+<row ref="OpaqueRef:task4" uuid="task-uuid-4" name__label="Async.pool.join" name__description="" created="20260615T09:00:00Z" finished="20260615T09:00:05Z" status="failure" progress="1.0" resident_on="OpaqueRef:host1" type="<none/>" result="" error_info="('INTERNAL_ERROR' 'Pool%.join%.failed')" other_config="()" subtask_of="OpaqueRef:NULL" subtasks="()"/>
+</table>
 </database>
 """
 

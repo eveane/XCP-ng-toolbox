@@ -1003,6 +1003,53 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         }
     }
 
+    // Tasks: xapi asynchronous operations still recorded at dump time.
+    // Resolve resident_on to a hostname and subtask/subtask_of refs to
+    // uuids (both are task-table self-references).
+    {
+        let task_ref_to_uuid: BTreeMap<String, String> = db
+            .rows("task")
+            .map(|(r, t)| (r.clone(), get(t, "uuid").to_string()))
+            .collect();
+        for (r, task) in db.rows("task") {
+            let uuid = get(task, "uuid").to_string();
+            if uuid.is_empty() {
+                continue;
+            }
+            let progress = get(task, "progress").parse::<f64>().unwrap_or(-1.0);
+            let subtask_of_ref = ref_of(task, "subtask_of");
+            let subtask_of_uuid = if subtask_of_ref.is_empty() {
+                String::new()
+            } else {
+                task_ref_to_uuid
+                    .get(&subtask_of_ref)
+                    .cloned()
+                    .unwrap_or_default()
+            };
+            let subtask_uuids: Vec<String> = ref_set(get(task, "subtasks"))
+                .iter()
+                .filter_map(|ref_key| task_ref_to_uuid.get(ref_key).cloned())
+                .collect();
+            report.tasks.push(TaskReport {
+                uuid,
+                opaque_ref: format!("OpaqueRef:{r}"),
+                name: get2(task, "name__label").to_string(),
+                description: get2(task, "name__description").to_string(),
+                status: get(task, "status").to_string(),
+                progress,
+                created: parse_xapi_time(get(task, "created")),
+                finished: parse_xapi_time(get(task, "finished")),
+                resident_host: ref_label(db, "host", &ref_of(task, "resident_on"), "hostname"),
+                result: get(task, "result").to_string(),
+                result_type: get(task, "type").to_string(),
+                error_info: decode_set(get(task, "error_info")),
+                subtask_of_uuid,
+                subtask_uuids,
+                other_config: decode_map(get(task, "other_config")),
+            });
+        }
+    }
+
     report.networks = db.table("network").map(|t| t.len()).unwrap_or(0);
     report.pool.host_count = report.hosts.len();
     if report.pool.name.is_empty() {

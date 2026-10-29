@@ -85,6 +85,7 @@ comma-separated list; the default is the full report):
   pifs       PIFs grouped per host
   pbd        (same as pbds below, singular accepted)
   pbds       PBDs grouped per SR, pool inconsistencies highlighted
+  tasks      xapi asynchronous tasks (pending/failed first, subtasks)
   anomalies  settings needing attention, opt-in only, never shown by default
              (management MTU != 1500, VDIs on dom0, shared SR missing a host,
              SR free space < 2x largest VDI, multipath inconsistencies,
@@ -174,7 +175,7 @@ enum Commands {
         /// SECTIONS AVAILABLE (single or comma-separated list, text
         /// output only; default: full report):
         ///   pool, hosts, vms, network, storage,
-        ///   srs, vdis, vbds, vifs, pifs, pbds,
+        ///   srs, vdis, vbds, vifs, pifs, pbds, tasks,
         ///   anomalies (settings needing attention, opt-in only)
         /// see `xcp-bundle-analyzer --help` for what each section contains
         #[arg(short, long, value_delimiter = ',')]
@@ -206,7 +207,7 @@ enum Commands {
     },
     /// Show all details of one object, like `xe <object>-param-list`
     Object {
-        /// Object type: vdi, vbd, vif, pbd, pif, sr, network, vm, host
+        /// Object type: vdi, vbd, vif, pbd, pif, sr, network, vm, host, task
         object: String,
         /// Object UUID, given as uuid=<uuid> or just <uuid>
         #[arg(requires = "bundle")]
@@ -322,7 +323,7 @@ fn cmd_analyze(
                     for s in &list {
                         let parsed = render::Section::parse_list(s).map_err(|bad| {
                             anyhow::anyhow!(
-                                "unknown section '{bad}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage, anomalies; comma-separated lists allowed)"
+                                "unknown section '{bad}' (valid: pool, hosts, srs, vms, vdis, vbds, vifs, pifs, network, storage, tasks, anomalies; comma-separated lists allowed)"
                             )
                         })?;
                         secs.extend(parsed);
