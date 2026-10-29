@@ -811,3 +811,68 @@ mod gc_managed_tests {
         assert!(a.detail.contains("xe sr-param-remove"), "{}", a.detail);
     }
 }
+
+#[cfg(test)]
+mod orphaned_vdi_listing_tests {
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn every_orphaned_vdi_is_listed_exactly_once() {
+        let r = report();
+        let listed: Vec<&str> = r
+            .anomalies
+            .iter()
+            .filter(|a| a.category == "orphaned-vdi" || a.category == "orphaned-vhd-parent")
+            .map(|a| a.subject.as_str())
+            .collect();
+        // all orphaned VDIs minus the HA statefile appear
+        for uuid in ["vdi-uuid-bc-child", "vdi-uuid-bc2", "vdi-uuid-orphan"] {
+            let d = r.vdis.iter().find(|d| d.uuid == uuid).unwrap();
+            assert!(d.orphaned, "{uuid} should be orphaned");
+            assert!(
+                listed.iter().any(|s| s.contains(uuid)
+                    || *s == r.vdis.iter().find(|d| d.uuid == uuid).unwrap().name),
+                "{uuid} must be listed in the anomalies, got {listed:?}"
+            );
+        }
+        // the broken snapshot (no vhd-parent) is in the general category
+        assert!(r.anomalies.iter().any(|a| a.category == "orphaned-vdi"
+            && a.detail.contains("vdi-uuid-orphan")
+            && a.detail.contains("orphaned snapshot")));
+        // no duplicates: each orphan uuid appears in exactly one finding
+        for uuid in ["vdi-uuid-bc-child", "vdi-uuid-bc2", "vdi-uuid-orphan"] {
+            let n = r
+                .anomalies
+                .iter()
+                .filter(|a| {
+                    (a.category == "orphaned-vdi" || a.category == "orphaned-vhd-parent")
+                        && a.detail.contains(uuid)
+                })
+                .count();
+            assert_eq!(n, 1, "{uuid} listed {n} times");
+        }
+    }
+
+    #[test]
+    fn ha_statefiles_and_valid_disks_not_listed() {
+        let r = report();
+        // the HA statefile is orphaned by design: not garbage
+        let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
+        assert!(ha.orphaned);
+        assert!(!r.anomalies.iter().any(|a| (a.category == "orphaned-vdi"
+            || a.category == "orphaned-vhd-parent")
+            && a.detail.contains("vdi-uuid-ha")));
+        // valid mid-chain disks are not listed
+        assert!(!r.anomalies.iter().any(|a| (a.category == "orphaned-vdi"
+            || a.category == "orphaned-vhd-parent")
+            && a.detail.contains("vdi-uuid-mid")));
+    }
+}

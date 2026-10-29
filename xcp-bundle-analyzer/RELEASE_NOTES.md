@@ -4,6 +4,16 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.12 (patch)
+
+- feat: new orphaned-vdi anomaly — every orphaned VDI or snapshot is now
+  listed in the anomalies section, not only the vhd-parent chain leftovers
+  (orphaned-vhd-parent): orphaned snapshots (broken xapi parent) and plain
+  unattached disks with nothing depending on them each get a finding with
+  the appropriate removal command. No duplicates: VDIs covered by the
+  richer orphaned-vhd-parent messages are skipped. HA statefiles stay
+  excluded (legitimate unattached objects).
+
 ## v0.3.11 (patch)
 
 - feat: vdi-tree marks VDIs attached to a VM with a compact `>>device`

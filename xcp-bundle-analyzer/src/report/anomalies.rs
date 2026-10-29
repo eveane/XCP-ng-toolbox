@@ -266,6 +266,59 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
         }
     }
 
+    // 7e) Every orphaned VDI or snapshot is listed — not only the
+    //     vhd-parent leftovers (7b): a snapshot whose xapi parent is gone
+    //     (broken chain) or a plain unattached, unmanaged disk is also
+    //     garbage the GC could not or did not collect. HA statefiles are
+    //     excluded (they are legitimate unattached objects). VDIs already
+    //     reported by 7b (with their richer chain message) are skipped so
+    //     each orphan appears exactly once.
+    for d in &r.vdis {
+        if !d.orphaned || d.is_ha_statefile {
+            continue;
+        }
+        // already covered by 7b (vhd-parent leftover, richer message)
+        if !d.vhd_parent_uuid.is_empty() && !d.is_snapshot {
+            continue;
+        }
+        let sr_name = r
+            .srs
+            .iter()
+            .find(|s| s.uuid == d.sr_uuid)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        if d.is_snapshot {
+            out.push(warn(
+                "orphaned-vdi",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}]{} is an orphaned snapshot (is_a_snapshot=true, parent {}): not attached to any VM and nothing depends on it — delete it with `xe snapshot-destroy`/`xe vdi-destroy uuid={}` after checking no backup job still needs it",
+                    d.name,
+                    d.uuid,
+                    sr_label(&sr_name),
+                    if d.snapshot_of_uuid.is_empty() {
+                        "gone from the dump".to_string()
+                    } else {
+                        d.snapshot_of_uuid.clone()
+                    },
+                    d.uuid
+                ),
+            ));
+        } else {
+            out.push(warn(
+                "orphaned-vdi",
+                d.name.clone(),
+                format!(
+                    "VDI {} [{}]{} is orphaned: not attached to any VM, no snapshot parent, nothing physically on top of it — it can likely be deleted with `xe vdi-destroy uuid={}`",
+                    d.name,
+                    d.uuid,
+                    sr_label(&sr_name),
+                    d.uuid
+                ),
+            ));
+        }
+    }
+
     // 8) Shared SR auto-scan-interval. The setting is only read by the
     //    pool master: if the master does not have it, rescans revert to the
     //    default (30 s, or 5 min for linstor/xostor). Flag a master without

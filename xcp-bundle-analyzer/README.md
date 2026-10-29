@@ -154,6 +154,11 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   7d. SR with `other-config:gc=false` — the SM garbage collector never runs
       on it (`gcEnabled` in cleanup.py), so hidden leftover VDIs are never
       cleaned; commonly a forgotten troubleshooting measure
+  7e. every orphaned VDI or snapshot is listed — not only the vhd-parent
+      chain leftovers (7b): orphaned snapshots (broken xapi parent) and
+      plain unattached disks with nothing depending on them are garbage
+      too, each with the appropriate removal command. HA statefiles are
+      excluded (legitimate unattached objects)
   7c. VDI or SR with `other-config:leaf-coalesce=false` — a temporary
       workaround for coalesce issues; a leftover value keeps snapshots
       forever, impacts performance and consumes disk. SR-level settings
