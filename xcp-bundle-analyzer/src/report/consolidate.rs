@@ -878,6 +878,139 @@ mod orphaned_vdi_listing_tests {
 }
 
 #[cfg(test)]
+mod task_tests {
+    use crate::inventory::Inventory;
+    use crate::render::{render_object_display, render_sections, Section};
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn tasks_parsed_from_dump() {
+        let r = report();
+        assert_eq!(r.tasks.len(), 4);
+        // task1: success clone with a subtask, resolved host
+        let t1 = r.tasks.iter().find(|t| t.uuid == "task-uuid-1").unwrap();
+        assert_eq!(t1.name, "Async.VM.clone");
+        assert_eq!(t1.description, "Cloning VM vm1");
+        assert_eq!(t1.status, "success");
+        assert!((t1.progress - 1.0).abs() < f64::EPSILON);
+        assert_eq!(t1.resident_host, "host1.example.com");
+        assert_eq!(t1.result_type, "VM");
+        assert_eq!(t1.result, "OpaqueRef:vm-new");
+        assert_eq!(t1.subtask_uuids, vec!["task-uuid-2".to_string()]);
+        assert!(t1.subtask_of_uuid.is_empty());
+        assert!(t1.created.is_some());
+        assert!(t1.finished.is_some());
+        // task2: subtask_of resolved to the parent uuid
+        let t2 = r.tasks.iter().find(|t| t.uuid == "task-uuid-2").unwrap();
+        assert_eq!(t2.subtask_of_uuid, "task-uuid-1");
+        assert!(t2.subtask_uuids.is_empty());
+        // task3: pending, no finished timestamp
+        let t3 = r.tasks.iter().find(|t| t.uuid == "task-uuid-3").unwrap();
+        assert_eq!(t3.status, "pending");
+        assert!((t3.progress - 0.45).abs() < f64::EPSILON);
+        assert!(t3.finished.is_none());
+        assert_eq!(t3.resident_host, "host2.example.com");
+        // task4: failure with error_info decoded
+        let t4 = r.tasks.iter().find(|t| t.uuid == "task-uuid-4").unwrap();
+        assert_eq!(t4.status, "failure");
+        assert_eq!(
+            t4.error_info,
+            vec!["INTERNAL_ERROR".to_string(), "Pool join failed".to_string()]
+        );
+    }
+
+    #[test]
+    fn tasks_section_renders_pending_first() {
+        let r = report();
+        let text = render_sections(&r, &[Section::Tasks]);
+        assert!(text.contains("--- TASKS (4) ---"), "{text}");
+        assert!(text.contains("failure: 1"), "{text}");
+        assert!(text.contains("pending: 1"), "{text}");
+        assert!(text.contains("success: 2"), "{text}");
+        // pending task in the IN PROGRESS group
+        assert!(text.contains("*** IN PROGRESS (1) ***"), "{text}");
+        assert!(
+            text.contains("Async.VM.start [task-uuid-3] status=pending progress=45%"),
+            "{text}"
+        );
+        // failed task flagged
+        assert!(text.contains("Async.pool.join [task-uuid-4]"), "{text}");
+        assert!(text.contains("*** FAILED ***"), "{text}");
+        assert!(
+            text.contains("errors: INTERNAL_ERROR, Pool join failed"),
+            "{text}"
+        );
+        // subtask relationships shown
+        assert!(text.contains("subtask-of: task-uuid-1"), "{text}");
+        assert!(text.contains("subtasks: task-uuid-2"), "{text}");
+        // pending task appears before finished ones
+        let pending_pos = text.find("Async.VM.start").unwrap();
+        let finished_pos = text.find("Async.VM.clone").unwrap();
+        assert!(
+            pending_pos < finished_pos,
+            "pending should come first: {text}"
+        );
+    }
+
+    #[test]
+    fn tasks_section_explicit_only() {
+        let r = report();
+        // tasks section renders when explicitly requested
+        let text = render_sections(&r, &[Section::Tasks]);
+        assert!(text.contains("--- TASKS (4) ---"), "{text}");
+        // but not when another section is requested alone
+        let text = render_sections(&r, &[Section::VMs]);
+        assert!(!text.contains("--- TASKS"), "{text}");
+    }
+
+    #[test]
+    fn tasks_section_empty_when_no_task_table() {
+        let xml = include_str!("../../tests/fixtures/xapi-db-real-like.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        assert!(r.tasks.is_empty());
+        let text = render_sections(&r, &[Section::Tasks]);
+        assert!(text.contains("--- TASKS (0) ---"), "{text}");
+        assert!(text.contains("(no tasks recorded in the dump)"), "{text}");
+    }
+
+    #[test]
+    fn task_object_display() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        let text = render_object_display(&db, "task", "task-uuid-4").unwrap();
+        assert!(text.contains("task task-uuid-4"), "{text}");
+        assert!(text.contains("name__label (RO): Async.pool.join"), "{text}");
+        assert!(text.contains("status (RO): failure"), "{text}");
+        // resident_on resolved to host uuid + label
+        assert!(
+            text.contains("resident_on (RO): host-uuid-1 (host1)"),
+            "{text}"
+        );
+        // error_info decoded as a set
+        assert!(text.contains("INTERNAL_ERROR"), "{text}");
+        assert!(text.contains("Pool join failed"), "{text}");
+    }
+
+    #[test]
+    fn section_parse_tasks() {
+        assert_eq!(Section::parse("tasks"), Some(Section::Tasks));
+        assert_eq!(Section::parse("task"), Some(Section::Tasks));
+        assert_eq!(
+            Section::parse_list("tasks,hosts").unwrap(),
+            vec![Section::Tasks, Section::Hosts]
+        );
+    }
+}
+
+#[cfg(test)]
 mod expected_unattached_tests {
     use crate::inventory::Inventory;
     use crate::report::build_report;

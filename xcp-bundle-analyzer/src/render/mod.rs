@@ -35,6 +35,7 @@ pub enum Section {
     PIFs,
     Network,
     Storage,
+    Tasks,
     Anomalies,
 }
 
@@ -53,6 +54,7 @@ impl Section {
             "pifs" | "pif" => Section::PIFs,
             "network" | "networks" | "net" => Section::Network,
             "storage" => Section::Storage,
+            "tasks" | "task" => Section::Tasks,
             "anomalies" | "anomaly" | "attention" | "findings" => Section::Anomalies,
             _ => None?,
         })
@@ -123,6 +125,9 @@ pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
     }
     if show(Section::VBDs) {
         text::render_vbds(r, &mut out);
+    }
+    if show(Section::Tasks) {
+        text::render_tasks(r, &mut out);
     }
     // The anomalies section is opt-in only: it is never part of Section::All.
     if has(Section::Anomalies) && !has(Section::All) {

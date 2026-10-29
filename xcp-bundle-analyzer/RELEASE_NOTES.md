@@ -4,6 +4,20 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.3.14 (patch)
+
+- feat: new `--section tasks` section and `task` object type. Lists xapi
+  asynchronous tasks still recorded in the xapi-db.xml dump (recently
+  finished or stuck): name (e.g. `Async.VM.clone`), status
+  (pending/success/failure/cancelled), progress, created/finished
+  timestamps, duration, resident host (resolved), result + result type,
+  error_info (decoded), and subtask relationships (subtask_of/subtasks
+  resolved to uuids). Pending tasks are shown first, then finished ones
+  sorted by finish time; failed tasks are flagged. Tasks are included in
+  the full text report (after VBDs) and in the JSON output
+  (`tasks` array on `BundleReport`). The `object task <uuid>` subcommand
+  shows every field of a task row, like `xe task-param-list`.
+
 ## v0.3.13 (patch)
 
 - fix: orphan findings no longer flag objects expected to be unattached:
