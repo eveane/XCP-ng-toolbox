@@ -139,13 +139,20 @@ fn print_vdi_node(
             .collect();
         format!(" >>{}", devs.join(","))
     };
+    let class_flag = d.vdi_class.flag();
+    let class_str = if class_flag.is_empty() {
+        String::new()
+    } else {
+        format!(" [{class_flag}]")
+    };
     let _ = writeln!(
         out,
-        "{}{}{} [{}]{} format={} size={} sr={}{}{}",
+        "{}{}{} [{}]{}{} format={} size={} sr={}{}{}",
         prefix,
         connector,
         d.name,
         d.uuid,
+        class_str,
         flags,
         if d.image_format.is_empty() {
             "-".to_string()
@@ -241,11 +248,11 @@ mod vdi_tree_tests {
         assert!(out.contains("VDI chain (physical): vdi-uuid-1"), "{out}");
         // the physical chain: delta on top of the mid-snap on top of the base
         assert!(
-            out.contains("|-- vm1-disk mid-snap [vdi-uuid-mid] SNAPSHOT"),
+            out.contains("|-- vm1-disk mid-snap [vdi-uuid-mid] [R] SNAPSHOT"),
             "{out}"
         );
         assert!(
-            out.contains("`-- vm1-disk newer delta [vdi-uuid-delta] SNAPSHOT"),
+            out.contains("`-- vm1-disk newer delta [vdi-uuid-delta] [R] SNAPSHOT"),
             "{out}"
         );
         // the delta's xapi parent (vdi-uuid-1) differs from its physical
@@ -256,7 +263,7 @@ mod vdi_tree_tests {
         );
         // the mid-chain snapshot carries no ORPHANED marker
         assert!(
-            !out.contains("mid-snap [vdi-uuid-mid] SNAPSHOT  *** ORPHANED"),
+            !out.contains("mid-snap [vdi-uuid-mid] [R] SNAPSHOT  *** ORPHANED"),
             "{out}"
         );
     }
@@ -268,17 +275,17 @@ mod vdi_tree_tests {
         // the #41-style hidden leftover base copy, flagged as orphaned
         assert!(
             out.contains(
-                "base copy [vdi-uuid-bc-child] hidden(unmanaged)  *** ORPHANED: nothing depends on it ***"
+                "base copy [vdi-uuid-bc-child] [GC] hidden(unmanaged)  *** ORPHANED: nothing depends on it ***"
             ),
             "{out}"
         );
         // healthy disks are not marked orphaned
         assert!(
-            !out.contains("vm1-disk [vdi-uuid-1]  *** ORPHANED"),
+            !out.contains("vm1-disk [vdi-uuid-1] [R]  *** ORPHANED"),
             "{out}"
         );
         assert!(
-            !out.contains("vm1-disk mid-snap [vdi-uuid-mid] SNAPSHOT  *** ORPHANED"),
+            !out.contains("vm1-disk mid-snap [vdi-uuid-mid] [R] SNAPSHOT  *** ORPHANED"),
             "{out}"
         );
     }
@@ -327,13 +334,13 @@ mod vbd_mark_tests {
         // vm1-disk is attached via vbd1 (device xvda): compact >>xvda mark
         let out = render_vdi_tree(&r, Some("vdi-uuid-1"), false).unwrap();
         assert!(
-            out.contains("vm1-disk [vdi-uuid-1] format=vhd size=20.00 GiB sr=NFS repo >>xvda"),
+            out.contains("vm1-disk [vdi-uuid-1] [R] format=vhd size=20.00 GiB sr=NFS repo >>xvda"),
             "{out}"
         );
         // mid-chain snapshot (no VBD by design) carries no mark
         assert!(
             !out.contains(
-                "mid-snap [vdi-uuid-mid] SNAPSHOT format=vhd size=20.00 GiB sr=NFS repo >>"
+                "mid-snap [vdi-uuid-mid] [R] SNAPSHOT format=vhd size=20.00 GiB sr=NFS repo >>"
             ),
             "{out}"
         );
@@ -344,7 +351,7 @@ mod vbd_mark_tests {
         let r = report();
         let text = crate::render::render_sections(&r, &[crate::render::Section::VDIs]);
         assert!(
-            text.contains("vm1-disk [vdi-uuid-1] format=vhd size=20.00 GiB HAS-SNAPSHOTS cbt used=12.00 GiB vbd=xvda(Disk)"),
+            text.contains("vm1-disk [vdi-uuid-1] format=vhd size=20.00 GiB [R] HAS-SNAPSHOTS cbt used=12.00 GiB vbd=xvda(Disk)"),
             "{text}"
         );
         // the tools DVD keeps its CD device

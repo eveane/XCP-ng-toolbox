@@ -878,6 +878,168 @@ mod orphaned_vdi_listing_tests {
 }
 
 #[cfg(test)]
+mod vdi_class_tests {
+    use crate::inventory::Inventory;
+    use crate::render::{render_sections, render_sections_filtered, Section, VdiClassFilter};
+    use crate::report::{build_report, VdiClass};
+    use crate::xapidb::XapiDb;
+
+    fn report() -> crate::report::BundleReport {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        build_report(&db, &Inventory::default(), "test")
+    }
+
+    #[test]
+    fn vdi_class_assigned_per_vdi() {
+        let r = report();
+        // Required: attached to a VM
+        let dom0 = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-dom0").unwrap();
+        assert_eq!(dom0.vdi_class, VdiClass::Required);
+        assert_eq!(dom0.vdi_class.flag(), "R");
+        // Required: mid-chain snapshot (has physical children)
+        let mid = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-mid").unwrap();
+        assert_eq!(mid.vdi_class, VdiClass::Required);
+        // Required: valid snapshot
+        let snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-snap").unwrap();
+        assert_eq!(snap.vdi_class, VdiClass::Required);
+        // GC: unmanaged orphan (hidden base copy)
+        let gc = r
+            .vdis
+            .iter()
+            .find(|d| d.uuid == "vdi-uuid-bc-child")
+            .unwrap();
+        assert_eq!(gc.vdi_class, VdiClass::Gc);
+        assert_eq!(gc.vdi_class.flag(), "GC");
+        // Deletable: managed orphan (still-managed base copy leftover)
+        let d = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-bc2").unwrap();
+        assert_eq!(d.vdi_class, VdiClass::Deletable);
+        assert_eq!(d.vdi_class.flag(), "D");
+        // Deletable: orphaned broken snapshot
+        let orphan_snap = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-orphan").unwrap();
+        assert_eq!(orphan_snap.vdi_class, VdiClass::Deletable);
+        // ExpectedUnattached: HA statefile (no flag)
+        let ha = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-ha").unwrap();
+        assert_eq!(ha.vdi_class, VdiClass::ExpectedUnattached);
+        assert_eq!(ha.vdi_class.flag(), "");
+        // ExpectedUnattached: HA metadata
+        let md = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-hameta").unwrap();
+        assert_eq!(md.vdi_class, VdiClass::ExpectedUnattached);
+        // ExpectedUnattached: tools DVD (removable media)
+        let dvd = r.vdis.iter().find(|d| d.uuid == "vdi-uuid-dvd").unwrap();
+        assert_eq!(dvd.vdi_class, VdiClass::ExpectedUnattached);
+    }
+
+    #[test]
+    fn pool_class_summary_counts_and_reclaimable() {
+        let r = report();
+        let cs = &r.pool.vdi_class_summary;
+        // 14 VDIs total: 7 R, 1 GC, 2 D, 4 expected-unattached
+        assert_eq!(cs.required_count, 7);
+        assert_eq!(cs.gc_count, 1);
+        assert_eq!(cs.deletable_count, 2);
+        assert_eq!(cs.expected_unattached_count, 4);
+        // GC reclaimable: bc-child (1 GiB)
+        assert_eq!(cs.gc_reclaimable_bytes, 1073741824);
+        // Deletable reclaimable: bc2 (1 GiB) + orphan snapshot (10 GiB)
+        assert_eq!(cs.deletable_reclaimable_bytes, 1073741824 + 10737418240);
+    }
+
+    #[test]
+    fn storage_header_shows_class_summary() {
+        let r = report();
+        let text = render_sections(&r, &[Section::Storage]);
+        assert!(
+            text.contains("VDI classes: 7 required (R), 1 GC-territory (GC), 2 user-deletable (D), 4 expected-unattached"),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "reclaimable: 12.00 GiB (GC should reclaim 1.00 GiB, user can delete 11.00 GiB)"
+            ),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn vdis_section_shows_class_flags() {
+        let r = report();
+        let text = render_sections(&r, &[Section::VDIs]);
+        assert!(text.contains("classes: 7 R (required), 1 GC (garbage collector), 2 D (user-deletable), 3 expected-unattached"), "{text}");
+        assert!(text.contains("[R] HAS-SNAPSHOTS"), "{text}");
+        assert!(text.contains("[GC] ORPHANED"), "{text}");
+        assert!(text.contains("[D] ORPHANED"), "{text}");
+    }
+
+    #[test]
+    fn vdi_class_filter_gc_only() {
+        let r = report();
+        let text = render_sections_filtered(&r, &[Section::VDIs], Some(VdiClassFilter::Gc));
+        assert!(text.contains("[filter: GC only]"), "{text}");
+        assert!(text.contains("base copy [vdi-uuid-bc-child]"), "{text}");
+        assert!(text.contains("[GC]"), "{text}");
+        // no R or D VDIs listed
+        assert!(!text.contains("vm1-disk [vdi-uuid-1]"), "{text}");
+        assert!(!text.contains("orphaned base copy 2"), "{text}");
+    }
+
+    #[test]
+    fn vdi_class_filter_d_only() {
+        let r = report();
+        let text = render_sections_filtered(&r, &[Section::VDIs], Some(VdiClassFilter::Deletable));
+        assert!(text.contains("[filter: D only]"), "{text}");
+        assert!(
+            text.contains("orphaned base copy 2 [vdi-uuid-bc2]"),
+            "{text}"
+        );
+        assert!(
+            text.contains("orphaned snapshot [vdi-uuid-orphan]"),
+            "{text}"
+        );
+        assert!(!text.contains("vm1-disk [vdi-uuid-1]"), "{text}");
+        assert!(!text.contains("[GC]"), "{text}");
+    }
+
+    #[test]
+    fn vdi_class_filter_r_only() {
+        let r = report();
+        let text = render_sections_filtered(&r, &[Section::VDIs], Some(VdiClassFilter::Required));
+        assert!(text.contains("[filter: R only]"), "{text}");
+        assert!(text.contains("vm1-disk [vdi-uuid-1]"), "{text}");
+        assert!(!text.contains("[GC]"), "{text}");
+        assert!(!text.contains("[D]"), "{text}");
+    }
+
+    #[test]
+    fn vdi_class_filter_parse() {
+        assert_eq!(VdiClassFilter::parse("R"), Some(VdiClassFilter::Required));
+        assert_eq!(
+            VdiClassFilter::parse("required"),
+            Some(VdiClassFilter::Required)
+        );
+        assert_eq!(VdiClassFilter::parse("GC"), Some(VdiClassFilter::Gc));
+        assert_eq!(VdiClassFilter::parse("garbage"), Some(VdiClassFilter::Gc));
+        assert_eq!(VdiClassFilter::parse("D"), Some(VdiClassFilter::Deletable));
+        assert_eq!(
+            VdiClassFilter::parse("deletable"),
+            Some(VdiClassFilter::Deletable)
+        );
+        assert_eq!(VdiClassFilter::parse("bogus"), None);
+    }
+
+    #[test]
+    fn vdi_tree_shows_class_flags() {
+        let r = report();
+        let out = crate::render::render_vdi_tree(&r, Some("vdi-uuid-1"), false).unwrap();
+        assert!(out.contains("vm1-disk [vdi-uuid-1] [R]"), "{out}");
+        // GC-class orphan in the tree
+        let out = crate::render::render_vdi_tree(&r, Some("vdi-uuid-bc-parent"), false).unwrap();
+        assert!(out.contains("base copy [vdi-uuid-bc-parent] [R]"), "{out}");
+        assert!(out.contains("base copy [vdi-uuid-bc-child] [GC]"), "{out}");
+    }
+}
+
+#[cfg(test)]
 mod task_tests {
     use crate::inventory::Inventory;
     use crate::render::{render_object_display, render_sections, Section};

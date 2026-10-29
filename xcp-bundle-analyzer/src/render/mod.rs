@@ -77,12 +77,49 @@ impl Section {
     }
 }
 
+/// Filter for the VDI section: show only VDIs of a given deletion-safety
+/// class (R = required, GC = garbage-collector territory, D = user-deletable).
+/// `None` shows all VDIs (the default).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum VdiClassFilter {
+    Required,
+    Gc,
+    Deletable,
+}
+
+impl VdiClassFilter {
+    pub fn parse(s: &str) -> Option<VdiClassFilter> {
+        Some(match s.to_lowercase().as_str() {
+            "r" | "required" => VdiClassFilter::Required,
+            "gc" | "garbage" | "garbagecollect" => VdiClassFilter::Gc,
+            "d" | "deletable" | "delete" => VdiClassFilter::Deletable,
+            _ => return None,
+        })
+    }
+
+    fn matches(&self, class: crate::report::VdiClass) -> bool {
+        match self {
+            VdiClassFilter::Required => class == crate::report::VdiClass::Required,
+            VdiClassFilter::Gc => class == crate::report::VdiClass::Gc,
+            VdiClassFilter::Deletable => class == crate::report::VdiClass::Deletable,
+        }
+    }
+}
+
 #[allow(dead_code)]
 pub fn render_text(r: &BundleReport) -> String {
     render_sections(r, &[Section::All])
 }
 
 pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
+    render_sections_filtered(r, sections, None)
+}
+
+pub fn render_sections_filtered(
+    r: &BundleReport,
+    sections: &[Section],
+    vdi_filter: Option<VdiClassFilter>,
+) -> String {
     let mut out = String::new();
     let has = |sec: Section| sections.contains(&sec);
     let show = |want: Section| {
@@ -109,7 +146,7 @@ pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
         text::render_network(r, &mut out);
     }
     if show(Section::Storage) {
-        text::render_storage(r, &mut out);
+        text::render_storage_filtered(r, &mut out, vdi_filter);
     } else {
         // A specific storage section (srs/vdis/pbds) renders only its own
         // sub-section; the merged Storage view needs an explicit "storage".
@@ -117,7 +154,7 @@ pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
             text::render_srs_body(r, &mut out);
         }
         if has(Section::VDIs) {
-            text::render_vdis_body(r, &mut out);
+            text::render_vdis_body_filtered(r, &mut out, vdi_filter);
         }
         if has(Section::PBDs) {
             text::render_pbds_body(r, &mut out);
