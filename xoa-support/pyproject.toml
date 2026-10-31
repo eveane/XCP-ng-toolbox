@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xoa-support"
+version = "0.1.0"
+description = "Support bundle collection, scrubbing and inspection for Xen Orchestra Appliance (XOA)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "GPL-2.0-only" }
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+xoa-scrub = "xoa_support.cli:main"
+xoa-bundle-inspect = "xoa_support.cli:inspect_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

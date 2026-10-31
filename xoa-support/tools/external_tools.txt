@@ -1,0 +1,12 @@
+# External OS tools invoked by xoa-support at runtime, one per line.
+# Format: tool — provided by Debian package — used by
+# (Comments like this line are ignored by dependency_report.py)
+tar — tar — collector/xoa-support-collect.sh, bin/xoa_scrub.py
+find — findutils — collector
+cp — coreutils — collector
+systemctl — systemd — collector, sos-plugin
+journalctl — systemd — collector, sos-plugin
+redis-cli — redis-tools — collector
+sos — sosreport (sos) — collector (--no-sos to skip), sos-plugin host
+python3 (>=3.9) — python3 — bin/*, src/*
+grep — grep — collector self-check
