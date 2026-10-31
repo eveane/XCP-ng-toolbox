@@ -1,0 +1,2 @@
+# Test-only dependencies. Never needed on the XOA itself.
+pytest>=7

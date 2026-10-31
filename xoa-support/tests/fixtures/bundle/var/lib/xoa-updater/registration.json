@@ -1,0 +1,5 @@
+{
+  "email": "admin@customer-example.invalid",
+  "plan": "premium",
+  "password": "should-be-redacted"
+}

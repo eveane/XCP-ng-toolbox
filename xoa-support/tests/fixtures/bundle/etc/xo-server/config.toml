@@ -1,0 +1,9 @@
+# fake XOA config for tests — values are obviously fake
+[redis]
+uri = 'redis://:Sup3rSecret@10.20.30.40:6379/0'
+
+[backups.defaultSettings.remotes]
+"s3://bucket" = { type = "s3", host = "s3.example.invalid", accessKeyId = "AKIAIOSFODNN7EXAMPLE", secretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", bucket = "backups" }
+
+[authentication]
+password = "hunter2-fake"
