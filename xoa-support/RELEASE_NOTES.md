@@ -4,6 +4,16 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.4 (unreleased)
+
+- feat: `packaging/build-deb.sh` now builds on non-Debian hosts (Manjaro/Arch,
+  any Unix): falls back to plain `ar` + `tar` when no working `dpkg-deb` is
+  found (a .deb is an ar archive of debian-binary + control.tar.gz +
+  data.tar.gz); verified by building the deb with dpkg-deb hidden from PATH
+- tests: packaging tests read the deb via dpkg-deb or ar+tar, and tolerate
+  both listing formats
+- docs: COLLECTION.md install section documents the Manjaro/Arch build path
+
 ## 0.1.3 (unreleased)
 
 - fix: `packaging/build-deb.sh` no longer pipes `dpkg-deb --info` into `head`

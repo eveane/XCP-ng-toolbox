@@ -9,7 +9,8 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 BUILD = os.path.join(ROOT, "packaging", "build-deb.sh")
 
 pytestmark = pytest.mark.skipif(
-    shutil.which("dpkg-deb") is None, reason="dpkg-deb not available"
+    shutil.which("dpkg-deb") is None and shutil.which("ar") is None,
+    reason="neither dpkg-deb nor ar available",
 )
 
 
@@ -31,10 +32,32 @@ def deb(tmp_path_factory):
     return debs[0]
 
 
-def test_deb_metadata(deb):
+def _deb_info(deb):
+    """Return (metadata_text, file_listing) using dpkg-deb when present, else ar+tar."""
+    if shutil.which("dpkg-deb"):
+        info = subprocess.run(
+            ["dpkg-deb", "--info", str(deb)], check=True, capture_output=True, text=True
+        ).stdout
+        listing = subprocess.run(
+            ["dpkg-deb", "-c", str(deb)], check=True, capture_output=True, text=True
+        ).stdout
+        return info, listing
+    tmp = str(deb) + ".x"
+    os.makedirs(tmp, exist_ok=True)
+    subprocess.run(["ar", "x", str(deb)], cwd=tmp, check=True)
     info = subprocess.run(
-        ["dpkg-deb", "--info", str(deb)], check=True, capture_output=True, text=True
+        ["tar", "-xzOf", os.path.join(tmp, "control.tar.gz")],
+        check=True, capture_output=True, text=True,
     ).stdout
+    files = subprocess.run(
+        ["tar", "-tzf", os.path.join(tmp, "data.tar.gz")],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    return info, files
+
+
+def test_deb_metadata(deb):
+    info, _ = _deb_info(deb)
     assert "Package: xoa-support" in info
     assert "Architecture: all" in info
     assert "Depends: python3 (>= 3.9)" in info
@@ -42,9 +65,7 @@ def test_deb_metadata(deb):
 
 
 def test_deb_contains_commands_and_payload(deb):
-    listing = subprocess.run(
-        ["dpkg-deb", "-c", str(deb)], check=True, capture_output=True, text=True
-    ).stdout
+    _, listing = _deb_info(deb)
     for path in [
         "./usr/bin/xoa-support-collect",
         "./usr/bin/xoa_scrub",
@@ -54,7 +75,7 @@ def test_deb_contains_commands_and_payload(deb):
         "./usr/share/xoa-support/src/xoa_support/secret_patterns.py",
         "./usr/share/xoa-support/LICENSE",
     ]:
-        assert path in listing, path
+        assert path.lstrip("./") in listing or path in listing, path
     assert "__pycache__" not in listing
     assert ".pyc" not in listing
 
