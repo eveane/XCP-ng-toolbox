@@ -22,8 +22,18 @@
      (1 approval), "Require status checks to pass" (`ci`, `xoa-support-ci`),
      "Do not allow force pushes", "Require linear history", block branch
      deletion. (The sandbox API token cannot create rulesets, so this must be
-   set once by a human admin — the config is scripted in
-   `xoa-support/tools/apply_branch_rules.sh` for reference/audit.)
+   set once by a human admin. Two equivalent ways:
+   - CLI: `./xoa-support/tools/apply_branch_rules.sh` (posts
+     `xoa-support/tools/ruleset-human-only-main.json` via the API)
+   - UI import: Settings → Rulesets → New ruleset → Branch → select target
+     `main`, then use the JSON import with
+     `xoa-support/tools/ruleset-human-only-main.json`.
+   - The JSON includes a **bypass list for RepositoryAdmin** (`bypass_mode:
+     always`): GitHub never lets a PR author approve their own PR, and with
+     `* @eveane` as sole code owner that would deadlock PRs authored by the
+     owner. Admins on the bypass list can still **merge** a PR without the
+     review requirement — direct pushes to `main` remain blocked for
+     everyone, agents included.
 2. **`.github/CODEOWNERS`** — `@eveane` owns everything; with "require code
    owner reviews" enabled on the protection rule, a human must approve.
 3. **Workflows run on `pull_request`** (not only `push`), so agent branches
