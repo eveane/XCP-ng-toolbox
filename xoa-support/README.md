@@ -38,13 +38,17 @@ project makes the bundle:
 ## Quick start
 
 Install on the XOA with **one self-contained .deb** — no repo clone needed,
-works online and airgapped (see **[docs/COLLECTION.md](docs/COLLECTION.md#installing-on-the-xoa)**):
+works online and airgapped (see **[docs/COLLECTION.md](docs/COLLECTION.md#installing-on-the-xoa)**).
+Download the prebuilt release asset, or build it on any OS (incl. Manjaro/Arch):
 
 ```sh
-# built once on an online machine, then scp'd to the XOA:
-./xoa-support/packaging/build-deb.sh
-scp xoa-support/dist/xoa-support_*_all.deb root@xoa:/root/
-sudo dpkg -i /root/xoa-support_*_all.deb     # on the XOA — fully local
+# online machine — prebuilt from GitHub Releases (verify with SHA256SUMS):
+VER=0.1.4
+wget "https://github.com/eveane/XCP-ng-toolbox/releases/download/xoa-support-v${VER}/xoa-support_${VER}_all.deb"
+scp xoa-support_${VER}_all.deb root@xoa:/root/
+# ...or build from source: ./xoa-support/packaging/build-deb.sh
+
+sudo dpkg -i /root/xoa-support_${VER}_all.deb     # on the XOA — fully local
 ```
 
 Then collect and scrub (commands are on `PATH` after install):

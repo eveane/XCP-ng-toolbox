@@ -5,23 +5,36 @@
 ### Recommended: the self-contained .deb (works online AND airgapped)
 
 xoa-support ships as **one self-contained `Architecture: all` deb** — the XOA
-never needs to clone this repository. Build it once on any machine, then
-transfer the single `.deb` file to the XOA by any channel (scp from a jump
-host, USB, …). The build script works everywhere:
+never needs to clone this repository. Two ways to get it:
+
+### Prebuilt: download the release asset (recommended)
+
+Every `xoa-support-v*` tag publishes a GitHub Release with the built `.deb`
+plus a `SHA256SUMS` (see `.github/workflows/xoa-support-release.yml`):
+
+```sh
+# on any online machine — one file, no clone:
+VER=0.1.4   # or use the URL below for "latest"
+wget "https://github.com/eveane/XCP-ng-toolbox/releases/download/xoa-support-v${VER}/xoa-support_${VER}_all.deb"
+wget "https://github.com/eveane/XCP-ng-toolbox/releases/download/xoa-support-v${VER}/SHA256SUMS"
+sha256sum -c SHA256SUMS
+scp xoa-support_${VER}_all.deb root@xoa:/root/
+
+# on the XOA (airgap-safe: dpkg -i is fully local):
+sudo dpkg -i /root/xoa-support_${VER}_all.deb
+```
+
+### Build it yourself (any OS, incl. Manjaro/Arch)
+
+```sh
+# on any online machine (repo checkout):
+./xoa-support/packaging/build-deb.sh            # -> dist/xoa-support_<ver>_all.deb
+```
 
 - **Debian/XOA/Ubuntu**: uses `dpkg-deb` (preinstalled)
 - **Manjaro/Arch or any Unix**: falls back to plain `ar` + `tar` (both in the
   base system) — a `.deb` is just an `ar` archive of `debian-binary` +
   `control.tar.gz` + `data.tar.gz`. Alternatively `yay -S dpkg` from the AUR.
-
-```sh
-# on any online machine (repo checkout):
-./xoa-support/packaging/build-deb.sh            # -> dist/xoa-support_<ver>_all.deb
-scp dist/xoa-support_*_all.deb root@xoa:/root/
-
-# on the XOA (airgap-safe: dpkg -i is fully local):
-sudo dpkg -i /root/xoa-support_*_all.deb
-```
 
 This installs:
 - `/usr/bin/xoa-support-collect`, `/usr/bin/xoa-scrub`, `/usr/bin/xoa_bundle_inspect`
