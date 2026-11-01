@@ -7,6 +7,7 @@
 # tar.gz that xoa_scrub.py can post-process before it leaves the site.
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
+# xoa-support-collect version: 0.1.1
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -114,7 +115,7 @@ fi
     echo "bundle: $OUT"
     echo "host: $(hostname 2>/dev/null || echo unknown)"
     echo "date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "xoa-support-collect version: $(grep -m1 -o 'GPL-2.0-only' "$0" >/dev/null && echo 0.1.0)"
+    echo "xoa-support-collect version: $(sed -n 's/^# xoa-support-collect version: //p' "$0" | head -1)"
     echo "files:"
     (cd "$STAGE" && find . -type f | sort)
 } > "$STAGE/meta/MANIFEST.txt"
