@@ -1,0 +1,4 @@
+# CODEOWNERS — who must approve changes (enforced via branch protection
+# "require code owner reviews" on main, configured in repo settings).
+# Policy: only humans review/merge into main; agents work in PR branches.
+* @eveane

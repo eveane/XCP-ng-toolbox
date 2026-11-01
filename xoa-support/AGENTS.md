@@ -65,3 +65,11 @@ python3 tools/dependency_report.py && git diff --exit-code docs/DEPENDENCIES.md
 - Never print/log/commit real secrets; fixtures use obviously fake values.
 - `anonymisation-map.json` is secret; docs must say so.
 - Update `tools/external_tools.txt` when a new OS tool is invoked.
+
+## Branching policy (mandatory)
+
+- **Never commit or push to `main` or release branches.** Work only on a
+  task branch (`vibe/<slug>-43fef9`, `fix/…`) and open a draft PR; a human
+  reviews and merges. See `.github/BRANCHING.md` (enforced by the
+  `human-only-main` ruleset + CODEOWNERS).
+- Release tags (`xoa-support-v*`) are pushed by humans only.
