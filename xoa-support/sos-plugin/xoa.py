@@ -94,6 +94,17 @@ class xoa(Plugin, DebianPlugin):
         # --- xoa-updater state (registration/update caches) ---
         self.add_copy_spec("/var/lib/xoa-updater")
 
+        # --- XOA metadata backups (XO config / pool metadata), if a local
+        #     backup remote is configured: /var/lib/xoa-backups ---
+        self.add_copy_spec(
+            [
+                "/var/lib/xoa-backups/*.xo.json.gz",
+                "/var/lib/xoa-backups/*.json.gz",
+                "/var/lib/xoa-backups/*metadata*.gz",
+            ],
+            sizelimit=100 * 1024 * 1024,
+        )
+
         # --- redis logs ---
         self.add_copy_spec("/var/log/redis")
         self.add_journal(units=["redis-server", "redis"])

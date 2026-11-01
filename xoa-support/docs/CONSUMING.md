@@ -3,6 +3,23 @@
 The bundle is a plain `tar.gz` mirroring the XOA filesystem plus
 `meta/MANIFEST.txt` — anything that reads tar + text + JSON works.
 
+## Bundle map — where the key elements live
+
+| bundle path | content | notes |
+|---|---|---|
+| `etc/xo-server/` | xo-server config (config.toml, …) | scrubbed; secrets `***REDACTED***` |
+| `var/lib/xo-server/data/leveldb/` | xo-server database files (`.ldb`, `.log`, `CURRENT`, …) | `*.sock` excluded; binary — read with a leveldb reader |
+| `var/lib/xo-server/data/rpu-traces/` | RPU traces: `*.ndjson` events + `*.heartbeat.json` | heartbeat gaps = RPU stalls |
+| `var/lib/xo-server/data/sdn-controller/` | `ca-cert.pem`, `client-cert.pem` only | `client-key.pem` is NEVER collected (see `EXCLUDED.txt`) |
+| `var/lib/xoa-updater/` | `registration.json`, `update.json`, license caches | registration email = PII → anonymise |
+| `var/lib/xoa-backups/` | latest XOA metadata backups (`.xo.json.gz`, `*metadata*.gz`) | scrubbed; use for restore-into-blank-XOA |
+| `var/log/redis/`, `var/log/journal-*.log` | redis logs + journald exports (xo-server, redis, nginx, …) | |
+| `commands/*.out` | systemctl status, redis-cli info, df, listings, ps | machine-readable text |
+| `sos/sosreport-*.tar.xz` (+ `.sha256`) | the full default sos report (when sos ran) | nested archive — extract it separately |
+| `meta/MANIFEST.txt` | bundle inventory, host, date, collector version | |
+| `anonymisation-map.json` | pseudonym mapping (only with `--anonymise`) | **secret — never publish** |
+| `*.scrub-report.json` | per-file redaction report (next to the bundle, not inside) | |
+
 ## Quick summary (PoC)
 
 ```sh
