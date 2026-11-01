@@ -37,6 +37,14 @@ project makes the bundle:
 
 ## Quick start
 
+Install on the XOA — see **[docs/COLLECTION.md](docs/COLLECTION.md#installing-on-the-xoa)**
+for the two explicit recipes:
+- **with internet**: `git clone` the repo (optionally `pip3 install .`)
+- **airgapped**: scp 4 files (collector + 2 bin scripts + `src/xoa_support/*.py`)
+  to the XOA — no downloads on the appliance, zero runtime dependencies
+
+Then collect and scrub:
+
 ```sh
 # on the XOA (as root) — either path:
 sudo sos-plugin/install-plugin.sh && sudo sos report --batch -o xoa
