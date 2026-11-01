@@ -4,6 +4,18 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.6 (unreleased)
+
+- feat: `-V`/`--version` on all three tools (xoa-support-collect,
+  xoa-scrub, xoa-bundle-inspect)
+- fix(collector): embedded sos call used `-o` (which is --only-plugins in
+  sos 4.x, so it looked for a plugin named after the path) — now runs
+  `sos report --batch --enable-plugins=xoa` in a work dir and moves the
+  sos-report archive into the bundle
+- fix(sos-plugin): resolve xoa_support from source tree, deb payload
+  (/usr/share/xoa-support/src), or beside the sos plugins dir — fixes
+  "No module named 'xoa_support'" when installed by postinst
+
 ## 0.1.4 (unreleased)
 
 - feat: `packaging/build-deb.sh` now builds on non-Debian hosts (Manjaro/Arch,
