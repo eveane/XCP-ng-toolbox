@@ -1,0 +1,3 @@
+12345:M 01 Jan 2026 10:00:00.000 * Ready to accept connections
+12345:M 01 Jan 2026 10:01:00.000 * AUTH failed for user default: redis://:Sup3rSecret@10.20.30.40:6379/0
+12345:M 01 Jan 2026 10:02:00.000 * Client closed connection token=abc123def456ghi789

@@ -1,0 +1,28 @@
+name: xoa-support-ci
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xoa-support
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m compileall -q src bin tools tests
+      - run: bash -n collector/xoa-support-collect.sh
+      - run: bash -n sos-plugin/install-plugin.sh
+      - run: pip install -r requirements-dev.txt
+      - run: python3 -m pytest tests/ -q
+      - name: dependency inventory must be up to date
+        run: |
+          python3 tools/dependency_report.py
+          git diff --exit-code docs/DEPENDENCIES.md
+      - name: audit dev dependencies for known CVEs
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements-dev.txt || true

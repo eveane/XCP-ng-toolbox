@@ -1,0 +1,7 @@
+# Runtime dependencies of xoa-support.
+# Intentionally EMPTY: the collector and scrubber run on a stock Debian/XOA
+# python3 (>=3.9) with the standard library only, so airgapped appliances
+# never need pip/network access.
+#
+# Test-only dependency (CI / local dev): pytest>=7  (install with
+#   pip install -r requirements-dev.txt)

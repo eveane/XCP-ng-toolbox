@@ -83,3 +83,11 @@ Parses the bundle (tar/tar.gz/tar.bz2/zip), makes xapi-db.xml usable (hosts, SRs
 VMs, VIFs, PIFs, PBDs, dom0 config) and outputs text, JSON or a self-contained HTML
 dashboard. Supports a consolidated pool view when several bundles are given.
 See `xcp-bundle-analyzer/README.md`.
+
+## xoa-support
+
+GPL-2.0-only toolkit to collect, scrub, optionally anonymise and inspect support
+bundles from a Xen Orchestra Appliance (XOA), for airgapped troubleshooting.
+Includes a sos report plugin (`sos report -o xoa`), a no-dependency standalone
+collector, a strict scrubber/anonymiser (`xoa_scrub.py`) and a bundle inspector
+(text/JSON). See `xoa-support/README.md` and `xoa-support/docs/`.

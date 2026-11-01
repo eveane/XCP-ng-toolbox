@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      weekly: true
+    open-pull-requests-limit: 5
+  - package-ecosystem: "pip"
+    directory: "/xoa-support/"
+    schedule:
+      weekly: true
+    open-pull-requests-limit: 5
+    # requirements.txt is intentionally empty (stdlib-only runtime);
+    # dev/test deps live in requirements-dev.txt
+    allow:
+      - dependency-name: "pytest"
