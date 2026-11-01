@@ -18,6 +18,7 @@ Scanned for known vulnerabilities in CI with `pip-audit`
 ## External OS tools used at runtime (provided by the XOA base image)
 
 - tar — tar — collector/xoa-support-collect.sh, bin/xoa_scrub.py
+- dpkg-deb — dpkg — packaging/build-deb.sh (build host only; dpkg -i on the XOA needs only dpkg itself)
 - find — findutils — collector
 - cp — coreutils — collector
 - systemctl — systemd — collector, sos-plugin

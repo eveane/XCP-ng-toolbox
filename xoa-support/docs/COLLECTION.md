@@ -2,49 +2,60 @@
 
 ## Installing on the XOA
 
-### With internet access (online XOA)
+### Recommended: the self-contained .deb (works online AND airgapped)
+
+xoa-support ships as **one self-contained `Architecture: all` deb** — the XOA
+never needs to clone this repository. Build it once on any machine with
+`dpkg-deb` (present on every Debian/XOA base), then transfer the single
+`.deb` file to the XOA by any channel (scp from a jump host, USB, …):
 
 ```sh
-# from any machine with network, then copy — or directly on the XOA:
-git clone https://github.com/eveane/XCP-ng-toolbox.git
-cd XCP-ng-toolbox/xoa-support
+# on any online machine (repo checkout):
+./xoa-support/packaging/build-deb.sh            # -> dist/xoa-support_<ver>_all.deb
+scp dist/xoa-support_*_all.deb root@xoa:/root/
 
-# optional: install the python package properly (still stdlib-only at runtime)
-pip3 install .            # provides the xoa-scrub / xoa-bundle-inspect commands
+# on the XOA (airgap-safe: dpkg -i is fully local):
+sudo dpkg -i /root/xoa-support_*_all.deb
 ```
 
-Then pick Path A or B below. Without `pip install`, the tools work as plain
-scripts (`python3 bin/xoa_scrub.py …`) — no installation needed at all.
+This installs:
+- `/usr/bin/xoa-support-collect`, `/usr/bin/xoa-scrub`, `/usr/bin/xoa_bundle_inspect`
+- payload + docs + LICENSE under `/usr/share/xoa-support/`
+- the sos plugin, auto-registered by `postinst` when `sos` is present
+  (`sos report --batch -o xoa` then works)
 
-### Airgapped XOA (no internet)
+Depends declared: `python3 (>= 3.9)`, `tar`, `coreutils`, `bash` — all already
+on a stock XOA; `sosreport`/`redis-tools` are only `Recommends`.
 
-Nothing needs to be downloaded on the XOA itself: xoa-support has **zero
-runtime dependencies** (bash + coreutils + tar + python3 ≥ 3.9, all present
-on a stock XOA). From a machine with internet, fetch the files and copy them
-over with any out-of-band channel (scp from a jump host, USB, …):
+### Alternative: run from a source checkout (online XOA)
 
 ```sh
-# on the online machine:
 git clone https://github.com/eveane/XCP-ng-toolbox.git
 cd XCP-ng-toolbox/xoa-support
-# only these 4 files are needed on the XOA for the standalone path:
-scp collector/xoa-support-collect.sh bin/xoa_scrub.py bin/xoa_bundle_inspect.py src/xoa_support/*.py root@xoa:/root/xoa-support/
-# for the sos plugin path, also copy:
-scp sos-plugin/xoa.py sos-plugin/install-plugin.sh root@xoa:/root/xoa-support/
+# optional: pip3 install .  — provides xoa-scrub / xoa-bundle-inspect commands
+# without pip the tools work as plain scripts: python3 bin/xoa_scrub.py …
+```
+
+### Fallback: copy raw files (airgap, no .deb tooling)
+
+xoa-support has **zero runtime dependencies** (bash + coreutils + tar +
+python3 ≥ 3.9). From an online machine, copy the files over with any
+out-of-band channel:
+
+```sh
+scp xoa-support/collector/xoa-support-collect.sh \
+    xoa-support/bin/xoa_scrub.py xoa-support/bin/xoa_bundle_inspect.py \
+    xoa-support/src/xoa_support/*.py \
+    root@xoa:/root/xoa-support/
+# for the sos plugin path, also: xoa-support/sos-plugin/{xoa.py,install-plugin.sh}
 ```
 
 ```sh
-# on the airgapped XOA:
-cd /root/xoa-support
-chmod +x xoa-support-collect.sh install-plugin.sh
-# Path A (if sos is installed):  sudo ./install-plugin.sh && sudo sos report --batch -o xoa
-# Path B (always works):         sudo ./xoa-support-collect.sh --no-sos -o /tmp/xoa.tar.gz
+# on the XOA:
+cd /root/xoa-support && chmod +x xoa-support-collect.sh install-plugin.sh
+sudo ./xoa-support-collect.sh --no-sos -o /tmp/xoa.tar.gz
 sudo python3 xoa_scrub.py /tmp/xoa.tar.gz --strict --anonymise -o /tmp/xoa.out.tar.gz
 ```
-
-If the sos plugin is used on the XOA, `install-plugin.sh` copies `xoa.py` and
-the `xoa_support/` package into the system sos plugin directory — that copy
-is local (no network).
 
 ## Two equivalent collection paths
 

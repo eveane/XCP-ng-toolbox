@@ -35,11 +35,22 @@ gate), inspect (text/JSON summary). GPL-2.0-only.
 ## Commands (run in this order, stop at first failure)
 
 ```
-python3 -m compileall -q src bin tools
+python3 -m compileall -q src bin tools tests
 python3 -m pytest tests/ -q
 bash -n collector/xoa-support-collect.sh && bash -n sos-plugin/install-plugin.sh
+bash -n packaging/build-deb.sh && ./packaging/build-deb.sh dist   # needs dpkg-deb
 python3 tools/dependency_report.py && git diff --exit-code docs/DEPENDENCIES.md
 ```
+
+## Debian packaging
+
+- `packaging/build-deb.sh` builds a self-contained `Architecture: all` deb
+  (`dist/xoa-support_<ver>_all.deb`) — the primary install path on the XOA,
+  airgap-friendly (ship one file, `dpkg -i` locally, no repo clone).
+- `packaging/control|postinst|prerm` — postinst auto-registers the sos plugin
+  if sos is present; prerm removes it.
+- The deb must never contain `__pycache__`/`*.pyc` (build script strips them;
+  `tests/test_packaging.py` enforces it).
 
 ## Tests
 
