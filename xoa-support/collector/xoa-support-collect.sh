@@ -8,7 +8,7 @@
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.6
+# xoa-support-collect version: 0.1.7
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -111,21 +111,32 @@ ps -eo pid,user,args | grep -E 'xo-server|redis-server' | grep -v grep \
 if [ "$RUN_SOS" -eq 1 ] && command -v sos >/dev/null 2>&1; then
     echo "running sos report (xoa plugin + defaults) ..."
     mkdir -p "$STAGE/sos-tmp"
-    # NOTE: in sos 4.x `-o` is --only-plugins; output goes to --tmp-dir/cwd.
-    # We run sos in a dedicated work dir and move the resulting archive in.
-    SOS_WORK="$STAGE/sos-work"
-    mkdir -p "$SOS_WORK"
-    if (cd "$SOS_WORK" && sos report --batch --tmp-dir "$STAGE/sos-tmp" --enable-plugins=xoa) 2>&1 | tail -3; then
-        :
+    # sos 4.x writes the final archive to --tmp-dir (fallback: cwd), named
+    # sosreport-<host>-<ts>.tar.xz plus a .sha256 — NOT sos-report-*.tar.*.
+    # Parse the path from sos's own "saved in:" line, then also glob both
+    # tmp-dir and cwd as fallback.
+    SOS_OUT=$(sos report --batch --tmp-dir "$STAGE/sos-tmp" --enable-plugins=xoa 2>&1 | \
+        tee /dev/stderr | sed -n 's/.*saved in: *//p' | tail -1)
+    [ -n "$SOS_OUT" ] || SOS_OUT=$(ls -t "$STAGE/sos-tmp"/sosreport-*.tar.* "$PWD"/sosreport-*.tar.* 2>/dev/null | head -1)
+    if [ -n "$SOS_OUT" ] && [ -f "$SOS_OUT" ]; then
+        mv "$SOS_OUT" "$STAGE/sos/"
+        [ -f "$SOS_OUT.sha256" ] && mv "$SOS_OUT.sha256" "$STAGE/sos/" 2>/dev/null || true
+        echo "sos archive: $(basename "$SOS_OUT") -> sos/"
     else
-        echo "WARN: sos report failed; continuing with XOA-only data" >&2
+        echo "WARN: sos report ran but no archive found; continuing with XOA-only data" >&2
     fi
     rm -rf "$STAGE/sos-tmp"
-    # move the sos archive (sos-report-*.tar.*) into the bundle if present
-    for f in "$SOS_WORK"/sos-report-*.tar.* "$SOS_WORK"/sosreport-*.tar.*; do
-        [ -f "$f" ] && mv "$f" "$STAGE/sos/" 2>/dev/null || true
-    done
 fi
+
+# --- XOA metadata backup: latest XO-config / pool-metadata backup written by
+#     xo-server to its local backup dir (scrubbed later by xoa_scrub.py) ---
+for f in /var/lib/xoa-backups/*.xo.json.gz /var/lib/xoa-backups/*.json.gz \
+         /var/lib/xoa-backups/*metadata*.gz /var/lib/xoa-backups/*.xva; do
+    if [ -f "$f" ]; then
+        mkdir -p "$STAGE/var/lib/xoa-backups"
+        cp -a "$f" "$STAGE/var/lib/xoa-backups/"
+    fi
+done 2>/dev/null || true
 
 # --- manifest: what is in the bundle + tool versions ---
 {
