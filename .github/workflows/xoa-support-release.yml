@@ -9,7 +9,7 @@ name: xoa-support-release
 #       git tag xoa-support-v0.1.4 && git push origin xoa-support-v0.1.4)
 #   - manual run from the Actions tab (workflow_dispatch), optional version
 
-on:
+"on":
   push:
     tags: ["xoa-support-v*"]
   workflow_dispatch:
@@ -45,22 +45,29 @@ jobs:
       - name: create release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
-          TAG="${{ steps.ver.outputs.tag }}"
           DEB=$(ls dist/xoa-support_*_all.deb)
+          cat > /tmp/release-notes.md <<NOTES
+          ## xoa-support v${VERSION}
+
+          Self-contained \`xoa-support_${VERSION}_all.deb\` (Architecture: all).
+
+          ### Install on the XOA (works airgapped — one file, local \`dpkg -i\`)
+
+              wget <repo>/releases/latest/download/$(basename "$DEB")
+              sudo dpkg -i $(basename "$DEB")
+
+          Commands installed: \`xoa-support-collect\`, \`xoa-scrub\`, \`xoa-bundle-inspect\`.
+          If sos is installed, the xoa plugin is registered automatically
+          (\`sos report --batch -o xoa\`).
+
+          Verify the download with the attached \`SHA256SUMS\`.
+
+          Built from commit ${{ github.sha }} by xoa-support-release.
+          NOTES
           gh release create "$TAG" \
-            --title "xoa-support v${{ steps.ver.outputs.version }}" \
-            --notes "Self-contained xoa-support ${VERSION} .deb (Architecture: all).
-
-Install on the XOA (works airgapped — one file, local dpkg -i):
-
-    sudo dpkg -i $DEB
-
-Commands installed: xoa-support-collect, xoa-scrub, xoa-bundle-inspect.
-If sos is installed, the xoa plugin is registered automatically
-(\`sos report --batch -o xoa\`).
-
-Verify: \`sha256sum -c dist/SHA256SUMS\` (see the attached SHA256SUMS).
-
-Built from commit ${{ github.sha }} by xoa-support-release." \
+            --title "xoa-support v${VERSION}" \
+            --notes-file /tmp/release-notes.md \
             "$DEB" dist/SHA256SUMS
