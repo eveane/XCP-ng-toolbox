@@ -25,12 +25,18 @@ import sys
 
 from sos.report.plugins import Plugin, DebianPlugin
 
-# Allow running from a source checkout (tests, airgapped installs) by
-# adding the bundled src/ dir to sys.path when the package is not installed.
+# Resolve xoa_support whether we run from a source checkout, from the deb
+# payload (/usr/share/xoa-support/...), or installed next to sos by
+# install-plugin.sh / postinst (…/sos/report/plugins/xoa_support/).
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_SRC = os.path.normpath(os.path.join(_HERE, "..", "src"))
-if os.path.isdir(_SRC) and _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
+_CANDIDATES = [
+    os.path.normpath(os.path.join(_HERE, "..", "src")),          # source tree
+    "/usr/share/xoa-support/src",                                  # deb payload
+    os.path.dirname(_HERE),                                       # beside sos plugins
+]
+for _c in _CANDIDATES:
+    if os.path.isdir(os.path.join(_c, "xoa_support")) and _c not in sys.path:
+        sys.path.insert(0, _c)
 
 from xoa_support import secret_patterns  # noqa: E402
 

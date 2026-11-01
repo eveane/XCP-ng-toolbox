@@ -7,10 +7,13 @@
 # tar.gz that xoa_scrub.py can post-process before it leaves the site.
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
-# xoa-support-collect version: 0.1.5
+#         ./xoa-support-collect.sh -V | --version
+# xoa-support-collect version: 0.1.6
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
+
+VERSION=$(sed -n 's/^# xoa-support-collect version: //p' "$0" | head -1)
 
 OUT="xoa-support-$(hostname -s 2>/dev/null || echo xoa)-$(date +%Y%m%dT%H%M%S).tar.gz"
 RUN_SOS=1
@@ -18,6 +21,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -o) OUT="$2"; shift 2;;
         --no-sos) RUN_SOS=0; shift;;
+        -V|--version) echo "xoa-support-collect $VERSION"; exit 0;;
         -h|--help)
             sed -n '2,12p' "$0"; exit 0;;
         *) echo "unknown arg: $1" >&2; exit 2;;
@@ -36,7 +40,7 @@ echo "staging bundle in $STAGE"
 XO_DATA=/var/lib/xo-server/data
 UPDATER=/var/lib/xoa-updater
 
-mkdir -p "$STAGE"/{etc,var/lib,var/log,commands,meta}
+mkdir -p "$STAGE"/{etc,var/lib,var/log,commands,meta,sos}
 
 # --- xo-server configuration ---
 if [ -d /etc/xo-server ]; then
@@ -105,14 +109,22 @@ ps -eo pid,user,args | grep -E 'xo-server|redis-server' | grep -v grep \
 
 # --- optional: full default sos report inside the same bundle ---
 if [ "$RUN_SOS" -eq 1 ] && command -v sos >/dev/null 2>&1; then
-    echo "running sos report (default plugins) ..."
+    echo "running sos report (xoa plugin + defaults) ..."
     mkdir -p "$STAGE/sos-tmp"
-    if sos report --batch --tmp-dir "$STAGE/sos-tmp" -o "$STAGE/sos" 2>&1 | tail -2; then
+    # NOTE: in sos 4.x `-o` is --only-plugins; output goes to --tmp-dir/cwd.
+    # We run sos in a dedicated work dir and move the resulting archive in.
+    SOS_WORK="$STAGE/sos-work"
+    mkdir -p "$SOS_WORK"
+    if (cd "$SOS_WORK" && sos report --batch --tmp-dir "$STAGE/sos-tmp" --enable-plugins=xoa) 2>&1 | tail -3; then
         :
     else
         echo "WARN: sos report failed; continuing with XOA-only data" >&2
     fi
     rm -rf "$STAGE/sos-tmp"
+    # move the sos archive (sos-report-*.tar.*) into the bundle if present
+    for f in "$SOS_WORK"/sos-report-*.tar.* "$SOS_WORK"/sosreport-*.tar.*; do
+        [ -f "$f" ] && mv "$f" "$STAGE/sos/" 2>/dev/null || true
+    done
 fi
 
 # --- manifest: what is in the bundle + tool versions ---
@@ -120,7 +132,7 @@ fi
     echo "bundle: $OUT"
     echo "host: $(hostname 2>/dev/null || echo unknown)"
     echo "date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "xoa-support-collect version: $(sed -n 's/^# xoa-support-collect version: //p' "$0" | head -1)"
+    echo "xoa-support-collect version: $VERSION"
     echo "files:"
     (cd "$STAGE" && find . -type f | sort)
 } > "$STAGE/meta/MANIFEST.txt"

@@ -23,6 +23,11 @@ import tarfile
 sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
 )
+try:
+    from xoa_support import __version__
+except ImportError:  # installed layout: /usr/share/xoa-support/bin -> src is a sibling
+    sys.path.insert(0, "/usr/share/xoa-support/src")
+    from xoa_support import __version__
 
 NDJSON_RE = re.compile(r"\.ndjson$")
 REDIS_LOG_RE = re.compile(r"redis.*\.log$|journal-redis", re.IGNORECASE)
@@ -116,9 +121,13 @@ def render_text(s):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="Inspect an xoa-support bundle")
-    p.add_argument("bundle")
+    p.add_argument("-V", "--version", action="version",
+                   version=f"xoa-bundle-inspect {__version__}")
+    p.add_argument("bundle", nargs="?")
     p.add_argument("--json", action="store_true", help="emit JSON for machines/agents")
     args = p.parse_args(argv)
+    if not args.bundle:
+        p.error("the following argument is required: bundle (or use -V/--version)")
     s = summarise(args.bundle)
     if args.json:
         print(json.dumps(s, indent=2, default=str))

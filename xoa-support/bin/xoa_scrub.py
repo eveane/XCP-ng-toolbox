@@ -32,6 +32,7 @@ sys.path.insert(
 
 from xoa_support import secret_patterns as sp  # noqa: E402
 from xoa_support.anonymise import Anonymiser  # noqa: E402
+from xoa_support import __version__  # noqa: E402
 
 PEM_RE = re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY")
 REDACTED_BYTES = sp.REDACTED.encode()
@@ -110,8 +111,13 @@ def process_archive(src, dst, anonymise, salt, strict, report):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Scrub/anonymise an xoa-support bundle")
-    p.add_argument("bundle", help="input bundle (.tar.gz) or directory")
+    p = argparse.ArgumentParser(
+        description="Scrub/anonymise an xoa-support bundle",
+        epilog="GPL-2.0-only. See LICENSE.",
+    )
+    p.add_argument("-V", "--version", action="version",
+                   version=f"xoa-scrub {__version__}")
+    p.add_argument("bundle", nargs="?", help="input bundle (.tar.gz) or directory")
     p.add_argument("-o", "--output", help="output bundle (default: <input>.scrubbed.tar.gz)")
     p.add_argument("--input-dir", action="store_true", help="treat BUNDLE as a plain directory")
     p.add_argument("--anonymise", action="store_true", help="replace identifiers with stable pseudonyms")
@@ -119,6 +125,8 @@ def main(argv=None):
     p.add_argument("--no-strict", action="store_true", help="do not fail if redaction verification fails")
     p.add_argument("--report", default=None, help="scrub report JSON path (default: alongside output)")
     args = p.parse_args(argv)
+    if not args.bundle:
+        p.error("the following argument is required: bundle (or use -V/--version)")
 
     strict = not args.no_strict
     if args.input_dir:
