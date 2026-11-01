@@ -28,6 +28,12 @@
    - UI import: Settings → Rulesets → New ruleset → Branch → select target
      `main`, then use the JSON import with
      `xoa-support/tools/ruleset-human-only-main.json`.
+   - The JSON includes a **bypass list for RepositoryAdmin** (`bypass_mode:
+     always`): GitHub never lets a PR author approve their own PR, and with
+     `* @eveane` as sole code owner that would deadlock PRs authored by the
+     owner. Admins on the bypass list can still **merge** a PR without the
+     review requirement — direct pushes to `main` remain blocked for
+     everyone, agents included.
 2. **`.github/CODEOWNERS`** — `@eveane` owns everything; with "require code
    owner reviews" enabled on the protection rule, a human must approve.
 3. **Workflows run on `pull_request`** (not only `push`), so agent branches

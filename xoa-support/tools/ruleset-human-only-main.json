@@ -4,7 +4,9 @@
   "enforcement": "active",
   "conditions": {
     "ref_name": {
-      "include": ["refs/heads/main"],
+      "include": [
+        "refs/heads/main"
+      ],
       "exclude": []
     }
   },
@@ -23,14 +25,31 @@
       "type": "required_status_checks",
       "parameters": {
         "required_status_checks": [
-          { "context": "ci" },
-          { "context": "xoa-support-ci" }
+          {
+            "context": "ci"
+          },
+          {
+            "context": "xoa-support-ci"
+          }
         ],
         "strict_required_status_checks_policy": true
       }
     },
-    { "type": "required_linear_history" },
-    { "type": "non_fast_forward" },
-    { "type": "deletion" }
+    {
+      "type": "required_linear_history"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "deletion"
+    }
+  ],
+  "bypass_actors": [
+    {
+      "actor_id": 1,
+      "actor_type": "RepositoryAdmin",
+      "bypass_mode": "always"
+    }
   ]
 }
