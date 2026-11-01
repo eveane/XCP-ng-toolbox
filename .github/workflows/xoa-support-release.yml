@@ -1,0 +1,66 @@
+name: xoa-support-release
+
+# Builds the self-contained xoa-support .deb and publishes it as a GitHub
+# Release asset so anyone (including an airgapped site, via one downloaded
+# file) can install without cloning the repo.
+#
+# Triggers:
+#   - push of a tag  xoa-support-vX.Y.Z   (cut a release with:
+#       git tag xoa-support-v0.1.4 && git push origin xoa-support-v0.1.4)
+#   - manual run from the Actions tab (workflow_dispatch), optional version
+
+on:
+  push:
+    tags: ["xoa-support-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.1.4); defaults to xoa-support/VERSION"
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # required to create the release and upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xoa-support
+    steps:
+      - uses: actions/checkout@v4
+      - name: resolve version
+        id: ver
+        run: |
+          V="${{ inputs.version }}"
+          [ -n "$V" ] || V="$(cat VERSION)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=xoa-support-v$V" >> "$GITHUB_OUTPUT"
+      - name: build the deb
+        run: |
+          ./packaging/build-deb.sh dist
+          sha256sum dist/*.deb > dist/SHA256SUMS
+          dpkg-deb --info dist/xoa-support_*_all.deb | head -12
+      - name: create release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          DEB=$(ls dist/xoa-support_*_all.deb)
+          gh release create "$TAG" \
+            --title "xoa-support v${{ steps.ver.outputs.version }}" \
+            --notes "Self-contained xoa-support ${VERSION} .deb (Architecture: all).
+
+Install on the XOA (works airgapped — one file, local dpkg -i):
+
+    sudo dpkg -i $DEB
+
+Commands installed: xoa-support-collect, xoa-scrub, xoa-bundle-inspect.
+If sos is installed, the xoa plugin is registered automatically
+(\`sos report --batch -o xoa\`).
+
+Verify: \`sha256sum -c dist/SHA256SUMS\` (see the attached SHA256SUMS).
+
+Built from commit ${{ github.sha }} by xoa-support-release." \
+            "$DEB" dist/SHA256SUMS
