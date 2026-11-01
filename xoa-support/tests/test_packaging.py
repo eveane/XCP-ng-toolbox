@@ -16,7 +16,16 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def deb(tmp_path_factory):
     out = tmp_path_factory.mktemp("deb")
-    subprocess.run(["bash", BUILD, str(out)], check=True, capture_output=True)
+    for attempt in range(3):
+        r = subprocess.run(["bash", BUILD, str(out)], capture_output=True)
+        if r.returncode == 0:
+            break
+        # CI runners occasionally deliver SIGPIPE (141) to the build's
+        # children under capture; one retry makes the fixture robust.
+        if attempt == 2:
+            raise AssertionError(
+                f"build-deb.sh failed rc={r.returncode}: {r.stderr.decode()[-500:]}"
+            )
     debs = list(out.glob("xoa-support_*_all.deb"))
     assert len(debs) == 1
     return debs[0]

@@ -42,4 +42,6 @@ done
 mkdir -p "$OUT_DIR"
 dpkg-deb --root-owner-group --build "$STAGE/$PKG" "$OUT_DIR/${PKG}.deb"
 echo "built: $OUT_DIR/${PKG}.deb"
-dpkg-deb --info "$OUT_DIR/${PKG}.deb" | head -12
+# note: no piping dpkg-deb output into head here — under `set -o pipefail`
+# a closed pipe (SIGPIPE, exit 141) would fail the build non-deterministically
+dpkg-deb --info "$OUT_DIR/${PKG}.deb"

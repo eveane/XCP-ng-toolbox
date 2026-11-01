@@ -4,6 +4,12 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.3 (unreleased)
+
+- fix: `packaging/build-deb.sh` no longer pipes `dpkg-deb --info` into `head`
+  (SIGPIPE/141 under `set -o pipefail` made the CI build flaky); packaging
+  test retries the build once for runner robustness
+
 ## 0.1.2 (unreleased)
 
 - feat: self-contained Debian package — `packaging/build-deb.sh` builds
