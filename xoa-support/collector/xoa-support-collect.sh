@@ -7,7 +7,7 @@
 # tar.gz that xoa_scrub.py can post-process before it leaves the site.
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
-# xoa-support-collect version: 0.1.1
+# xoa-support-collect version: 0.1.2
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail

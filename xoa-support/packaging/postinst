@@ -1,0 +1,21 @@
+#!/bin/sh
+# postinst: register the bundled sos plugin with the system sos, if present.
+set -e
+
+PLUGIN_SRC=/usr/share/xoa-support/sos-plugin/xoa.py
+PKG_SRC=/usr/share/xoa-support/src/xoa_support
+SOS_PLUGIN_DIR=/usr/lib/python3/dist-packages/sos/report/plugins
+
+if command -v sos >/dev/null 2>&1 && [ -d "$SOS_PLUGIN_DIR" ]; then
+    install -m 0644 "$PLUGIN_SRC" "$SOS_PLUGIN_DIR/xoa.py"
+    install -d "$SOS_PLUGIN_DIR/xoa_support"
+    install -m 0644 "$PKG_SRC"/*.py "$SOS_PLUGIN_DIR/xoa_support/"
+    echo "xoa-support: sos plugin installed -> 'sos report -o xoa' available"
+else
+    echo "xoa-support: sos not found; standalone collector xoa-support-collect is available"
+fi
+
+echo "xoa-support installed. Collect with:"
+echo "  sudo xoa-support-collect -o /tmp/xoa.tar.gz        (or: sudo sos report --batch -o xoa)"
+echo "  sudo xoa-scrub /tmp/xoa.tar.gz --strict --anonymise -o /tmp/xoa.out.tar.gz"
+exit 0

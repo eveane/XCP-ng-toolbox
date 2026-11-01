@@ -1,0 +1,14 @@
+Package: xoa-support
+Version: 0.1.2
+Section: admin
+Priority: optional
+Architecture: all
+Maintainer: eveane <https://github.com/eveane/XCP-ng-toolbox>
+Depends: python3 (>= 3.9), tar, coreutils, bash
+Recommends: sosreport, redis-tools
+Description: XOA support bundle toolkit (collect, scrub, anonymise, inspect)
+ Collects Xen Orchestra Appliance support data (sos plugin or standalone
+ shell collector), redacts secrets with a strict verification gate,
+ optionally anonymises identifiers, and summarizes bundles for humans
+ and machines. GPL-2.0-only. Zero Python runtime dependencies.
+Homepage: https://github.com/eveane/XCP-ng-toolbox/tree/main/xoa-support

@@ -37,25 +37,29 @@ project makes the bundle:
 
 ## Quick start
 
-Install on the XOA — see **[docs/COLLECTION.md](docs/COLLECTION.md#installing-on-the-xoa)**
-for the two explicit recipes:
-- **with internet**: `git clone` the repo (optionally `pip3 install .`)
-- **airgapped**: scp 4 files (collector + 2 bin scripts + `src/xoa_support/*.py`)
-  to the XOA — no downloads on the appliance, zero runtime dependencies
+Install on the XOA with **one self-contained .deb** — no repo clone needed,
+works online and airgapped (see **[docs/COLLECTION.md](docs/COLLECTION.md#installing-on-the-xoa)**):
 
-Then collect and scrub:
+```sh
+# built once on an online machine, then scp'd to the XOA:
+./xoa-support/packaging/build-deb.sh
+scp xoa-support/dist/xoa-support_*_all.deb root@xoa:/root/
+sudo dpkg -i /root/xoa-support_*_all.deb     # on the XOA — fully local
+```
+
+Then collect and scrub (commands are on `PATH` after install):
 
 ```sh
 # on the XOA (as root) — either path:
-sudo sos-plugin/install-plugin.sh && sudo sos report --batch -o xoa
+sudo sos report --batch -o xoa                 # plugin auto-registered by the .deb
 # or, no-sos/airgap:
-sudo collector/xoa-support-collect.sh -o /tmp/xoa.tar.gz
+sudo xoa-support-collect -o /tmp/xoa.tar.gz
 
 # then, always, before the bundle leaves the site:
-python3 bin/xoa_scrub.py /tmp/xoa.tar.gz --strict --anonymise -o /tmp/xoa.out.tar.gz
+sudo xoa-scrub /tmp/xoa.tar.gz --strict --anonymise -o /tmp/xoa.out.tar.gz
 
 # inspect (human or machine):
-python3 bin/xoa_bundle_inspect.py /tmp/xoa.out.tar.gz [--json]
+xoa-bundle-inspect /tmp/xoa.out.tar.gz [--json]
 ```
 
 Full docs: [docs/DESIGN.md](docs/DESIGN.md) ·

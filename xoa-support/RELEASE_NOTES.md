@@ -4,6 +4,18 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.2 (unreleased)
+
+- feat: self-contained Debian package — `packaging/build-deb.sh` builds
+  `xoa-support_<ver>_all.deb` (commands on PATH, sos plugin auto-registered
+  by postinst, LICENSE+docs in /usr/share). The XOA no longer needs to clone
+  the repo: ship one .deb, `dpkg -i` locally (airgap-safe)
+- docs: install section now leads with the .deb for both online and
+  airgapped XOAs; raw-file copy kept as fallback
+- tests: `tests/test_packaging.py` builds the deb and asserts metadata,
+  payload, and no `__pycache__`/`.pyc`
+- CI builds the deb on every push/PR
+
 ## 0.1.1 (unreleased)
 
 - docs: explicit install instructions for online and airgapped XOAs
