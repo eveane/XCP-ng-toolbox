@@ -5,9 +5,14 @@
 ### Recommended: the self-contained .deb (works online AND airgapped)
 
 xoa-support ships as **one self-contained `Architecture: all` deb** — the XOA
-never needs to clone this repository. Build it once on any machine with
-`dpkg-deb` (present on every Debian/XOA base), then transfer the single
-`.deb` file to the XOA by any channel (scp from a jump host, USB, …):
+never needs to clone this repository. Build it once on any machine, then
+transfer the single `.deb` file to the XOA by any channel (scp from a jump
+host, USB, …). The build script works everywhere:
+
+- **Debian/XOA/Ubuntu**: uses `dpkg-deb` (preinstalled)
+- **Manjaro/Arch or any Unix**: falls back to plain `ar` + `tar` (both in the
+  base system) — a `.deb` is just an `ar` archive of `debian-binary` +
+  `control.tar.gz` + `data.tar.gz`. Alternatively `yay -S dpkg` from the AUR.
 
 ```sh
 # on any online machine (repo checkout):

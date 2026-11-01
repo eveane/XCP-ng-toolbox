@@ -3,8 +3,21 @@
 # needed on the XOA: ship this one file).
 #
 # Usage: ./packaging/build-deb.sh [output-dir]
-# Requires: dpkg-deb (present on any Debian/XOA base system).
+# Requires: dpkg-deb (any Debian/XOA base) — OR, on non-Debian hosts such as
+# Manjaro/Arch, just ar + tar (both in base systems): the script falls back to
+# assembling the .deb manually (a .deb is an ar archive of debian-binary +
+# control.tar.gz + data.tar.gz).
 set -euo pipefail
+
+# Resolve the real dpkg-deb binary up front: `command -v` can be fooled by a
+# failing shim earlier in PATH, so probe by actually running --version.
+DPKG_DEB=""
+for candidate in $(command -v -a dpkg-deb 2>/dev/null || command -v dpkg-deb 2>/dev/null); do
+    if "$candidate" --version >/dev/null 2>&1; then
+        DPKG_DEB="$candidate"
+        break
+    fi
+done
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
@@ -40,8 +53,24 @@ for tool in xoa_scrub xoa_bundle_inspect; do
 done
 
 mkdir -p "$OUT_DIR"
-dpkg-deb --root-owner-group --build "$STAGE/$PKG" "$OUT_DIR/${PKG}.deb"
-echo "built: $OUT_DIR/${PKG}.deb"
+DEB="$OUT_DIR/${PKG}.deb"
+if [ -n "$DPKG_DEB" ]; then
+    "$DPKG_DEB" --root-owner-group --build "$STAGE/$PKG" "$DEB"
+else
+    # portable path (Manjaro/Arch/any Unix with ar+tar): a .deb is
+    #   ar archive = debian-binary + control.tar.gz + data.tar.gz
+    # control members must sit at the archive root; member order is fixed.
+    echo "2.0" > "$STAGE/debian-binary"
+    tar -czf "$STAGE/control.tar.gz" -C "$STAGE/$PKG/DEBIAN" .
+    tar -czf "$STAGE/data.tar.gz" -C "$STAGE/$PKG" --exclude=./DEBIAN .
+    ar rc "$DEB" "$STAGE/debian-binary" "$STAGE/control.tar.gz" "$STAGE/data.tar.gz"
+    echo "note: built with ar+tar (no dpkg-deb on this host)"
+fi
+echo "built: $DEB"
 # note: no piping dpkg-deb output into head here — under `set -o pipefail`
 # a closed pipe (SIGPIPE, exit 141) would fail the build non-deterministically
-dpkg-deb --info "$OUT_DIR/${PKG}.deb"
+if [ -n "$DPKG_DEB" ]; then
+    "$DPKG_DEB" --info "$DEB"
+else
+    ar t "$DEB"
+fi
