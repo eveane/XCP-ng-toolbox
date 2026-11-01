@@ -4,6 +4,11 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.1 (unreleased)
+
+- docs: explicit install instructions for online and airgapped XOAs
+  (docs/COLLECTION.md "Installing on the XOA", README quick start)
+
 ## 0.1.0 (unreleased)
 
 Initial scaffold:
