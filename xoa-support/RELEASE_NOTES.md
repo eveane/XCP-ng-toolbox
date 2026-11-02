@@ -4,6 +4,12 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.14 (unreleased)
+
+- fix(collector): bundle filename now uses UTC (`date -u …Z`) instead of
+  local XOA time: `xoa-support-<host>-YYYYMMDDTHHMMSSZ.tar.gz`
+- bump 0.1.14
+
 ## 0.1.13 (unreleased)
 
 - chore: document the mandatory open-source file header (purpose, authors
