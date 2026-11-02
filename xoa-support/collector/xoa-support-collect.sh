@@ -11,9 +11,15 @@
 # (see docs/COLLECTION.md), never reads private key material, and emits a
 # tar.gz that xoa_scrub.py can post-process before it leaves the site.
 #
-# Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
+# Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos] [-s]
+#                                       [--output-fd [N]]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.15
+#   -s             silent: no progress output on stdout (still logged to
+#                  meta/RUNLOG.txt inside the bundle)
+#   --output-fd N  stream the tar.gz bundle to file descriptor N (default 1,
+#                  i.e. stdout) instead of writing a file — combine with -s:
+#                  sudo xoa-support-collect -s --output-fd | ssh host 'cat > b.tgz'
+# xoa-support-collect version: 0.1.16
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -22,16 +28,22 @@ VERSION=$(sed -n 's/^# xoa-support-collect version: //p' "$0" | head -1)
 
 OUT="xoa-support-$(hostname -s 2>/dev/null || echo xoa)-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 RUN_SOS=1
+SILENT=0
+OUT_FD=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -o) OUT="$2"; shift 2;;
         --no-sos) RUN_SOS=0; shift;;
+        -s) SILENT=1; shift;;
+        --output-fd) OUT_FD=1; [ $# -ge 2 ] && case "$2" in ''|*[!0-9]*) ;; *) OUT_FD="$2"; shift 2; continue;; esac; shift;;
         -V|--version) echo "xoa-support-collect $VERSION"; exit 0;;
         -h|--help)
-            sed -n '2,12p' "$0"; exit 0;;
+            sed -n '2,14p' "$0"; exit 0;;
         *) echo "unknown arg: $1" >&2; exit 2;;
     esac
 done
+
+say() { [ "$SILENT" -eq 1 ] || echo "$*"; }
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "error: run as root — xo-server state under /var/lib is root-only" >&2
@@ -40,7 +52,7 @@ fi
 
 STAGE="$(mktemp -d /tmp/xoa-support.XXXXXX)"
 trap 'rm -rf "$STAGE"' EXIT
-echo "staging bundle in $STAGE"
+say "staging bundle in $STAGE"
 
 XO_DATA=/var/lib/xo-server/data
 UPDATER=/var/lib/xoa-updater
@@ -103,7 +115,7 @@ fi
 
 # --- command outputs (machine-readable, scrubbed later) ---
 # run <output-name> <command...>  — first arg is the file name, rest is the command
-run() { local name="$1"; shift; echo "+ $*"; if "$@" > "$STAGE/commands/$name.out" 2>&1; then log "OK cmd $name: $*"; else log "WARN cmd $name failed (rc=$?): $*"; fi }
+run() { local name="$1"; shift; say "+ $*"; if "$@" > "$STAGE/commands/$name.out" 2>&1; then log "OK cmd $name: $*"; else log "WARN cmd $name failed (rc=$?): $*"; fi }
 mkdir -p "$STAGE/commands"
 run systemctl-status systemctl status xo-server redis-server xoa-updater nginx --no-pager
 run systemctl-list-units systemctl list-units 'xo*' --no-pager
@@ -119,7 +131,7 @@ ps -eo pid,user,args | grep -E 'xo-server|redis-server' | grep -v grep \
 
 # --- optional: full default sos report inside the same bundle ---
 if [ "$RUN_SOS" -eq 1 ] && command -v sos >/dev/null 2>&1; then
-    echo "running sos report (xoa plugin + defaults) ..."
+    say "running sos report (xoa plugin + defaults) ..."
     mkdir -p "$STAGE/sos-tmp"
     # sos 4.x writes the final archive to --tmp-dir (fallback: cwd), named
     # sosreport-<host>-<ts>.tar.xz plus a checksum. NOTE: sos prints the
@@ -139,10 +151,10 @@ if [ "$RUN_SOS" -eq 1 ] && command -v sos >/dev/null 2>&1; then
         for sum in "$SOS_OUT.sha256" "$SOS_OUT.md5"; do
             [ -f "$sum" ] && mv "$sum" "$STAGE/sos/"
         done
-        echo "sos archive: $(basename "$SOS_OUT") -> sos/"
+        say "sos archive: $(basename "$SOS_OUT") -> sos/"
         log "OK sos archive: $(basename "$SOS_OUT") -> sos/"
     else
-        echo "WARN: sos report ran but no archive found; continuing with XOA-only data" >&2
+        echo "WARN: sos report ran but no archive found; continuing with XOA-only data" >&2  # stderr: always visible
         log "WARN sos report ran but no archive found"
     fi
     rm -rf "$STAGE/sos-tmp"
@@ -214,13 +226,20 @@ find "$STAGE" -type d -exec chmod a+x {} +
 # archive into a top-level dir named after the bundle so it extracts into
 # its own directory: xoa-support-<host>-<ts>/...
 BUNDLE_DIR=$(basename "$OUT" .tar.gz)
-tar -czf "$OUT" -C "$STAGE" --exclude='*.sock' --transform "s,^[.],$BUNDLE_DIR," .
-# when run via sudo, hand the bundle to the invoking user, not root
-if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" -eq 0 ]; then
-    chown "$SUDO_USER:${SUDO_USER}" "$OUT" 2>/dev/null || chown "$SUDO_USER" "$OUT"
+if [ -n "$OUT_FD" ]; then
+    # stream the bundle to the given fd (default stdout) — pair with -s so the
+    # stream carries only the tar.gz:  sudo xoa-support-collect -s --output-fd | ssh host 'cat > b.tgz'
+    tar -czf "/dev/fd/$OUT_FD" -C "$STAGE" --exclude='*.sock' --transform "s,^[.],$BUNDLE_DIR," .
+    log "OK bundle streamed to fd $OUT_FD (name: $OUT)"
+    say "bundle streamed to fd $OUT_FD"
+else
+    tar -czf "$OUT" -C "$STAGE" --exclude='*.sock' --transform "s,^[.],$BUNDLE_DIR," .
+    # when run via sudo, hand the bundle to the invoking user, not root
+    if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" -eq 0 ]; then
+        chown "$SUDO_USER:${SUDO_USER}" "$OUT" 2>/dev/null || chown "$SUDO_USER" "$OUT"
+    fi
+    log "OK bundle written: $OUT ($(du -h "$OUT" | cut -f1)), md5=$(md5sum "$OUT" | cut -d' ' -f1)"
+    say "bundle written: $OUT ($(du -h "$OUT" | cut -f1))"
+    say "md5sum: $(md5sum "$OUT" | cut -d' ' -f1)"
+    say "next: xoa-scrub --anonymise --strict $OUT   (or: python3 xoa_scrub.py …)"
 fi
-echo
-log "OK bundle written: $OUT ($(du -h "$OUT" | cut -f1)), md5=$(md5sum "$OUT" | cut -d' ' -f1)"
-echo "bundle written: $OUT ($(du -h "$OUT" | cut -f1))"
-echo "md5sum: $(md5sum "$OUT" | cut -d' ' -f1)"
-echo "next: python3 xoa_scrub.py --anonymise --strict $OUT"
