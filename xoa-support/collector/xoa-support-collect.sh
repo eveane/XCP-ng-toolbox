@@ -8,7 +8,7 @@
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.8
+# xoa-support-collect version: 0.1.9
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -138,13 +138,16 @@ fi
 
 # --- XOA metadata backup: latest XO-config / pool-metadata backup written by
 #     xo-server to its local backup dir (scrubbed later by xoa_scrub.py) ---
-for f in /var/lib/xoa-backups/*.xo.json.gz /var/lib/xoa-backups/*.json.gz \
-         /var/lib/xoa-backups/*metadata*.gz /var/lib/xoa-backups/*.xva; do
-    if [ -f "$f" ]; then
+# XOA backup dirs differ across XOA versions/remotes — search the candidates
+for d in /var/lib/xoa-backups /var/lib/xoa/backup /var/backups/xoa /var/lib/xo-server/backups; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*.xo.json.gz "$d"/*.json.gz "$d"/*metadata*.gz "$d"/*.xva; do
+        [ -f "$f" ] || continue
         mkdir -p "$STAGE/var/lib/xoa-backups"
         cp -a "$f" "$STAGE/var/lib/xoa-backups/"
-    fi
-done 2>/dev/null || true
+        echo "collected metadata backup: $f"
+    done
+done
 
 # --- manifest: what is in the bundle + tool versions ---
 {
@@ -164,8 +167,16 @@ if grep -rIlE 'BEGIN [A-Z ]*PRIVATE KEY' "$STAGE" >/dev/null 2>&1; then
     exit 1
 fi
 
-# sockets (e.g. leveldb/level-party.sock) cannot be archived; skip them
+# sockets (e.g. leveldb/level-party.sock) cannot be archived; skip them.
+# restore the exec bit on directories: cp -a of some XOA dirs (e.g.
+# /etc/xo-server) can lose it, and tar would store drw-r--r--.
+find "$STAGE" -type d -exec chmod a+x {} +
 tar -czf "$OUT" -C "$STAGE" --exclude='*.sock' .
+# when run via sudo, hand the bundle to the invoking user, not root
+if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" -eq 0 ]; then
+    chown "$SUDO_USER:${SUDO_USER}" "$OUT" 2>/dev/null || chown "$SUDO_USER" "$OUT"
+fi
 echo
 echo "bundle written: $OUT ($(du -h "$OUT" | cut -f1))"
+echo "md5sum: $(md5sum "$OUT" | cut -d' ' -f1)"
 echo "next: python3 xoa_scrub.py --anonymise --strict $OUT"
