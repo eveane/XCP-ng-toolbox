@@ -8,7 +8,7 @@
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.7
+# xoa-support-collect version: 0.1.8
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -112,15 +112,23 @@ if [ "$RUN_SOS" -eq 1 ] && command -v sos >/dev/null 2>&1; then
     echo "running sos report (xoa plugin + defaults) ..."
     mkdir -p "$STAGE/sos-tmp"
     # sos 4.x writes the final archive to --tmp-dir (fallback: cwd), named
-    # sosreport-<host>-<ts>.tar.xz plus a .sha256 — NOT sos-report-*.tar.*.
-    # Parse the path from sos's own "saved in:" line, then also glob both
-    # tmp-dir and cwd as fallback.
-    SOS_OUT=$(sos report --batch --tmp-dir "$STAGE/sos-tmp" --enable-plugins=xoa 2>&1 | \
-        tee /dev/stderr | sed -n 's/.*saved in: *//p' | tail -1)
-    [ -n "$SOS_OUT" ] || SOS_OUT=$(ls -t "$STAGE/sos-tmp"/sosreport-*.tar.* "$PWD"/sosreport-*.tar.* 2>/dev/null | head -1)
+    # sosreport-<host>-<ts>.tar.xz plus a checksum. NOTE: sos prints the
+    # path on the line AFTER "saved in:" (tab-indented), and older sos used
+    # an md5 file, not .sha256. Capture full output first (no pipes into
+    # head/tail — under pipefail a closed pipe would abort the script),
+    # then parse and glob.
+    SOS_LOG="$STAGE/sos-run.log"
+    sos report --batch --tmp-dir "$STAGE/sos-tmp" --enable-plugins=xoa >"$SOS_LOG" 2>&1 || true
+    tail -5 "$SOS_LOG" >&2
+    SOS_OUT=$(sed -n 's/.*saved in:[[:space:]]*//p' "$SOS_LOG" | tail -1)
+    [ -n "$SOS_OUT" ] || SOS_OUT=$(awk '/saved in:/{getline; gsub(/^[\t ]+/,""); print; exit}' "$SOS_LOG")
+    [ -n "$SOS_OUT" ] || SOS_OUT=$(ls -t "$STAGE/sos-tmp"/sosreport-*.tar.* 2>/dev/null | head -1 || true)
+    [ -n "$SOS_OUT" ] || SOS_OUT=$(ls -t "$PWD"/sosreport-*.tar.* 2>/dev/null | head -1 || true)
     if [ -n "$SOS_OUT" ] && [ -f "$SOS_OUT" ]; then
         mv "$SOS_OUT" "$STAGE/sos/"
-        [ -f "$SOS_OUT.sha256" ] && mv "$SOS_OUT.sha256" "$STAGE/sos/" 2>/dev/null || true
+        for sum in "$SOS_OUT.sha256" "$SOS_OUT.md5"; do
+            [ -f "$sum" ] && mv "$sum" "$STAGE/sos/"
+        done
         echo "sos archive: $(basename "$SOS_OUT") -> sos/"
     else
         echo "WARN: sos report ran but no archive found; continuing with XOA-only data" >&2

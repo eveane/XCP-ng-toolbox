@@ -20,10 +20,11 @@ if [ ! -d "$SRC_DIR/xoa_support" ]; then
 fi
 
 install -m 0644 "$HERE/xoa.py" "$DEST_PLUGIN_DIR/xoa.py"
-# install the shared python package next to sos so the plugin can import it
-# without pip (airgapped-friendly); pip install . is the alternative.
-install -d "$DEST_PLUGIN_DIR/xoa_support"
-install -m 0644 "$SRC_DIR/xoa_support/"*.py "$DEST_PLUGIN_DIR/xoa_support/"
+# install the shared python package into dist-packages — NOT into the sos
+# plugin dir: sos imports every *.py there as a plugin and would fail on
+# anonymise.py/secret_patterns.py ("No module named ...").
+install -d /usr/lib/python3/dist-packages/xoa_support
+install -m 0644 "$SRC_DIR/xoa_support/"*.py /usr/lib/python3/dist-packages/xoa_support/
 
 echo "installed:"
 echo "  $DEST_PLUGIN_DIR/xoa.py"

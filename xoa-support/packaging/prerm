@@ -3,5 +3,5 @@
 set -e
 SOS_PLUGIN_DIR=/usr/lib/python3/dist-packages/sos/report/plugins
 rm -f "$SOS_PLUGIN_DIR/xoa.py"
-rm -rf "$SOS_PLUGIN_DIR/xoa_support"
+rm -rf /usr/lib/python3/dist-packages/xoa_support
 exit 0
