@@ -1,7 +1,12 @@
 # Consuming a bundle (humans and machines)
 
-The bundle is a plain `tar.gz` mirroring the XOA filesystem plus
-`meta/MANIFEST.txt` — anything that reads tar + text + JSON works.
+The bundle is a plain `tar.gz` that **extracts into its own directory**
+(`xoa-support-<host>-<ts>/…`), mirroring the XOA filesystem plus
+`meta/MANIFEST.txt` — anything that reads tar + text + JSON works:
+
+```sh
+tar -xzf xoa-support-xoa-20261102T033036.tar.gz   # -> ./xoa-support-xoa-20261102T033036/
+```
 
 ## Bundle map — where the key elements live
 

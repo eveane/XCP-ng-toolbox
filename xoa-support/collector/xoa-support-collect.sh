@@ -8,7 +8,7 @@
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.9
+# xoa-support-collect version: 0.1.10
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -138,10 +138,34 @@ fi
 
 # --- XOA metadata backup: latest XO-config / pool-metadata backup written by
 #     xo-server to its local backup dir (scrubbed later by xoa_scrub.py) ---
+# --- generate a fresh XO-config backup on demand, then collect backups ---
+# xo-server API: xo.exportConfig({compress:true}) -> XO-config_<date>.json.gz
+# (admin permission). We call it over the local xo-cli if present; the token
+# is read from xo-cli's own config (~/.config/xo-cli/config.json), never
+# printed. The generated file is scrubbed like everything else.
+mkdir -p "$STAGE/var/lib/xoa-backups"
+XOCLI=""
+for c in /usr/local/bin/xo-cli /usr/bin/xo-cli "$(command -v xo-cli 2>/dev/null)"; do
+    [ -n "$c" ] && [ -x "$c" ] && XOCLI="$c" && break
+done
+if [ -n "$XOCLI" ]; then
+    echo "generating XO config backup via xo-cli (xo.exportConfig)..."
+    GEN_DIR="$STAGE/var/lib/xoa-backups"
+    # xo-cli xo.exportConfig compress:=true — run in GEN_DIR so the download lands there
+    if (cd "$GEN_DIR" && "$XOCLI" xo.exportConfig compress:=true >/dev/null 2>&1); then
+        for f in "$GEN_DIR"/XO-config_*.json.gz "$GEN_DIR"/XO-config_*.json; do
+            [ -f "$f" ] && echo "generated XO config backup: $(basename "$f")"
+        done
+    else
+        echo "WARN: xo-cli exportConfig failed; collecting existing backups only" >&2
+    fi
+else
+    echo "note: xo-cli not found; collecting existing backups only"
+fi
 # XOA backup dirs differ across XOA versions/remotes — search the candidates
 for d in /var/lib/xoa-backups /var/lib/xoa/backup /var/backups/xoa /var/lib/xo-server/backups; do
     [ -d "$d" ] || continue
-    for f in "$d"/*.xo.json.gz "$d"/*.json.gz "$d"/*metadata*.gz "$d"/*.xva; do
+    for f in "$d"/*.xo.json.gz "$d"/*.json.gz "$d"/*metadata*.gz "$d"/*.xva "$d"/XO-config_*; do
         [ -f "$f" ] || continue
         mkdir -p "$STAGE/var/lib/xoa-backups"
         cp -a "$f" "$STAGE/var/lib/xoa-backups/"
@@ -171,7 +195,10 @@ fi
 # restore the exec bit on directories: cp -a of some XOA dirs (e.g.
 # /etc/xo-server) can lose it, and tar would store drw-r--r--.
 find "$STAGE" -type d -exec chmod a+x {} +
-tar -czf "$OUT" -C "$STAGE" --exclude='*.sock' .
+# archive into a top-level dir named after the bundle so it extracts into
+# its own directory: xoa-support-<host>-<ts>/...
+BUNDLE_DIR=$(basename "$OUT" .tar.gz)
+tar -czf "$OUT" -C "$STAGE" --exclude='*.sock' --transform "s,^[.],$BUNDLE_DIR," .
 # when run via sudo, hand the bundle to the invoking user, not root
 if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" -eq 0 ]; then
     chown "$SUDO_USER:${SUDO_USER}" "$OUT" 2>/dev/null || chown "$SUDO_USER" "$OUT"
