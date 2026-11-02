@@ -11,15 +11,21 @@
 # (see docs/COLLECTION.md), never reads private key material, and emits a
 # tar.gz that xoa_scrub.py can post-process before it leaves the site.
 #
-# Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos] [-s]
-#                                       [--output-fd [N]]
-#         ./xoa-support-collect.sh -V | --version
-#   -s             silent: no progress output on stdout (still logged to
-#                  meta/RUNLOG.txt inside the bundle)
-#   --output-fd N  stream the tar.gz bundle to file descriptor N (default 1,
-#                  i.e. stdout) instead of writing a file — combine with -s:
-#                  sudo xoa-support-collect -s --output-fd | ssh host 'cat > b.tgz'
-# xoa-support-collect version: 0.1.16
+# Usage:  sudo xoa-support-collect [-o /path/bundle.tar.gz] [--no-sos] [-s]
+#                                  [--output-fd [N]] [-V|--version] [-h|--help]
+#
+# Options:
+#   -o FILE        write the bundle to FILE (default: xoa-support-<host>-<UTC>.tar.gz)
+#   --no-sos       skip the embedded sos report
+#   -s             silent: no progress on stdout (still logged to meta/RUNLOG.txt)
+#   --output-fd N  stream the tar.gz to file descriptor N (default 1 = stdout)
+#                  instead of writing a file. Combine with -s so stdout carries
+#                  only the bundle, e.g.:
+#                    sudo xoa-support-collect -s --output-fd | <relay command>
+#   -V, --version  print version and exit
+#   -h, --help     this help
+#
+# xoa-support-collect version: 0.1.17
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -38,7 +44,7 @@ while [ $# -gt 0 ]; do
         --output-fd) OUT_FD=1; [ $# -ge 2 ] && case "$2" in ''|*[!0-9]*) ;; *) OUT_FD="$2"; shift 2; continue;; esac; shift;;
         -V|--version) echo "xoa-support-collect $VERSION"; exit 0;;
         -h|--help)
-            sed -n '2,14p' "$0"; exit 0;;
+            sed -n '14,28p' "$0"; exit 0;;
         *) echo "unknown arg: $1" >&2; exit 2;;
     esac
 done
@@ -178,14 +184,45 @@ if [ -n "$XOCLI" ]; then
     # xo.exportConfig returns {$getFrom: <url>} — xo-cli downloads that URL to
     # the special @=<path> parameter (a bare path arg is rejected:
     # "invalid arg"), hence @=... here.
-    if "$XOCLI" xo.exportConfig compress:=true "@=$GEN_DIR/XO-config.json.gz" >"$GEN_DIR/xo-cli.out" 2>&1; then
-        if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
-            log "OK generated XO config backup: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
+    # Auth: xo-cli reads {server, token} from ~/.config/xo-cli/config.json of the
+    # RUNNING user — as root that file is usually empty ("Please use xo-cli
+    # register first"). So: harvest server+token from root's or $SUDO_USER's
+    # xo-cli config and pass them explicitly via --url https://<token>@<host>/,
+    # which xo-cli accepts as credentials (see xo-cli index.mjs getServerConfig).
+    XO_URL_ARGS=""
+    for cfg in "${XDG_CONFIG_HOME:-/root/.config}/xo-cli/config.json" \
+               "${SUDO_USER:+/home/$SUDO_USER/.config/xo-cli/config.json}"; do
+        [ -n "$cfg" ] && [ -f "$cfg" ] || continue
+        XO_URL_ARGS=$(python3 - "$cfg" <<'PYEOF' 2>/dev/null || true
+import json, sys, urllib.parse
+try:
+    c = json.load(open(sys.argv[1]))
+    server, token = c.get("server"), c.get("token")
+    if server and token:
+        u = urllib.parse.urlsplit(server)
+        print(f"--allowUnauthorized --url {u.scheme}://{urllib.parse.quote(token, safe='')}@{u.netloc}/")
+except Exception:
+    pass
+PYEOF
+)
+        [ -n "$XO_URL_ARGS" ] && break
+    done
+    if [ -n "$XO_URL_ARGS" ]; then
+        log "generating XO config backup: $XOCLI $XO_URL_ARGS xo.exportConfig compress:=true @=…/XO-config.json.gz (token from xo-cli config, not logged)"
+        # shellcheck disable=SC2086
+        if "$XOCLI" $XO_URL_ARGS xo.exportConfig compress:=true "@=$GEN_DIR/XO-config.json.gz" >"$GEN_DIR/xo-cli.out" 2>&1; then
+            if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
+                log "OK generated XO config backup: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
+            else
+                log "WARN xo-cli returned success but output file missing/empty; see var/lib/xoa-backups/xo-cli.out"
+            fi
         else
-            log "WARN xo-cli returned success but output file missing/empty; see var/lib/xoa-backups/xo-cli.out"
+            log "FAIL xo-cli xo.exportConfig (rc=$?); output in var/lib/xoa-backups/xo-cli.out; collecting existing backups only"
         fi
     else
-        log "FAIL xo-cli xo.exportConfig (rc=$?); output in var/lib/xoa-backups/xo-cli.out; collecting existing backups only"
+        log "FAIL no xo-cli registration found (no {server,token} in root's or ${SUDO_USER:-user}'s ~/.config/xo-cli/config.json). Run once as your user: xo-cli register <https://xoa-host> <user>  — or rely on scheduled backups in the candidate dirs. Output: var/lib/xoa-backups/xo-cli.out"
+        : > "$GEN_DIR/xo-cli.out"
+        echo "no xo-cli registration found; run: xo-cli register <xoa-url> <user>" >> "$GEN_DIR/xo-cli.out"
     fi
 else
     log "WARN xo-cli not found; collecting existing backups only"
