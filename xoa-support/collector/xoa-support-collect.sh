@@ -25,7 +25,7 @@
 #   -V, --version  print version and exit
 #   -h, --help     this help
 #
-# xoa-support-collect version: 0.1.19
+# xoa-support-collect version: 0.1.20
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -228,40 +228,55 @@ if [ -n "$XOCLI" ]; then
         fi
     fi
     if [ ! -s "$GEN_DIR/XO-config.json.gz" ]; then
-        # strategy 2: temporary xoa-support account with random password
+        # strategy 2: temporary xoa-support account with random password.
+        # find recover-account in PATH, in known XOA locations, or any xo-build
         RA=""
         for c in xo-recover-account xo-server-recover-account \
+                 /usr/local/bin/xo-server-recover-account /usr/bin/xo-server-recover-account \
+                 /opt/xo/xo-server/dist/recover-account-cli.mjs \
                  /opt/xo/packages/xo-server/dist/recover-account-cli.mjs \
-                 $(ls /opt/xo/xo-builds/*/packages/xo-server/dist/recover-account-cli.mjs 2>/dev/null | head -1); do
-            [ -n "$c" ] && { command -v "$c" >/dev/null 2>&1 || [ -f "$c" ]; } && RA="$c" && break
+                 /opt/xen-orchestra/packages/xo-server/dist/recover-account-cli.mjs; do
+            if [ -n "$c" ] && { command -v "$c" >/dev/null 2>&1 || [ -f "$c" ]; }; then RA="$c"; break; fi
         done
+        if [ -z "$RA" ]; then
+            RA=$(ls /opt/xo/xo-builds/*/packages/xo-server/dist/recover-account-cli.mjs 2>/dev/null | sort | tail -1 || true)
+            if [ -n "$RA" ] && [ ! -f "$RA" ]; then RA=""; fi
+        fi
+        if [ -z "$RA" ]; then
+            RA=$(find /opt/xo /opt/xen-orchestra -name recover-account-cli.mjs -path '*/dist/*' 2>/dev/null | sort | tail -1 || true)
+            if [ -n "$RA" ] && [ ! -f "$RA" ]; then RA=""; fi
+        fi
         if [ -n "$RA" ]; then
             PW=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)
-            log "resetting local 'xoa-support' XO account with a random password (recover-account; password NOT logged) to call the local API"
-            # 2-arg form is non-interactive per recover-account-cli.mjs
-            if [ -x "$RA" ] || command -v "$RA" >/dev/null 2>&1; then
-                "$RA" xoa-support "$PW" >"$GEN_DIR/recover-account.out" 2>&1 || true
+            log "resetting local 'xoa-support' XO account with a random password via: $RA (password NOT logged)"
+            # 2-arg form is non-interactive per recover-account-cli.mjs.
+            # Run it so it can never hang on a prompt: stdin from /dev/null + timeout.
+            if command -v "$RA" >/dev/null 2>&1; then
+                timeout 60 "$RA" xoa-support "$PW" </dev/null >"$GEN_DIR/recover-account.out" 2>&1 || \
+                    echo "recover-account rc=$? (see recover-account.out)" >>"$GEN_DIR/recover-account.out"
+            elif command -v node >/dev/null 2>&1; then
+                timeout 60 node "$RA" xoa-support "$PW" </dev/null >"$GEN_DIR/recover-account.out" 2>&1 || \
+                    echo "recover-account rc=$? (see recover-account.out)" >>"$GEN_DIR/recover-account.out"
             else
-                node "$RA" xoa-support "$PW" >"$GEN_DIR/recover-account.out" 2>&1 || true
+                echo "no node runtime to run $RA" >>"$GEN_DIR/recover-account.out"
             fi
             # scrub the password from captured output (it must not land in the bundle)
             sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/recover-account.out" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-            for base in https://127.0.0.1/ http://127.0.0.1/; do
+            for base in https://127.0.0.1/ http://127.0.0.1/ https://localhost/ http://localhost/; do
                 [ -s "$GEN_DIR/XO-config.json.gz" ] && break
                 log "trying xo-cli export as xoa-support against $base"
-                if xo_export "--allowUnauthorized --url ${base/:\/\//://xoa-support:$PW@}"; then
-                    sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-                fi
+                xo_export "--allowUnauthorized --url ${base/:\/\//://xoa-support:$PW@}" || true
+                sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
             done
             if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
                 log "OK generated XO config backup via temporary xoa-support account: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
                 log "note: the 'xoa-support' XO admin account was created/reset by recover-account; remove it later if unwanted (XO UI > Settings > Users)"
             else
                 sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" "$GEN_DIR/recover-account.out" 2>/dev/null || true
-                log "FAIL xo-cli xo.exportConfig (rc=$?); see var/lib/xoa-backups/xo-cli.out and recover-account.out; collecting existing backups only"
+                log "FAIL xo-cli xo.exportConfig after temp account; see var/lib/xoa-backups/xo-cli.out and recover-account.out; collecting existing backups only"
             fi
         else
-            log "FAIL no xo-cli registration and no recover-account tool found; run 'xo-cli register <xoa-url> <user>' once as your user, or rely on scheduled backups. See var/lib/xoa-backups/xo-cli.out"
+            log "FAIL no xo-cli registration and no recover-account tool found (searched PATH, /usr/local/bin, /opt/xo, /opt/xen-orchestra); run 'xo-cli register <xoa-url> <user>' once as your user, or rely on scheduled backups. See var/lib/xoa-backups/xo-cli.out"
         fi
     fi
 else
