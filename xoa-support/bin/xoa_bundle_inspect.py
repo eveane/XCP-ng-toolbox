@@ -64,8 +64,12 @@ def summarise(path):
         "sdn_controller_files": [],
         "warnings": [],
     }
-    for name, fh in iter_files(tf, root):
+    for raw_name, fh in iter_files(tf, root):
         summary["files_total"] += 1
+        name = raw_name.lstrip("./")
+        parts = name.split("/", 1)
+        if len(parts) == 2 and name.split("/")[0].startswith("xoa-support-") and "/" in parts[1]:
+            name = parts[1]  # strip the top-level bundle dir (xoa-support-<host>-<ts>/)
         base = os.path.basename(name)
         data = fh.read() if fh is not None else b""
         if name.endswith("config.toml") or "xo-server" in name and base.endswith(".toml"):
@@ -90,6 +94,8 @@ def summarise(path):
             summary["redis_log_lines"] += data.count(b"\n")
         if "/xoa-updater/" in name:
             summary["updater_files"].append(base)
+        if "/xoa-backups/" in name:
+            summary.setdefault("xoa_backups", []).append(base)
         if "/sdn-controller/" in name:
             summary["sdn_controller_files"].append(base)
             if base.endswith("-key.pem") or base == "client-key.pem":
@@ -111,6 +117,7 @@ def render_text(s):
         f"{s['rpu_traces']['heartbeat']} heartbeats, runs: {len(s['rpu_traces']['runs'])}",
         f"redis log lines: {s['redis_log_lines']}",
         f"xoa-updater files: {', '.join(s['updater_files']) or '-'}",
+        f"xoa-backups files: {', '.join(s.get('xoa_backups', [])) or '-'}",
         f"sdn-controller files: {', '.join(s['sdn_controller_files']) or '-'}",
     ]
     if s["warnings"]:

@@ -4,6 +4,20 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.10 (unreleased)
+
+- feat(collector): generate a fresh XO config backup on demand before
+  collecting — `xo-cli xo.exportConfig compress:=true` (xo-server API,
+  admin) writes `XO-config_<date>.json.gz` into var/lib/xoa-backups/ in the
+  bundle (token read from xo-cli's own config, never printed; file is
+  scrubbed like everything else). Existing backups from the candidate dirs
+  are collected as before.
+- feat(collector): the tar.gz now extracts into its own directory
+  (`xoa-support-<host>-<ts>/...`) via --transform; inspector strips that
+  top-level dir when summarizing; scrubber preserves it
+- feat(inspect): report lists xoa-backups files
+- bump 0.1.10
+
 ## 0.1.9 (unreleased)
 
 - fix(collector): search several XOA backup dirs (/var/lib/xoa-backups,
