@@ -4,6 +4,18 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.17 (unreleased)
+
+- fix(collector): on-demand XO config backup auth — xo-cli reads
+  {server,token} from the RUNNING user's ~/.config/xo-cli/config.json; as
+  root that's empty ("Please use xo-cli register first"). The collector now
+  harvests server+token from root's or $SUDO_USER's xo-cli config and passes
+  them as `--url https://<token>@<host>/ --allowUnauthorized` (URL-encoded;
+  token never logged). If no registration exists, RUNLOG says to run
+  `xo-cli register <xoa-url> <user>` once as your user.
+- fix(collector): --help now prints the full, current option list
+  (-o/--no-sos/-s/--output-fd/-V/-h with examples)
+
 ## 0.1.15 (unreleased)
 
 - fix(collector): xo-cli takes the export target as `@=<path>` — a bare path
