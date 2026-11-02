@@ -13,7 +13,7 @@
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.14
+# xoa-support-collect version: 0.1.15
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -162,10 +162,11 @@ for c in /usr/local/bin/xo-cli /usr/bin/xo-cli "$(command -v xo-cli 2>/dev/null)
     [ -n "$c" ] && [ -x "$c" ] && XOCLI="$c" && break
 done
 if [ -n "$XOCLI" ]; then
-    log "generating XO config backup: $XOCLI xo.exportConfig compress:=true > $GEN_DIR/XO-config.json.gz"
+    log "generating XO config backup: $XOCLI xo.exportConfig compress:=true @=$GEN_DIR/XO-config.json.gz"
     # xo.exportConfig returns {$getFrom: <url>} — xo-cli downloads that URL to
-    # the `file` argument (NOT to cwd), hence the explicit output file.
-    if "$XOCLI" xo.exportConfig compress:=true "$GEN_DIR/XO-config.json.gz" >"$GEN_DIR/xo-cli.out" 2>&1; then
+    # the special @=<path> parameter (a bare path arg is rejected:
+    # "invalid arg"), hence @=... here.
+    if "$XOCLI" xo.exportConfig compress:=true "@=$GEN_DIR/XO-config.json.gz" >"$GEN_DIR/xo-cli.out" 2>&1; then
         if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
             log "OK generated XO config backup: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
         else
