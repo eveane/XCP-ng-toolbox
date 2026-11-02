@@ -4,6 +4,15 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.15 (unreleased)
+
+- fix(collector): xo-cli takes the export target as `@=<path>` — a bare path
+  arg fails with "invalid arg" (parseParameters requires name=value; the
+  $getFrom download goes to the @ param). Call is now
+  `xo-cli xo.exportConfig compress:=true @=<bundle>/var/lib/xoa-backups/XO-config.json.gz`.
+  Verified against xo-cli source + fake harness (bare arg rejected, @= works).
+- bump 0.1.15
+
 ## 0.1.14 (unreleased)
 
 - fix(collector): bundle filename now uses UTC (`date -u …Z`) instead of

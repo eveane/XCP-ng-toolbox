@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xoa-support"
-version = "0.1.14"
+version = "0.1.15"
 description = "Support bundle collection, scrubbing and inspection for Xen Orchestra Appliance (XOA)"
 readme = "README.md"
 requires-python = ">=3.9"
