@@ -8,7 +8,7 @@
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.10
+# xoa-support-collect version: 0.1.11
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -41,6 +41,11 @@ XO_DATA=/var/lib/xo-server/data
 UPDATER=/var/lib/xoa-updater
 
 mkdir -p "$STAGE"/{etc,var/lib,var/log,commands,meta,sos}
+
+# --- run log: every action (and its status) is recorded at the bundle root ---
+RUNLOG="$STAGE/meta/RUNLOG.txt"
+log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >> "$RUNLOG"; echo "$*"; }
+log "xoa-support-collect $VERSION starting (user=$(id -un), sudo_user=${SUDO_USER:-none})"
 
 # --- xo-server configuration ---
 if [ -d /etc/xo-server ]; then
@@ -93,7 +98,7 @@ fi
 
 # --- command outputs (machine-readable, scrubbed later) ---
 # run <output-name> <command...>  — first arg is the file name, rest is the command
-run() { local name="$1"; shift; echo "+ $*"; "$@" > "$STAGE/commands/$name.out" 2>&1 || true; }
+run() { local name="$1"; shift; echo "+ $*"; if "$@" > "$STAGE/commands/$name.out" 2>&1; then log "OK cmd $name: $*"; else log "WARN cmd $name failed (rc=$?): $*"; fi }
 mkdir -p "$STAGE/commands"
 run systemctl-status systemctl status xo-server redis-server xoa-updater nginx --no-pager
 run systemctl-list-units systemctl list-units 'xo*' --no-pager
@@ -130,8 +135,10 @@ if [ "$RUN_SOS" -eq 1 ] && command -v sos >/dev/null 2>&1; then
             [ -f "$sum" ] && mv "$sum" "$STAGE/sos/"
         done
         echo "sos archive: $(basename "$SOS_OUT") -> sos/"
+        log "OK sos archive: $(basename "$SOS_OUT") -> sos/"
     else
         echo "WARN: sos report ran but no archive found; continuing with XOA-only data" >&2
+        log "WARN sos report ran but no archive found"
     fi
     rm -rf "$STAGE/sos-tmp"
 fi
@@ -144,32 +151,34 @@ fi
 # is read from xo-cli's own config (~/.config/xo-cli/config.json), never
 # printed. The generated file is scrubbed like everything else.
 mkdir -p "$STAGE/var/lib/xoa-backups"
+GEN_DIR="$STAGE/var/lib/xoa-backups"
 XOCLI=""
 for c in /usr/local/bin/xo-cli /usr/bin/xo-cli "$(command -v xo-cli 2>/dev/null)"; do
     [ -n "$c" ] && [ -x "$c" ] && XOCLI="$c" && break
 done
 if [ -n "$XOCLI" ]; then
-    echo "generating XO config backup via xo-cli (xo.exportConfig)..."
-    GEN_DIR="$STAGE/var/lib/xoa-backups"
-    # xo-cli xo.exportConfig compress:=true — run in GEN_DIR so the download lands there
-    if (cd "$GEN_DIR" && "$XOCLI" xo.exportConfig compress:=true >/dev/null 2>&1); then
-        for f in "$GEN_DIR"/XO-config_*.json.gz "$GEN_DIR"/XO-config_*.json; do
-            [ -f "$f" ] && echo "generated XO config backup: $(basename "$f")"
-        done
+    log "generating XO config backup: $XOCLI xo.exportConfig compress:=true > $GEN_DIR/XO-config.json.gz"
+    # xo.exportConfig returns {$getFrom: <url>} — xo-cli downloads that URL to
+    # the `file` argument (NOT to cwd), hence the explicit output file.
+    if "$XOCLI" xo.exportConfig compress:=true "$GEN_DIR/XO-config.json.gz" >"$GEN_DIR/xo-cli.out" 2>&1; then
+        if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
+            log "OK generated XO config backup: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
+        else
+            log "WARN xo-cli returned success but output file missing/empty; see var/lib/xoa-backups/xo-cli.out"
+        fi
     else
-        echo "WARN: xo-cli exportConfig failed; collecting existing backups only" >&2
+        log "FAIL xo-cli xo.exportConfig (rc=$?); output in var/lib/xoa-backups/xo-cli.out; collecting existing backups only"
     fi
 else
-    echo "note: xo-cli not found; collecting existing backups only"
+    log "WARN xo-cli not found; collecting existing backups only"
 fi
 # XOA backup dirs differ across XOA versions/remotes — search the candidates
 for d in /var/lib/xoa-backups /var/lib/xoa/backup /var/backups/xoa /var/lib/xo-server/backups; do
     [ -d "$d" ] || continue
     for f in "$d"/*.xo.json.gz "$d"/*.json.gz "$d"/*metadata*.gz "$d"/*.xva "$d"/XO-config_*; do
         [ -f "$f" ] || continue
-        mkdir -p "$STAGE/var/lib/xoa-backups"
         cp -a "$f" "$STAGE/var/lib/xoa-backups/"
-        echo "collected metadata backup: $f"
+        log "OK collected existing backup: $f"
     done
 done
 
@@ -187,6 +196,7 @@ done
 # (grep -I skips binary files so leveldb .ldb/.log blobs don't false-positive)
 if grep -rIlE 'BEGIN [A-Z ]*PRIVATE KEY' "$STAGE" >/dev/null 2>&1; then
     echo "error: private key material detected in staging area; aborting" >&2
+    log "FAIL private key material detected in staging area; aborting"
     grep -rlE 'BEGIN [A-Z ]*PRIVATE KEY' "$STAGE" >&2
     exit 1
 fi
@@ -204,6 +214,7 @@ if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" -eq 0 ]; then
     chown "$SUDO_USER:${SUDO_USER}" "$OUT" 2>/dev/null || chown "$SUDO_USER" "$OUT"
 fi
 echo
+log "OK bundle written: $OUT ($(du -h "$OUT" | cut -f1)), md5=$(md5sum "$OUT" | cut -d' ' -f1)"
 echo "bundle written: $OUT ($(du -h "$OUT" | cut -f1))"
 echo "md5sum: $(md5sum "$OUT" | cut -d' ' -f1)"
 echo "next: python3 xoa_scrub.py --anonymise --strict $OUT"
