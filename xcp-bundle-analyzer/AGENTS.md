@@ -32,6 +32,11 @@ Rendering modules must not read files; parsing modules must not format output.
 - Do NOT hand-edit `tests/fixtures/`. Regenerate with:
   `python3 tests/build_fixtures.py`
 - Sizes are stored in bytes (`u64`); display helpers (`gib`/`mib`) live in `render/util.rs` and `report/util.rs`.
+- Every source file starts with the standard open-source header defined in
+  the root README ("File headers"): one-line purpose, `Author: eveane &
+  Vibe Mistral`, date, and the LGPL-2.1 license statement (`//` comments,
+  above any `//!` docs). Add it to every new file; never strip or alter it
+  on existing ones.
 
 ## Commands (run in this order, stop at first failure)
 

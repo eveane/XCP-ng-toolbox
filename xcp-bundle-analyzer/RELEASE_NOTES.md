@@ -4,6 +4,17 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.4.5 (patch)
+
+- chore: document the mandatory open-source file header (purpose, authors
+  eveane & Vibe Mistral, date, LGPL-2.1 statement) in the root README and
+  AGENTS.md so every agent applies it to source files
+
+## v0.4.4 (patch)
+
+- chore: add a standard open-source header (authors eveane & Vibe Mistral, date,
+  one-line purpose, LGPL-2.1 statement) to every Rust source file
+
 ## v0.4.3 (patch)
 
 - feat: `vdi-tree` now supports `-f json` and `-f html` export (text

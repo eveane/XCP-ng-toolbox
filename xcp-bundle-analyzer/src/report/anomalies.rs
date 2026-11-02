@@ -1,3 +1,8 @@
+// anomalies.rs - heuristic detection of settings that need attention
+// Author: eveane & Vibe Mistral
+// Date: 2026-11-02
+// Open source: LGPL-2.1: free software under the GNU Lesser General Public License v2.1, as-is without warranty; see xcp-bundle-analyzer/Cargo.toml
+
 //! Heuristic anomaly detection over a report.
 
 use super::types::{Anomaly, BundleReport, VmReport};

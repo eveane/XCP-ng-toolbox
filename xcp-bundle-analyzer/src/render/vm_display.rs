@@ -1,3 +1,8 @@
+// vm_display.rs - xe vm-param-list-like detail view for one VM
+// Author: eveane & Vibe Mistral
+// Date: 2026-11-02
+// Open source: LGPL-2.1: free software under the GNU Lesser General Public License v2.1, as-is without warranty; see xcp-bundle-analyzer/Cargo.toml
+
 //! `xe vm-param-list`-like detail view for one VM.
 
 use super::util::gib;

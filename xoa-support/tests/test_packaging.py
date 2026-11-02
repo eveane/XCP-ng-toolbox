@@ -1,3 +1,8 @@
+# test_packaging.py - tests for the self-contained .deb build
+# Author: eveane & Vibe Mistral
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 """Tests for packaging/build-deb.sh — the self-contained .deb."""
 import os
 import shutil

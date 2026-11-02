@@ -1,4 +1,9 @@
 #!/bin/sh
+# postinst - deb postinst: register the sos plugin when sos is present
+# Author: eveane & Vibe Mistral
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 # postinst: register the bundled sos plugin with the system sos, if present.
 set -e
 

@@ -1,4 +1,8 @@
 #!/bin/bash
+# Bond-Create.sh - create a network bond on an XCP-ng host and attach the management interface to it
+# Author: eveane & Vibe Mistral
+# Date: 2026-11-02
+# Open source: free to use, modify and share, as-is without warranty; see the repository README
 
 # Script to create a bond on XCP-ng 
 # it gives the option to use an existing network or create a new one

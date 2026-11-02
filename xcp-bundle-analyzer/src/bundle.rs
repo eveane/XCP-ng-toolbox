@@ -1,3 +1,8 @@
+// bundle.rs - input abstraction for status-report bundles (tar/tar.gz/tar.bz2/zip/dir/bare xapi-db.xml)
+// Author: eveane & Vibe Mistral
+// Date: 2026-11-02
+// Open source: LGPL-2.1: free software under the GNU Lesser General Public License v2.1, as-is without warranty; see xcp-bundle-analyzer/Cargo.toml
+
 use crate::xapidb::XapiDb;
 use anyhow::{bail, Context, Result};
 use std::fs;
