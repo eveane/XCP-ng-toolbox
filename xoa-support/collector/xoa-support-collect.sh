@@ -25,7 +25,7 @@
 #   -V, --version  print version and exit
 #   -h, --help     this help
 #
-# xoa-support-collect version: 0.1.18
+# xoa-support-collect version: 0.1.19
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -208,8 +208,13 @@ PYEOF
 done
 
 xo_export() {  # $1 = xo-cli args (incl. --url ...), writes $GEN_DIR/XO-config.json.gz
+    # never abort the whole run if xo-cli dies (set -e): report rc and continue
     # shellcheck disable=SC2086
-    "$XOCLI" $1 xo.exportConfig compress:=true "@=$GEN_DIR/XO-config.json.gz" >>"$GEN_DIR/xo-cli.out" 2>&1
+    if "$XOCLI" $1 xo.exportConfig compress:=true "@=$GEN_DIR/XO-config.json.gz" >>"$GEN_DIR/xo-cli.out" 2>&1; then
+        return 0
+    fi
+    echo "xo-cli rc=$?" >>"$GEN_DIR/xo-cli.out"
+    return 1
 }
 
 if [ -n "$XOCLI" ]; then
@@ -219,7 +224,7 @@ if [ -n "$XOCLI" ]; then
         if xo_export "$XO_URL_ARGS" && [ -s "$GEN_DIR/XO-config.json.gz" ]; then
             log "OK generated XO config backup: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
         else
-            log "WARN xo-cli export with existing registration failed; see var/lib/xoa-backups/xo-cli.out"
+            log "WARN xo-cli export with existing registration failed; see var/lib/xoa-backups/xo-cli.out — falling back to temp account"
         fi
     fi
     if [ ! -s "$GEN_DIR/XO-config.json.gz" ]; then
