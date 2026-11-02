@@ -1,3 +1,8 @@
+// mod.rs - output rendering: text, JSON and HTML
+// Author: eveane & Vibe Code
+// Date: 2026-11-02
+// Open source: LGPL-2.1: free software under the GNU Lesser General Public License v2.1, as-is without warranty; see xcp-bundle-analyzer/Cargo.toml
+
 //! Output rendering: text, JSON, HTML.
 //!
 //! Data flows in one direction: report structs in, formatted strings out.

@@ -1,3 +1,8 @@
+# test_sos_plugin.py - import/structure tests for the sos plugin with a stubbed sos package
+# Author: eveane & Vibe Code
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 """Import/structure tests for the sos plugin, with a stubbed sos package.
 
 The real sos is not installed in CI; we stub sos.report.plugins so the plugin

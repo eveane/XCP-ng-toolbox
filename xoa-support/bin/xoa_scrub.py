@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# xoa_scrub.py - security gate: redact and optionally anonymise a support bundle, strict-verify, write scrub-report.json
+# Author: eveane & Vibe Code
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 """xoa_scrub.py — redact and optionally anonymise an xoa-support bundle.
 
 Runs AFTER collection, BEFORE the bundle leaves the customer site. This is

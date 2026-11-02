@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# build_fixtures.py - regenerate tests/fixtures/ bundles (never hand-edit fixtures)
+# Author: eveane & Vibe Code
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 """Regenerate tests/fixtures/. Do not hand-edit fixtures — run this script."""
 import json
 import os

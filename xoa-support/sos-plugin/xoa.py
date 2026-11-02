@@ -1,7 +1,7 @@
-# Copyright (C) 2026 the xoa-support authors
-# This file is part of xoa-support and is licensed under GPL-2.0-only
-# (see the LICENSE file at the root of the xoa-support project), the same
-# license as sosreport, so it can be shipped alongside sos plugins.
+# xoa.py - sos report plugin collecting XOA state, written against the sosreport plugin API (GPL-2.0-only)
+# Author: eveane & Vibe Code
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
 
 """sos plugin for Xen Orchestra Appliance (XOA).
 

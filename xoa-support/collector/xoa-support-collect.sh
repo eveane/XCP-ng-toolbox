@@ -1,4 +1,9 @@
 #!/bin/bash
+# xoa-support-collect.sh - dependency-free airgapped collector building an XOA support bundle tar.gz
+# Author: eveane & Vibe Code
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 # xoa-support-collect.sh — airgapped support bundle collector for XOA.
 #
 # No dependencies beyond coreutils/tar/find/grep: safe to copy onto an
@@ -8,7 +13,7 @@
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.11
+# xoa-support-collect version: 0.1.12
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail

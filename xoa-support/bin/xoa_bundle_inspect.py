@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# xoa_bundle_inspect.py - read-only inspector: text or JSON summary of a support bundle
+# Author: eveane & Vibe Code
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 """xoa_bundle_inspect.py — summarize an xoa-support bundle for humans and machines.
 
 Proof of concept for the "consume" side: reads a bundle (tar.gz or plain

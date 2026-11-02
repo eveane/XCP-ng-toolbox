@@ -1,3 +1,8 @@
+# anonymise.py - deterministic salted anonymisation of bundle identifiers
+# Author: eveane & Vibe Code
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 """Deterministic anonymisation helpers for xoa-support bundles.
 
 Replaces identifying values (hostnames, IPs, UUIDs, emails, usernames,

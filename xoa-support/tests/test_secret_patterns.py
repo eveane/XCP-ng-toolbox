@@ -1,3 +1,8 @@
+# test_secret_patterns.py - tests for the shared redaction patterns
+# Author: eveane & Vibe Code
+# Date: 2026-11-02
+# Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
+
 """Tests for the shared redaction patterns — the security core."""
 import re
 

@@ -4,6 +4,13 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.12 (unreleased)
+
+- chore: add a standard open-source header (authors eveane & Vibe Code, date,
+  one-line purpose, license statement) to every script and core source file
+  (shell, Python, Rust) in this project and the rest of the repository
+- bump 0.1.12
+
 ## 0.1.10 (unreleased)
 
 - feat(collector): generate a fresh XO config backup on demand before
