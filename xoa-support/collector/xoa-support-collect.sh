@@ -13,7 +13,7 @@
 #
 # Usage:  sudo ./xoa-support-collect.sh [-o /path/bundle.tar.gz] [--no-sos]
 #         ./xoa-support-collect.sh -V | --version
-# xoa-support-collect version: 0.1.13
+# xoa-support-collect version: 0.1.14
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
