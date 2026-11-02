@@ -4,6 +4,13 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.13 (unreleased)
+
+- chore: document the mandatory open-source file header (purpose, authors
+  eveane & Vibe Mistral, date, license statement) in the root README and
+  both AGENTS.md files so every agent applies it to scripts and core files
+- bump 0.1.13
+
 ## 0.1.12 (unreleased)
 
 - chore: add a standard open-source header (authors eveane & Vibe Mistral, date,

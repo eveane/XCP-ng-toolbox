@@ -32,6 +32,14 @@ gate), inspect (text/JSON summary). GPL-2.0-only.
   Dev-only deps go in `requirements-dev.txt`.
 - Docs live in `docs/` and must be updated in the same commit as the change.
 
+## File headers (mandatory)
+
+Every script and core file under `xoa-support/` carries the standard
+open-source header defined in the root README ("File headers"): one-line
+purpose, `Author: eveane & Vibe Mistral`, date, and the GPL-2.0-only license
+statement. Agents must add it to every new file and never strip or alter it
+on existing ones.
+
 ## Commands (run in this order, stop at first failure)
 
 ```

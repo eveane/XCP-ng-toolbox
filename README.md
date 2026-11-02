@@ -19,6 +19,27 @@ All projects in this repository follow `x.y.z` (major.minor.patch):
 See `xcp-bundle-analyzer/RELEASE_NOTES.md` for the per-version history of the
 analyzer.
 
+## File headers (mandatory)
+
+Every script and core source file (`.sh`, `.py`, `.rs`, and Debian maintainer
+scripts such as `packaging/postinst`/`prerm`) must start with the standard
+open-source header: 4 comment lines placed after the shebang (`#` for
+shell/Python, `//` for Rust; the shebang stays on line 1):
+
+    # <file-name> - <one-line purpose>
+    # Author: eveane & Vibe Mistral
+    # Date: <YYYY-MM-DD, date of the change>
+    # Open source: <license statement>
+
+The license statement matches the subproject:
+
+- `xoa-support/**`: `Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE`
+- `xcp-bundle-analyzer/**`: `Open source: LGPL-2.1: free software under the GNU Lesser General Public License v2.1, as-is without warranty; see xcp-bundle-analyzer/Cargo.toml`
+- scripts at the repository root: `Open source: free to use, modify and share, as-is without warranty; see the repository README`
+
+Agents: add this header to every new script/core file and keep it intact when
+editing existing ones; never change an existing header's author line.
+
 ## Bond Create
 
 script to create bond. 
