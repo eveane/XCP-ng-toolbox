@@ -6,7 +6,7 @@ the major `x` stays static at 0 until the first release-ready version.
 
 ## v0.4.4 (patch)
 
-- chore: add a standard open-source header (authors eveane & Vibe Code, date,
+- chore: add a standard open-source header (authors eveane & Vibe Mistral, date,
   one-line purpose, LGPL-2.1 statement) to every Rust source file
 
 ## v0.4.3 (patch)

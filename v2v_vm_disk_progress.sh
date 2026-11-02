@@ -1,6 +1,6 @@
 #!/bin/bash
 # v2v_vm_disk_progress.sh - show live V2V VM disk migration progress per VMDK from xo-server journal logs
-# Author: eveane & Vibe Code
+# Author: eveane & Vibe Mistral
 # Date: 2026-11-02
 # Open source: free to use, modify and share, as-is without warranty; see the repository README
 

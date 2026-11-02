@@ -1,5 +1,5 @@
 # test_inspector.py - tests for the bundle inspector
-# Author: eveane & Vibe Code
+# Author: eveane & Vibe Mistral
 # Date: 2026-11-02
 # Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
 

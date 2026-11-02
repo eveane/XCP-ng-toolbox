@@ -1,6 +1,6 @@
 #!/bin/bash
 # xoa-support-collect.sh - dependency-free airgapped collector building an XOA support bundle tar.gz
-# Author: eveane & Vibe Code
+# Author: eveane & Vibe Mistral
 # Date: 2026-11-02
 # Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
 

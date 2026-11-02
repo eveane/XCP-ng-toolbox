@@ -1,5 +1,5 @@
 # xoa.py - sos report plugin collecting XOA state, written against the sosreport plugin API (GPL-2.0-only)
-# Author: eveane & Vibe Code
+# Author: eveane & Vibe Mistral
 # Date: 2026-11-02
 # Open source: GPL-2.0-only: free software under the GNU General Public License v2, as-is without warranty; see xoa-support/LICENSE
 

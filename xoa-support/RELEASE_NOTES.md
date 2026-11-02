@@ -6,7 +6,7 @@ commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 
 ## 0.1.12 (unreleased)
 
-- chore: add a standard open-source header (authors eveane & Vibe Code, date,
+- chore: add a standard open-source header (authors eveane & Vibe Mistral, date,
   one-line purpose, license statement) to every script and core source file
   (shell, Python, Rust) in this project and the rest of the repository
 - bump 0.1.12

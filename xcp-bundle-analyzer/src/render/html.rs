@@ -1,5 +1,5 @@
 // html.rs - self-contained offline HTML dashboard
-// Author: eveane & Vibe Code
+// Author: eveane & Vibe Mistral
 // Date: 2026-11-02
 // Open source: LGPL-2.1: free software under the GNU Lesser General Public License v2.1, as-is without warranty; see xcp-bundle-analyzer/Cargo.toml
 

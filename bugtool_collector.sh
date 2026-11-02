@@ -1,6 +1,6 @@
 #!/bin/bash
 # bugtool_collector.sh - collect xen-bugtool archives from every host of an XCP-ng pool over SSH into one local tar.gz
-# Author: eveane & Vibe Code
+# Author: eveane & Vibe Mistral
 # Date: 2026-11-02
 # Open source: free to use, modify and share, as-is without warranty; see the repository README
 
