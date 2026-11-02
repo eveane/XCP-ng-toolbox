@@ -4,7 +4,22 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
-## 0.1.17 (unreleased)
+## 0.1.18 (unreleased)
+
+
+- feat(collector): on-demand XO config backup works without prior xo-cli
+  registration: if no {server,token} is found in xo-cli's config, the local
+  'xoa-support' XO admin account is reset with a random password via
+  xo-server's recover-account CLI (xo-recover-account / xo-server-recover-account
+  / /opt/xo/.../recover-account-cli.mjs; 2-arg form is non-interactive per
+  recover-account-cli.mjs), then the local API is called as
+  https://xoa-support:<pw>@127.0.0.1/ (https then http) with
+  `xo-cli --url … xo.exportConfig compress:=true @=<bundle>/XO-config.json.gz`.
+  Password is random (/dev/urandom), used once, scrubbed from captured output,
+  never logged. Side effect (xoa-support admin account) documented in
+  RUNLOG + COLLECTION.md.
+- bump 0.1.18
+
 
 - fix(collector): on-demand XO config backup auth — xo-cli reads
   {server,token} from the RUNNING user's ~/.config/xo-cli/config.json; as

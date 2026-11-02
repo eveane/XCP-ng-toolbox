@@ -75,6 +75,16 @@ sudo ./xoa-support-collect.sh --no-sos -o /tmp/xoa.tar.gz
 sudo python3 xoa_scrub.py /tmp/xoa.tar.gz --strict --anonymise -o /tmp/xoa.out.tar.gz
 ```
 
+## On-demand XO config backup (auth)
+
+If no xo-cli registration exists, the collector creates/resets a local
+`xoa-support` **XO admin account** with a random password via
+`xo-server-recover-account` (2-arg non-interactive form) and uses it once
+against `https://127.0.0.1/` to run `xo.exportConfig`. The password never
+enters the bundle or logs (scrubbed from `xo-cli.out`/`recover-account.out`).
+**Side effect:** the `xoa-support` XO account remains with admin permission —
+delete it in XO (Settings > Users) when done, or keep it as a support account.
+
 ## Two equivalent collection paths
 
 Both produce the same bundle layout and both feed `xoa_scrub.py` before
