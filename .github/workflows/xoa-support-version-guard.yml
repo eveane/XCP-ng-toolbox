@@ -1,0 +1,31 @@
+name: xoa-support-version-guard
+
+# Enforces the repo rule "every change to xoa-support/ bumps the patch
+# version" so the auto-release workflow (xoa-support-release, runs on merges
+# to main) always has a new version to publish and a release is never missed.
+# Fails the PR if xoa-support/ changed but xoa-support/VERSION did not.
+
+"on":
+  pull_request:
+    paths: ["xoa-support/**"]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: check VERSION bumped when xoa-support/ changed
+        run: |
+          if git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" | grep -q '^xoa-support/'; then
+            if git diff --quiet "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" -- xoa-support/VERSION; then
+              echo "::error::xoa-support/ changed but xoa-support/VERSION was not bumped. Bump the patch version (repo rule: every commit bumps z) so the auto-release publishes it."
+              exit 1
+            fi
+            echo "VERSION bumped: $(git show ${{ github.event.pull_request.base.sha }}:xoa-support/VERSION) -> $(cat xoa-support/VERSION)"
+          fi

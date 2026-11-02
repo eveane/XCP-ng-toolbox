@@ -38,8 +38,14 @@
    owner reviews" enabled on the protection rule, a human must approve.
 3. **Workflows run on `pull_request`** (not only `push`), so agent branches
    are gated by CI before a human reviews them.
-4. **Release tags** are pushed by humans only; the
-   `xoa-support-release` workflow then publishes the `.deb` automatically.
+4. **Releases are automatic on merge**: `xoa-support-release` runs on every
+   push to `main` that changes `xoa-support/` and publishes
+   `xoa-support_<VERSION>_all.deb` + `SHA256SUMS` as GitHub Release
+   `xoa-support-v<VERSION>` (marked latest). Nothing to do when approving a
+   PR. `xoa-support-version-guard` fails any PR that touches `xoa-support/`
+   without bumping `xoa-support/VERSION`, so a release can never be missed.
+   Manual/tag triggers (`xoa-support-v*` tag push, workflow_dispatch) remain
+   as fallbacks.
 
 ## What agents should do (workflow)
 

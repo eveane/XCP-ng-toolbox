@@ -72,4 +72,7 @@ python3 tools/dependency_report.py && git diff --exit-code docs/DEPENDENCIES.md
   task branch (`vibe/<slug>-43fef9`, `fix/…`) and open a draft PR; a human
   reviews and merges. See `.github/BRANCHING.md` (enforced by the
   `human-only-main` ruleset + CODEOWNERS).
-- Release tags (`xoa-support-v*`) are pushed by humans only.
+- Releases are automatic: on merge to main, `xoa-support-release` publishes
+  `xoa-support_<VERSION>_all.deb` as release `xoa-support-v<VERSION>`.
+  Always bump `xoa-support/VERSION` in the same PR (enforced by the
+  `xoa-support-version-guard` workflow) — that is what triggers the release.

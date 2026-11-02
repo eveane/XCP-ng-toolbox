@@ -4,6 +4,19 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.7 (unreleased)
+
+- fix(collector): embedded sos archive was never moved into the bundle —
+  sos 4.x writes `sosreport-<host>-<ts>.tar.xz` (+ `.sha256`) to `--tmp-dir`,
+  not `sos-report-*` in cwd. The collector now parses sos's own
+  "saved in:" line (fallback: glob tmp-dir), and puts the archive in `sos/`
+- feat(collector + sos plugin): collect latest XOA metadata backups from
+  `/var/lib/xoa-backups/` (`*.xo.json.gz`, `*metadata*.gz`, …) into
+  `var/lib/xoa-backups/` in the bundle (scrubbed by xoa_scrub.py)
+- docs(CONSUMING): new "Bundle map" table — where every key element lives
+  (config, leveldb, rpu-traces, sdn-controller, xoa-updater, xoa-backups,
+  logs, commands, sos archive, manifest, anonymisation map)
+
 ## 0.1.6 (unreleased)
 
 - feat: `-V`/`--version` on all three tools (xoa-support-collect,

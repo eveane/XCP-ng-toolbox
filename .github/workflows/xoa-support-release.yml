@@ -1,30 +1,35 @@
 name: xoa-support-release
 
-# Builds the self-contained xoa-support .deb and publishes it as a GitHub
-# Release asset so anyone (including an airgapped site, via one downloaded
-# file) can install without cloning the repo.
+# Publishes the self-contained xoa-support .deb as a GitHub Release asset.
 #
-# Triggers:
-#   - push of a tag  xoa-support-vX.Y.Z   (cut a release with:
-#       git tag xoa-support-v0.1.4 && git push origin xoa-support-v0.1.4)
-#   - manual run from the Actions tab (workflow_dispatch), optional version
+# Primary trigger: every merge/push to main that changes xoa-support/ and
+# bumps xoa-support/VERSION -> release "xoa-support-v<VERSION>" is created
+# (or updated) automatically. Nothing to remember when approving a PR.
+#
+# Manual/tag fallbacks still work:
+#   - push of a tag xoa-support-vX.Y.Z
+#   - workflow_dispatch (optional version input)
 
 "on":
   push:
+    branches: [main]
+    paths: ["xoa-support/**"]
     tags: ["xoa-support-v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release (e.g. 0.1.4); defaults to xoa-support/VERSION"
+        description: "Version to release (e.g. 0.1.7); defaults to xoa-support/VERSION"
         required: false
         default: ""
 
 permissions:
-  contents: write   # required to create the release and upload assets
+  contents: write   # create/update the release and upload assets
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    # on branch pushes, the paths: filter above already limits this to
+    # xoa-support/ changes; no extra if needed
     defaults:
       run:
         working-directory: xoa-support
@@ -42,7 +47,7 @@ jobs:
           ./packaging/build-deb.sh dist
           sha256sum dist/*.deb > dist/SHA256SUMS
           dpkg-deb --info dist/xoa-support_*_all.deb | head -12
-      - name: create release and upload assets
+      - name: create or update release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.ver.outputs.version }}
@@ -56,18 +61,23 @@ jobs:
 
           ### Install on the XOA (works airgapped — one file, local \`dpkg -i\`)
 
-              wget <repo>/releases/latest/download/$(basename "$DEB")
+              wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/$(basename "$DEB")
+              sha256sum -c SHA256SUMS
               sudo dpkg -i $(basename "$DEB")
 
           Commands installed: \`xoa-support-collect\`, \`xoa-scrub\`, \`xoa-bundle-inspect\`.
           If sos is installed, the xoa plugin is registered automatically
           (\`sos report --batch -o xoa\`).
 
-          Verify the download with the attached \`SHA256SUMS\`.
-
-          Built from commit ${{ github.sha }} by xoa-support-release.
+          Built from commit ${{ github.sha }}.
           NOTES
-          gh release create "$TAG" \
-            --title "xoa-support v${VERSION}" \
-            --notes-file /tmp/release-notes.md \
-            "$DEB" dist/SHA256SUMS
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG exists -> updating assets"
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$DEB" dist/SHA256SUMS
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file /tmp/release-notes.md --latest
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "xoa-support v${VERSION}" --notes-file /tmp/release-notes.md --latest \
+              "$DEB" dist/SHA256SUMS
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name]'
