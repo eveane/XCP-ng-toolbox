@@ -8,8 +8,11 @@ SOS_PLUGIN_DIR=/usr/lib/python3/dist-packages/sos/report/plugins
 
 if command -v sos >/dev/null 2>&1 && [ -d "$SOS_PLUGIN_DIR" ]; then
     install -m 0644 "$PLUGIN_SRC" "$SOS_PLUGIN_DIR/xoa.py"
-    install -d "$SOS_PLUGIN_DIR/xoa_support"
-    install -m 0644 "$PKG_SRC"/*.py "$SOS_PLUGIN_DIR/xoa_support/"
+    # IMPORTANT: sos imports every *.py in its plugin dir as a plugin, so the
+    # xoa_support package must NOT be dropped there directly — put it in the
+    # shared dist-packages instead, where xoa.py's fallback sys.path finds it.
+    install -d /usr/lib/python3/dist-packages/xoa_support
+    install -m 0644 "$PKG_SRC"/*.py /usr/lib/python3/dist-packages/xoa_support/
     echo "xoa-support: sos plugin installed -> 'sos report -o xoa' available"
 else
     echo "xoa-support: sos not found; standalone collector xoa-support-collect is available"

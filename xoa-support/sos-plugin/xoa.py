@@ -32,7 +32,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _CANDIDATES = [
     os.path.normpath(os.path.join(_HERE, "..", "src")),          # source tree
     "/usr/share/xoa-support/src",                                  # deb payload
-    os.path.dirname(_HERE),                                       # beside sos plugins
+    "/usr/lib/python3/dist-packages",                              # postinst/install-plugin.sh
 ]
 for _c in _CANDIDATES:
     if os.path.isdir(os.path.join(_c, "xoa_support")) and _c not in sys.path:
