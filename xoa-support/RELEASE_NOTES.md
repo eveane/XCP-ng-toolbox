@@ -4,6 +4,31 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.9 (unreleased)
+
+- fix(collector): search several XOA backup dirs (/var/lib/xoa-backups,
+  /var/lib/xoa/backup, /var/backups/xoa, /var/lib/xo-server/backups) and
+  log each collected metadata backup; sos plugin widened the same way
+- fix(collector): restore exec bit on all staged directories before tar
+  (cp -a of e.g. /etc/xo-server could lose it -> drw-r--r-- in the bundle)
+- feat(collector): when run via sudo, chown the bundle to $SUDO_USER;
+  print the bundle's md5sum at the end
+
+## 0.1.8 (unreleased)
+
+- fix(collector): sos 4.0 prints the archive path on the line AFTER
+  "saved in:" (tab-indented) — the same-line parse missed it and the
+  ls|head fallback could SIGPIPE under pipefail, aborting before the move
+  (staging dir then removed by the EXIT trap -> empty sos/). Now: capture
+  full sos output to a log, parse same-line then next-line, then glob
+  tmp-dir/cwd; move archive + .sha256/.md5 into sos/. Verified with a fake
+  sos 4.0 harness.
+- fix(packaging): postinst/install-plugin.sh dropped xoa_support/*.py into
+  sos's plugin dir, where sos 4.0 imports every *.py as a plugin
+  ("plugin anonymise/secret_patterns does not install"). The package now
+  goes to /usr/lib/python3/dist-packages/xoa_support (prerm cleans it);
+  xoa.py resolves it there.
+
 ## 0.1.7 (unreleased)
 
 - fix(collector): embedded sos archive was never moved into the bundle —

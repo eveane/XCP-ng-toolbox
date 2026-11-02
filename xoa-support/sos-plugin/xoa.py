@@ -98,9 +98,10 @@ class xoa(Plugin, DebianPlugin):
         #     backup remote is configured: /var/lib/xoa-backups ---
         self.add_copy_spec(
             [
-                "/var/lib/xoa-backups/*.xo.json.gz",
-                "/var/lib/xoa-backups/*.json.gz",
-                "/var/lib/xoa-backups/*metadata*.gz",
+                "/var/lib/xoa-backups",
+                "/var/lib/xoa/backup",
+                "/var/backups/xoa",
+                "/var/lib/xo-server/backups",
             ],
             sizelimit=100 * 1024 * 1024,
         )
