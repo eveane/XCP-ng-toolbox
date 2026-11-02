@@ -4,6 +4,15 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.19 (unreleased)
+
+- fix(collector): a failing xo-cli export no longer aborts the whole run
+  (set -e + trap deleted the staging dir -> "bundle not created"): xo_export
+  now catches the rc, logs it to xo-cli.out, and the collector falls through
+  to the temp-account strategy and always finishes the bundle. Verified with
+  a failing fake xo-cli under set -euo pipefail (run continues, rc=0).
+- bump 0.1.19
+
 ## 0.1.18 (unreleased)
 
 
