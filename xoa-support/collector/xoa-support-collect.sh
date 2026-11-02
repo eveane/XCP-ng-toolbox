@@ -20,7 +20,7 @@ set -euo pipefail
 
 VERSION=$(sed -n 's/^# xoa-support-collect version: //p' "$0" | head -1)
 
-OUT="xoa-support-$(hostname -s 2>/dev/null || echo xoa)-$(date +%Y%m%dT%H%M%S).tar.gz"
+OUT="xoa-support-$(hostname -s 2>/dev/null || echo xoa)-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 RUN_SOS=1
 while [ $# -gt 0 ]; do
     case "$1" in
