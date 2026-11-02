@@ -25,7 +25,7 @@
 #   -V, --version  print version and exit
 #   -h, --help     this help
 #
-# xoa-support-collect version: 0.1.17
+# xoa-support-collect version: 0.1.18
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -179,21 +179,20 @@ XOCLI=""
 for c in /usr/local/bin/xo-cli /usr/bin/xo-cli "$(command -v xo-cli 2>/dev/null)"; do
     [ -n "$c" ] && [ -x "$c" ] && XOCLI="$c" && break
 done
-if [ -n "$XOCLI" ]; then
-    log "generating XO config backup: $XOCLI xo.exportConfig compress:=true @=$GEN_DIR/XO-config.json.gz"
-    # xo.exportConfig returns {$getFrom: <url>} — xo-cli downloads that URL to
-    # the special @=<path> parameter (a bare path arg is rejected:
-    # "invalid arg"), hence @=... here.
-    # Auth: xo-cli reads {server, token} from ~/.config/xo-cli/config.json of the
-    # RUNNING user — as root that file is usually empty ("Please use xo-cli
-    # register first"). So: harvest server+token from root's or $SUDO_USER's
-    # xo-cli config and pass them explicitly via --url https://<token>@<host>/,
-    # which xo-cli accepts as credentials (see xo-cli index.mjs getServerConfig).
-    XO_URL_ARGS=""
-    for cfg in "${XDG_CONFIG_HOME:-/root/.config}/xo-cli/config.json" \
-               "${SUDO_USER:+/home/$SUDO_USER/.config/xo-cli/config.json}"; do
-        [ -n "$cfg" ] && [ -f "$cfg" ] || continue
-        XO_URL_ARGS=$(python3 - "$cfg" <<'PYEOF' 2>/dev/null || true
+# Auth strategy for the on-demand export:
+#   1. existing xo-cli registration ({server,token} in ~/.config/xo-cli/config.json
+#      of root or $SUDO_USER) -> --url https://<token>@<host>/
+#   2. otherwise: create/reset the local 'xoa-support' XO admin account with a
+#      random password via xo-server's recover-account CLI
+#      (xo-recover-account / xo-server-recover-account, 2nd arg = password,
+#      non-interactive), then call the local API as
+#      https://xoa-support:<pw>@127.0.0.1/ — the password is generated here,
+#      used once, and scrubbed from all captured output (never logged).
+XO_URL_ARGS=""
+for cfg in "${XDG_CONFIG_HOME:-/root/.config}/xo-cli/config.json" \
+           "${SUDO_USER:+/home/$SUDO_USER/.config/xo-cli/config.json}"; do
+    [ -n "$cfg" ] && [ -f "$cfg" ] || continue
+    XO_URL_ARGS=$(python3 - "$cfg" <<'PYEOF' 2>/dev/null || true
 import json, sys, urllib.parse
 try:
     c = json.load(open(sys.argv[1]))
@@ -205,24 +204,60 @@ except Exception:
     pass
 PYEOF
 )
-        [ -n "$XO_URL_ARGS" ] && break
-    done
+    [ -n "$XO_URL_ARGS" ] && break
+done
+
+xo_export() {  # $1 = xo-cli args (incl. --url ...), writes $GEN_DIR/XO-config.json.gz
+    # shellcheck disable=SC2086
+    "$XOCLI" $1 xo.exportConfig compress:=true "@=$GEN_DIR/XO-config.json.gz" >>"$GEN_DIR/xo-cli.out" 2>&1
+}
+
+if [ -n "$XOCLI" ]; then
+    : > "$GEN_DIR/xo-cli.out"
     if [ -n "$XO_URL_ARGS" ]; then
-        log "generating XO config backup: $XOCLI $XO_URL_ARGS xo.exportConfig compress:=true @=…/XO-config.json.gz (token from xo-cli config, not logged)"
-        # shellcheck disable=SC2086
-        if "$XOCLI" $XO_URL_ARGS xo.exportConfig compress:=true "@=$GEN_DIR/XO-config.json.gz" >"$GEN_DIR/xo-cli.out" 2>&1; then
-            if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
-                log "OK generated XO config backup: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
+        log "generating XO config backup via xo-cli (existing registration, token not logged)"
+        if xo_export "$XO_URL_ARGS" && [ -s "$GEN_DIR/XO-config.json.gz" ]; then
+            log "OK generated XO config backup: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
+        else
+            log "WARN xo-cli export with existing registration failed; see var/lib/xoa-backups/xo-cli.out"
+        fi
+    fi
+    if [ ! -s "$GEN_DIR/XO-config.json.gz" ]; then
+        # strategy 2: temporary xoa-support account with random password
+        RA=""
+        for c in xo-recover-account xo-server-recover-account \
+                 /opt/xo/packages/xo-server/dist/recover-account-cli.mjs \
+                 $(ls /opt/xo/xo-builds/*/packages/xo-server/dist/recover-account-cli.mjs 2>/dev/null | head -1); do
+            [ -n "$c" ] && { command -v "$c" >/dev/null 2>&1 || [ -f "$c" ]; } && RA="$c" && break
+        done
+        if [ -n "$RA" ]; then
+            PW=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)
+            log "resetting local 'xoa-support' XO account with a random password (recover-account; password NOT logged) to call the local API"
+            # 2-arg form is non-interactive per recover-account-cli.mjs
+            if [ -x "$RA" ] || command -v "$RA" >/dev/null 2>&1; then
+                "$RA" xoa-support "$PW" >"$GEN_DIR/recover-account.out" 2>&1 || true
             else
-                log "WARN xo-cli returned success but output file missing/empty; see var/lib/xoa-backups/xo-cli.out"
+                node "$RA" xoa-support "$PW" >"$GEN_DIR/recover-account.out" 2>&1 || true
+            fi
+            # scrub the password from captured output (it must not land in the bundle)
+            sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/recover-account.out" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+            for base in https://127.0.0.1/ http://127.0.0.1/; do
+                [ -s "$GEN_DIR/XO-config.json.gz" ] && break
+                log "trying xo-cli export as xoa-support against $base"
+                if xo_export "--allowUnauthorized --url ${base/:\/\//://xoa-support:$PW@}"; then
+                    sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                fi
+            done
+            if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
+                log "OK generated XO config backup via temporary xoa-support account: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
+                log "note: the 'xoa-support' XO admin account was created/reset by recover-account; remove it later if unwanted (XO UI > Settings > Users)"
+            else
+                sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" "$GEN_DIR/recover-account.out" 2>/dev/null || true
+                log "FAIL xo-cli xo.exportConfig (rc=$?); see var/lib/xoa-backups/xo-cli.out and recover-account.out; collecting existing backups only"
             fi
         else
-            log "FAIL xo-cli xo.exportConfig (rc=$?); output in var/lib/xoa-backups/xo-cli.out; collecting existing backups only"
+            log "FAIL no xo-cli registration and no recover-account tool found; run 'xo-cli register <xoa-url> <user>' once as your user, or rely on scheduled backups. See var/lib/xoa-backups/xo-cli.out"
         fi
-    else
-        log "FAIL no xo-cli registration found (no {server,token} in root's or ${SUDO_USER:-user}'s ~/.config/xo-cli/config.json). Run once as your user: xo-cli register <https://xoa-host> <user>  — or rely on scheduled backups in the candidate dirs. Output: var/lib/xoa-backups/xo-cli.out"
-        : > "$GEN_DIR/xo-cli.out"
-        echo "no xo-cli registration found; run: xo-cli register <xoa-url> <user>" >> "$GEN_DIR/xo-cli.out"
     fi
 else
     log "WARN xo-cli not found; collecting existing backups only"
