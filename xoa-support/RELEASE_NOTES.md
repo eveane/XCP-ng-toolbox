@@ -4,6 +4,17 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.20 (unreleased)
+
+- fix(collector): recover-account discovery hardened — searches PATH
+  (xo-recover-account, xo-server-recover-account), /usr/local/bin, /usr/bin,
+  /opt/xo/{xo-server,packages}/…/dist, /opt/xen-orchestra/…, then the
+  /opt/xo/xo-builds/* glob and a find fallback; runs it with stdin=/dev/null
+  and `timeout 60` so it can never hang on a password prompt; extra local
+  URLs tried (https/http x 127.0.0.1/localhost); every failure path logs to
+  RUNLOG and the run always continues to bundle creation.
+- bump 0.1.20
+
 ## 0.1.19 (unreleased)
 
 - fix(collector): a failing xo-cli export no longer aborts the whole run
