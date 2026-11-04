@@ -4,6 +4,20 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.21 (unreleased)
+
+- fix(collector): on ANY failure the execution log is now preserved to
+  /tmp/xoa-support-runlog-<UTC>.txt (EXIT trap copies meta/RUNLOG.txt before
+  cleaning the staging dir) and a stderr note points to it — verified with a
+  failing-run harness
+- fix(collector): the whole temp-account (recover-account) strategy runs in a
+  subshell with `|| log …`, so nothing inside can abort the run under set -e;
+  the bundle is always finished
+- chore: verified PR #74's header requirement still holds repo-wide
+  (0 .sh/.py/.rs/postinst/prerm files missing the Author/Date/Open-source
+  header)
+- bump 0.1.21
+
 ## 0.1.20 (unreleased)
 
 - fix(collector): recover-account discovery hardened — searches PATH

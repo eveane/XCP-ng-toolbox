@@ -25,7 +25,7 @@
 #   -V, --version  print version and exit
 #   -h, --help     this help
 #
-# xoa-support-collect version: 0.1.20
+# xoa-support-collect version: 0.1.21
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -57,7 +57,18 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 STAGE="$(mktemp -d /tmp/xoa-support.XXXXXX)"
-trap 'rm -rf "$STAGE"' EXIT
+# On any failure, preserve the execution log in /tmp with a UTC name before
+# cleaning the staging dir, so failures are diagnosable afterwards.
+KEEP_LOG="/tmp/xoa-support-runlog-$(date -u +%Y%m%dT%H%M%SZ).txt"
+on_exit() {
+    rc=$?
+    if [ "$rc" -ne 0 ] && [ -f "$STAGE/meta/RUNLOG.txt" ]; then
+        cp "$STAGE/meta/RUNLOG.txt" "$KEEP_LOG" 2>/dev/null && \
+            echo "run failed (rc=$rc); execution log preserved at $KEEP_LOG" >&2
+    fi
+    rm -rf "$STAGE"
+}
+trap on_exit EXIT
 say "staging bundle in $STAGE"
 
 XO_DATA=/var/lib/xo-server/data
@@ -229,6 +240,8 @@ if [ -n "$XOCLI" ]; then
     fi
     if [ ! -s "$GEN_DIR/XO-config.json.gz" ]; then
         # strategy 2: temporary xoa-support account with random password.
+        # Run in a subshell so NOTHING inside can abort the collector (set -e):
+        ( 
         # find recover-account in PATH, in known XOA locations, or any xo-build
         RA=""
         for c in xo-recover-account xo-server-recover-account \
@@ -278,6 +291,7 @@ if [ -n "$XOCLI" ]; then
         else
             log "FAIL no xo-cli registration and no recover-account tool found (searched PATH, /usr/local/bin, /opt/xo, /opt/xen-orchestra); run 'xo-cli register <xoa-url> <user>' once as your user, or rely on scheduled backups. See var/lib/xoa-backups/xo-cli.out"
         fi
+        ) || log "WARN temp-account strategy aborted unexpectedly (see $KEEP_LOG / bundle RUNLOG); continuing"
     fi
 else
     log "WARN xo-cli not found; collecting existing backups only"
