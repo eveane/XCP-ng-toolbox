@@ -1,0 +1,85 @@
+name: bugtool-collector-release
+
+# Publishes the self-contained bugtool-collector .deb as a GitHub Release
+# asset, exactly like xoa-support-release does for xoa-support.
+#
+# Primary trigger: every merge/push to main that changes bugtool-collector/
+# or bugtool_collector.sh -> release "bugtool-collector-v<VERSION>" is created
+# (or updated) automatically. Nothing to remember when approving a PR.
+#
+# Manual/tag fallbacks still work:
+#   - push of a tag bugtool-collector-vX.Y.Z
+#   - workflow_dispatch (optional version input)
+
+"on":
+  push:
+    branches: [main]
+    paths: ["bugtool-collector/**", "bugtool_collector.sh"]
+    tags: ["bugtool-collector-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.1.0); defaults to bugtool-collector/VERSION"
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # create/update the release and upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bugtool-collector
+    steps:
+      - uses: actions/checkout@v4
+      - name: resolve version
+        id: ver
+        run: |
+          V="${{ inputs.version }}"
+          [ -n "$V" ] || V="$(cat VERSION)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=bugtool-collector-v$V" >> "$GITHUB_OUTPUT"
+      - name: build the deb
+        run: |
+          chmod +x packaging/build-deb.sh
+          ./packaging/build-deb.sh dist
+          sha256sum dist/*.deb > dist/SHA256SUMS
+          dpkg-deb --info dist/bugtool-collector_*_all.deb | head -12
+      - name: create or update release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          DEB=$(ls dist/bugtool-collector_*_all.deb)
+          cat > /tmp/release-notes.md <<NOTES
+          ## bugtool-collector v${VERSION}
+
+          Self-contained \`bugtool-collector_${VERSION}_all.deb\` (Architecture: all).
+
+          ### Install on the XOA (works airgapped \u2014 one file, local \`dpkg -i\`)
+
+              wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/$(basename "$DEB")
+              wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/SHA256SUMS
+              sha256sum -c SHA256SUMS
+              sudo dpkg -i $(basename "$DEB")
+
+          Command installed: \`bugtool-collector\` — run
+          \`sudo bugtool-collector [-j N] <pool_master_ip>\` to collect the
+          xen-bugtool bundles of every host of a pool into one
+          \`<pool name or master IP>-<UTC date-time>.tar.gz\` archive.
+
+          Built from commit ${{ github.sha }}.
+          NOTES
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG exists -> updating assets"
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$DEB" dist/SHA256SUMS
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file /tmp/release-notes.md --latest
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "bugtool-collector v${VERSION}" --notes-file /tmp/release-notes.md --latest \
+              "$DEB" dist/SHA256SUMS
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name]'
