@@ -1,0 +1,32 @@
+name: bugtool-collector-version-guard
+
+# Enforces the repo rule "every change to bugtool-collector/ bumps the version"
+# so the auto-release workflow (bugtool-collector-release, runs on merges to
+# main) always has a new version to publish and a release is never missed.
+# Fails the PR if bugtool-collector/ (or bugtool_collector.sh) changed but
+# bugtool-collector/VERSION did not.
+
+"on":
+  pull_request:
+    paths: ["bugtool-collector/**", "bugtool_collector.sh"]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: check VERSION bumped when bugtool-collector/ changed
+        run: |
+          if git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" | grep -qE '^(bugtool-collector/|bugtool_collector\.sh)'; then
+            if git diff --quiet "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" -- bugtool-collector/VERSION; then
+              echo "::error::bugtool-collector/ changed but bugtool-collector/VERSION was not bumped. Bump the version (repo rule: every commit bumps z) so the auto-release publishes it."
+              exit 1
+            fi
+            echo "VERSION bumped: $(git show ${{ github.event.pull_request.base.sha }}:bugtool-collector/VERSION 2>/dev/null || echo none) -> $(cat bugtool-collector/VERSION)"
+          fi

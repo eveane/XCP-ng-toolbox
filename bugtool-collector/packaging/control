@@ -1,0 +1,15 @@
+Package: bugtool-collector
+Version: 0.1.0
+Section: admin
+Priority: optional
+Architecture: all
+Maintainer: eveane <https://github.com/eveane/XCP-ng-toolbox>
+Depends: bash, sshpass, openssh-client, tar, coreutils, grep, gawk, findutils
+Description: Collect xen-bugtool archives from every host of an XCP-ng pool
+ bugtool-collector runs xen-bugtool on every host of an XCP-ng pool over
+ SSH, downloads the bundles in parallel (-j N, default 3, 0 = all at once)
+ and packs them into one "<pool name or master IP>-<UTC date-time>.tar.gz"
+ archive. Installed as /usr/bin/bugtool-collector. Required OS packages are
+ listed, checked (dpkg -s on the Debian-based XOA) and installed with
+ apt-get automatically when missing.
+Homepage: https://github.com/eveane/XCP-ng-toolbox

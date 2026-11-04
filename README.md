@@ -47,8 +47,33 @@ incomplete.
 
 ## Bugtool collector
 
-work in proghress. missing some dependancy to run properly. 
-it collect all the xen-bugtool from a pool and save them on an archive on xoa.
+`bugtool_collector.sh` collects the `xen-bugtool` archive of every host of an
+XCP-ng pool over SSH and packs them into one archive named
+`<pool name or master IP>-<UTC date-time>.tar.gz`.
+
+Usage:
+
+```
+./bugtool_collector.sh [-j N] <pool_master_ip>     # -j N: max hosts in parallel (default 3, 0 = all at once)
+```
+
+It checks its OS package dependencies itself and installs the missing ones
+automatically: `dpkg -s` / `apt-get` on Debian-based hosts (the XOA), `rpm -q`
+/ `dnf`/`yum` on XCP-ng hosts.
+
+### Install on the XOA (Debian package)
+
+A self-contained `.deb` is published as a GitHub Release
+(`bugtool-collector-v<VERSION>`) on every merge to `main` that changes
+`bugtool-collector/` — same pattern as `xoa-support`:
+
+```
+wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/bugtool-collector_*_all.deb
+sudo dpkg -i bugtool-collector_*_all.deb     # installs /usr/bin/bugtool-collector
+sudo bugtool-collector -j 3 10.0.0.1
+```
+
+See [bugtool-collector/README.md](bugtool-collector/README.md) for details.
 
 ## v2v vm disk progress
 

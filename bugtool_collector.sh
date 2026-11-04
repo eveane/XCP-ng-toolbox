@@ -12,7 +12,10 @@ LOCAL_DOWNLOAD_DIR="./bugtool_archives"  # Local directory to save archives
 PARALLEL_LIMIT=3                         # Max hosts processed in parallel; 0 = all at once
 POOL_MASTER_IP=""                        # Pass pool master IP as argument
 
-# RPM packages required locally (checked with rpm -q, installed through the rpm toolchain if missing)
+# OS packages required locally. Debian-based hosts (e.g. the XOA) are checked
+# with dpkg -s and completed with apt-get; RPM-based hosts (e.g. XCP-ng) with
+# rpm -q and dnf/yum.
+DEB_DEPS=(bash sshpass openssh-client tar coreutils grep gawk findutils)
 RPM_DEPS=(sshpass openssh-clients tar coreutils grep gawk findutils)
 
 usage() {
@@ -25,51 +28,72 @@ Options:
   -h     Show this help.
 
 The final archive is named "<pool name or master IP>-<UTC date-time>.tar.gz".
+Missing OS packages are listed, checked and installed automatically
+(dpkg/apt on Debian-based hosts such as the XOA, rpm/dnf/yum on XCP-ng).
 EOF
 }
 
-# List the required RPM packages, check them with rpm -q and install the missing ones
-ensure_rpm_deps() {
-    if ! command -v rpm >/dev/null 2>&1; then
-        echo "[WARN] rpm not available on this host; checking binaries directly"
-        local cmd missing_bin=0
-        for cmd in sshpass ssh scp tar; do
-            if command -v "$cmd" >/dev/null 2>&1; then
-                echo "  [OK] $cmd"
+# List the required OS packages, check them (dpkg -s on Debian, rpm -q on
+# RPM-based systems) and install the missing ones (apt-get / dnf / yum)
+ensure_package_deps() {
+    local pkg missing=() still=()
+
+    if command -v dpkg >/dev/null 2>&1; then
+        echo "Package dependencies (dpkg):"
+        for pkg in "${DEB_DEPS[@]}"; do
+            if dpkg -s "$pkg" >/dev/null 2>&1; then
+                echo "  [OK] $pkg ($(dpkg-query -W -f '${Version}' "$pkg" 2>/dev/null))"
             else
-                echo "  [MISSING] $cmd"
-                missing_bin=1
+                echo "  [MISSING] $pkg"
+                missing+=("$pkg")
             fi
         done
-        if [ "$missing_bin" -ne 0 ]; then
-            echo "[ERROR] required binaries are missing and rpm is not available to install them"
+        if [ "${#missing[@]}" -eq 0 ]; then
+            return 0
+        fi
+        echo "Installing missing packages: ${missing[*]}"
+        if command -v apt-get >/dev/null 2>&1; then
+            apt-get install -y "${missing[@]}" || { apt-get update && apt-get install -y "${missing[@]}"; } || {
+                echo "[ERROR] apt-get failed (run as root on the XOA?); install manually with: apt-get install -y ${missing[*]}"
+                return 1
+            }
+        else
+            echo "[ERROR] no apt-get to resolve ${missing[*]}; install them manually with dpkg -i <package>.deb"
             return 1
         fi
+        for pkg in "${missing[@]}"; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || still+=("$pkg")
+        done
+        if [ "${#still[@]}" -gt 0 ]; then
+            echo "[ERROR] failed to install: ${still[*]}"
+            return 1
+        fi
+        echo "[SUCCESS] all package dependencies installed"
         return 0
     fi
 
-    echo "RPM dependencies:"
-    local pkg missing=()
-    for pkg in "${RPM_DEPS[@]}"; do
-        if rpm -q "$pkg" >/dev/null 2>&1; then
-            echo "  [OK] $pkg ($(rpm -q "$pkg"))"
-        else
-            echo "  [MISSING] $pkg"
-            missing+=("$pkg")
+    if command -v rpm >/dev/null 2>&1; then
+        echo "Package dependencies (rpm):"
+        for pkg in "${RPM_DEPS[@]}"; do
+            if rpm -q "$pkg" >/dev/null 2>&1; then
+                echo "  [OK] $pkg ($(rpm -q "$pkg"))"
+            else
+                echo "  [MISSING] $pkg"
+                missing+=("$pkg")
+            fi
+        done
+        if [ "${#missing[@]}" -eq 0 ]; then
+            return 0
         fi
-    done
-
-    if [ "${#missing[@]}" -gt 0 ]; then
-        echo "Installing missing RPM packages: ${missing[*]}"
+        echo "Installing missing packages: ${missing[*]}"
         if command -v dnf >/dev/null 2>&1; then
             dnf -y install "${missing[@]}" || return 1
         elif command -v yum >/dev/null 2>&1; then
             yum -y install "${missing[@]}" || return 1
         else
-            echo "[ERROR] no dnf/yum to resolve ${missing[*]} from the repositories; install them manually with rpm -ivh <package>.rpm"
+            echo "[ERROR] no dnf/yum to resolve ${missing[*]}; install them manually with rpm -ivh <package>.rpm"
             return 1
         fi
-        local still=()
         for pkg in "${missing[@]}"; do
             rpm -q "$pkg" >/dev/null 2>&1 || still+=("$pkg")
         done
@@ -77,8 +101,25 @@ ensure_rpm_deps() {
             echo "[ERROR] failed to install: ${still[*]}"
             return 1
         fi
-        echo "[SUCCESS] all RPM dependencies installed"
+        echo "[SUCCESS] all package dependencies installed"
+        return 0
     fi
+
+    echo "[WARN] neither dpkg nor rpm on this host; checking binaries directly"
+    local cmd missing_bin=0
+    for cmd in sshpass ssh scp tar; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            echo "  [OK] $cmd"
+        else
+            echo "  [MISSING] $cmd"
+            missing_bin=1
+        fi
+    done
+    if [ "$missing_bin" -ne 0 ]; then
+        echo "[ERROR] required binaries are missing and no package manager is available to install them"
+        return 1
+    fi
+    return 0
 }
 
 # Function to get all host IPs in the pool
@@ -231,7 +272,7 @@ case "$PARALLEL_LIMIT" in
         ;;
 esac
 
-ensure_rpm_deps || exit 1
+ensure_package_deps || exit 1
 
 # Ensure local download directory exists
 mkdir -p "$LOCAL_DOWNLOAD_DIR"
