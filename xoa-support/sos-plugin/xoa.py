@@ -71,12 +71,9 @@ class xoa(Plugin, DebianPlugin):
             ]
         )
         # sos copies files without preserving the exec bit on directories
-        # (observed: /etc/xo-server arrives as drw-r--r--) — restore it so the
-        # archived tree stays traversable.
-        self.add_cmd_output(
-            "find /etc/xo-server /etc/xen-orchestra -type d -exec chmod a+x {} + 2>/dev/null || true",
-            suggest_filename="chmod-dirs.log",
-        )
+        # (observed: /etc/xo-server arrives as drw-r--r--) — restore it in
+        # postproc on the collected tree so it stays traversable.
+        pass
 
         # --- xo-server configuration (scrubbed in postproc) ---
         self.add_copy_spec(
