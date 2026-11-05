@@ -4,6 +4,22 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.24 (unreleased)
+
+- fix(collector): bypass xo-cli for the export — drive xo-lib directly with
+  node (present on every XOA since xo-cli is installed). After recover-account
+  sets the random password, a generated xo-export.cjs does:
+  `signIn({email, password})` over the websocket (websocket auth = connection
+  user_id set by session.signIn — xo-cli's `--url user:pass@` only accepts a
+  token, which caused the repeated "invalid credentials"), then
+  `xo.call('xo.exportConfig', {compress:true})` -> `$getFrom`, then a plain
+  `fetch()` of that capability URL (xo-server serves /api/<id> with NO cookie
+  auth — xo.mjs _handleHttpRequest). Credentials via env vars, scrubbed from
+  xo-cli.out, never in RUNLOG. xo-cli register+export kept as fallback.
+  Also fixes `xo-cli --json xo.exportConfig` arg order (--json must follow
+  the method name).
+- bump 0.1.24
+
 ## 0.1.23 (unreleased)
 
 - fix(collector): fetch the export URL with a token cookie via curl after register (root cause of repeated 'invalid credentials' after successful signIn) — xo-server serves $getFrom one-shot URLs with no auth middleware but xo-cli fetches them cookie-less. Token+password scrubbed from xo-cli.out; unregister afterwards.

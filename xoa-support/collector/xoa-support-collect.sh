@@ -25,7 +25,7 @@
 #   -V, --version  print version and exit
 #   -h, --help     this help
 #
-# xoa-support-collect version: 0.1.23
+# xoa-support-collect version: 0.1.24
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -275,47 +275,76 @@ if [ -n "$XOCLI" ]; then
             fi
             # scrub the password from captured output (it must not land in the bundle)
             sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/recover-account.out" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-            # xo-cli's --url https://<token>@host/ only accepts a real token
-            # (signIn({token})); password-in-URL -> "invalid credentials".
-            # AND: xo.exportConfig's $getFrom one-shot HTTP URL is NOT
-            # authenticated by the websocket token — xo-server serves it via
-            # express with NO auth middleware (xo.mjs _handleHttpRequest), but
-            # xo-cli fetches it with a bare fetch() and no cookie, so the export
-            # call itself keeps failing even when signIn succeeds. Therefore:
-            # skip the $getFrom dance entirely and call the underlying method
-            # directly over the registered websocket session:
-            #   xo-cli xo.exportConfig is $getFrom-based, so instead call the
-            #   mixin via xo-cli's generic call is not possible; use
-            #   'xo-cli rest get' is REST-only. Practical path: register a
-            #   throwaway client (signIn email/password + token.create), then
-            #   call the JSON-RPC method that exportConfig wraps is internal.
-            # Simplest reliable route on the appliance: register, then use the
-            # saved token as a COOKIE against the $getFrom URL with curl.
-            for base in https://127.0.0.1/ http://127.0.0.1/ https://localhost/ http://localhost/; do
-                [ -s "$GEN_DIR/XO-config.json.gz" ] && break
-                log "registering temp xo-cli client against $base as xoa-support (password NOT logged)"
-                if timeout 60 "$XOCLI" register --allowUnauthorized "$base" xoa-support "$PW" </dev/null >>"$GEN_DIR/xo-cli.out" 2>&1; then
-                    sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-                    TOKEN=$(python3 -c 'import json,os; c=json.load(open(os.path.expanduser("~/.config/xo-cli/config.json"))); print(c.get("token",""))' 2>/dev/null || true)
-                    if [ -n "$TOKEN" ]; then
-                        log "got fresh auth token (not logged); calling xo.exportConfig over websocket to learn the \$getFrom URL, then curl with token cookie"
-                        GETFROM=$("$XOCLI" --json xo.exportConfig compress:=true 2>>"$GEN_DIR/xo-cli.out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("$getFrom",""))' 2>/dev/null || true)
-                        if [ -n "$GETFROM" ]; then
-                            case "$GETFROM" in http*) URL="$GETFROM";; *) URL="${base}${GETFROM#/}";; esac
-                            if command -v curl >/dev/null 2>&1; then
-                                curl -skf --max-time 120 -H "Cookie: token=$TOKEN" -o "$GEN_DIR/XO-config.json.gz" "$URL" >>"$GEN_DIR/xo-cli.out" 2>&1 || true
-                            fi
-                        fi
+            # Reliable path (verified against xo-server/xo-lib sources): skip
+            # xo-cli for the export itself and drive xo-lib directly with node:
+            #   1. session.signIn({email, password}) over the websocket
+            #      (websocket auth = connection user_id, set by signIn — NOT a
+            #      cookie; xo-cli's --url user:pass@ form only accepts a token,
+            #      which is why earlier attempts got "invalid credentials")
+            #   2. xo.call('xo.exportConfig', {compress: true}) -> {$getFrom}
+            #   3. the $getFrom URL is a capability URL served by express with no
+            #      cookie auth (xo.mjs _handleHttpRequest) -> plain fetch, no
+            #      cookie needed
+            # Credentials go via env vars (never argv/logs); output scrubbed.
+            NODE_BIN=$(command -v node || true)
+            XOLIB_CANDIDATES="/usr/local/lib/node_modules/xo-cli/node_modules/xo-lib /usr/local/lib/node_modules/xo-lib /usr/lib/node_modules/xo-lib"
+            XOLIB=""
+            for d in $XOLIB_CANDIDATES; do [ -d "$d" ] && XOLIB="$d" && break; done
+            [ -z "$XOLIB" ] && [ -n "$NODE_BIN" ] && XOLIB=$("$NODE_BIN" -e "try{console.log(require.resolve('xo-lib',{paths:['/usr/local/lib/node_modules/xo-cli/node_modules','/usr/local/lib/node_modules']}))}catch(e){}" 2>/dev/null || true)
+            if [ -n "$NODE_BIN" ] && [ -n "$XOLIB" ]; then
+                EXPORT_JS="$STAGE/xo-export.cjs"
+                cat > "$EXPORT_JS" <<'NODEEOF'
+// xo-export.cjs — sign in over websocket with email/password, call
+// xo.exportConfig, then fetch the $getFrom capability URL (no cookie).
+// usage: node xo-export.cjs <baseHttpUrl> <user> <outFile>
+// creds via env XO_USER / XO_PASS
+const path = process.env.XOLIB_PATH
+const mod = require(path)
+const Xo = mod.default || mod
+const fs = require('fs')
+;(async () => {
+  const [, , base, out] = process.argv
+  const xo = new Xo({ url: base.replace(/^http/, 'ws'), rejectUnauthorized: false })
+  await xo.open()
+  try {
+    await xo.signIn({ email: process.env.XO_USER, password: process.env.XO_PASS })
+    const res = await xo.call('xo.exportConfig', { compress: true })
+    const rel = res && res.$getFrom
+    if (!rel) throw new Error('no $getFrom in exportConfig result')
+    const url = base.replace(/\/$/, '') + (rel.startsWith('http') ? rel : rel)
+    const r = await fetch(url, { dispatcher: undefined }).catch(e => { throw e })
+    if (!r.ok) throw new Error('fetch ' + url + ' -> HTTP ' + r.status)
+    fs.writeFileSync(out, Buffer.from(await r.arrayBuffer()))
+    console.log('exported ' + out)
+  } finally {
+    await xo.close().catch(() => {})
+  }
+})().catch(e => { console.error('xo-export failed: ' + (e && e.message || e)); process.exit(1) })
+NODEEOF
+                for base in https://127.0.0.1/ http://127.0.0.1/ https://localhost/ http://localhost/; do
+                    [ -s "$GEN_DIR/XO-config.json.gz" ] && break
+                    log "node xo-lib export: signIn as xoa-support against $base (password via env, NOT logged)"
+                    if XO_USER=xoa-support XO_PASS="$PW" XOLIB_PATH="$XOLIB" timeout 90 "$NODE_BIN" "$EXPORT_JS" "$base" "$GEN_DIR/XO-config.json.gz" >>"$GEN_DIR/xo-cli.out" 2>&1; then
+                        :
                     fi
-                    [ -s "$GEN_DIR/XO-config.json.gz" ] || xo_export "--allowUnauthorized --url $base" || true
                     sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-                    sed -i "s/$TOKEN/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-                    # drop the temp registration again (root's xo-cli config)
-                    "$XOCLI" unregister >>"$GEN_DIR/xo-cli.out" 2>&1 || true
-                else
-                    sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-                fi
-            done
+                done
+                rm -f "$EXPORT_JS"
+            else
+                log "WARN node or xo-lib not found (node=$NODE_BIN xolib=$XOLIB); trying xo-cli register+export fallback"
+                for base in https://127.0.0.1/ http://127.0.0.1/ https://localhost/ http://localhost/; do
+                    [ -s "$GEN_DIR/XO-config.json.gz" ] && break
+                    log "registering temp xo-cli client against $base as xoa-support (password NOT logged)"
+                    if timeout 60 "$XOCLI" register --allowUnauthorized "$base" xoa-support "$PW" </dev/null >>"$GEN_DIR/xo-cli.out" 2>&1; then
+                        sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                        xo_export "--allowUnauthorized --url $base" || true
+                        sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                        "$XOCLI" unregister >>"$GEN_DIR/xo-cli.out" 2>&1 || true
+                    else
+                        sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                    fi
+                done
+            fi
             if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
                 log "OK generated XO config backup via temporary xoa-support account: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
                 log "note: the 'xoa-support' XO admin account was created/reset by recover-account; remove it later if unwanted (XO UI > Settings > Users)"
