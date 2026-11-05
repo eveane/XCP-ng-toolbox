@@ -4,6 +4,23 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.22 (unreleased)
+
+- fix(collector): temp-account export now uses the correct xo-cli flow —
+  `--url https://user:pass@host/` is NOT valid (xo-cli signIn({token}) only
+  accepts a real token; password-in-URL gives JSON-RPC "invalid credentials",
+  as seen in the 0.1.21 field run). Now: after recover-account sets the
+  random password, the collector runs
+  `xo-cli register --allowUnauthorized <local-url> xoa-support <pw>`
+  (signIn({email,password}) + token.create per xo-cli source), exports with
+  the fresh token, then `xo-cli unregister` so no credential persists.
+  Password still scrubbed from captured output, never logged.
+- fix(sos plugin): sos drops the exec bit on collected directories
+  (/etc/xo-server arrived as drw-r--r--) — postproc now chmod a+x on all
+  dirs under the collected tree; also a setup-time find command as belt &
+  braces. chmod logic unit-tested standalone.
+- bump 0.1.22
+
 ## 0.1.21 (unreleased)
 
 - fix(collector): on ANY failure the execution log is now preserved to

@@ -70,6 +70,10 @@ class xoa(Plugin, DebianPlugin):
                 "/etc/xo-server/**/id_rsa*",
             ]
         )
+        # sos copies files without preserving the exec bit on directories
+        # (observed: /etc/xo-server arrives as drw-r--r--) — restore it in
+        # postproc on the collected tree so it stays traversable.
+        pass
 
         # --- xo-server configuration (scrubbed in postproc) ---
         self.add_copy_spec(
@@ -128,6 +132,23 @@ class xoa(Plugin, DebianPlugin):
         )
 
     def postproc(self):
+        # sos drops the exec bit on collected directories (observed:
+        # /etc/xo-server extracted as drw-r--r--) — restore x on every
+        # directory inside this plugin's collected tree so the sosreport
+        # stays traversable after extraction.
+        import os
+        for base in ("sos_commands/xoa", "etc", "var"):
+            if not os.path.isdir(base):
+                continue
+            for root, dirs, _files in os.walk(base):
+                for d in dirs:
+                    p = os.path.join(root, d)
+                    try:
+                        mode = os.stat(p).st_mode
+                        if not mode & 0o111:
+                            os.chmod(p, mode | 0o111)
+                    except OSError:
+                        pass
         # Apply every shared secret pattern to every file this plugin
         # collected. sos applies substitutions per file matching pathregex.
         for name, pattern, _replacer in secret_patterns.SECRET_PATTERNS:

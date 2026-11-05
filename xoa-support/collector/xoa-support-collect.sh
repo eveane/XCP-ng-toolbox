@@ -25,7 +25,7 @@
 #   -V, --version  print version and exit
 #   -h, --help     this help
 #
-# xoa-support-collect version: 0.1.21
+# xoa-support-collect version: 0.1.22
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -275,11 +275,25 @@ if [ -n "$XOCLI" ]; then
             fi
             # scrub the password from captured output (it must not land in the bundle)
             sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/recover-account.out" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+            # xo-cli's --url https://<token>@host/ form only works with a real
+            # authentication TOKEN, not a password (xo-cli signIn({token}) —
+            # JSON-RPC "invalid credentials" otherwise). register/create-token use
+            # signIn({email, password}) + token.create instead. So: register a
+            # throwaway client against the local API with the temp password, then
+            # use the saved {server, token}.
             for base in https://127.0.0.1/ http://127.0.0.1/ https://localhost/ http://localhost/; do
                 [ -s "$GEN_DIR/XO-config.json.gz" ] && break
-                log "trying xo-cli export as xoa-support against $base"
-                xo_export "--allowUnauthorized --url ${base/:\/\//://xoa-support:$PW@}" || true
-                sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                log "registering temp xo-cli client against $base as xoa-support (password NOT logged)"
+                if timeout 60 "$XOCLI" register --allowUnauthorized "$base" xoa-support "$PW" </dev/null >>"$GEN_DIR/xo-cli.out" 2>&1; then
+                    sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                    log "trying xo-cli export with freshly registered token against $base"
+                    xo_export "--allowUnauthorized --url $base" || true
+                    sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                    # drop the temp registration again (root's xo-cli config)
+                    "$XOCLI" unregister >>"$GEN_DIR/xo-cli.out" 2>&1 || true
+                else
+                    sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                fi
             done
             if [ -s "$GEN_DIR/XO-config.json.gz" ]; then
                 log "OK generated XO config backup via temporary xoa-support account: var/lib/xoa-backups/XO-config.json.gz ($(stat -c%s "$GEN_DIR/XO-config.json.gz") bytes)"
