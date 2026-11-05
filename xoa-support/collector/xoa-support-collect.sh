@@ -25,7 +25,7 @@
 #   -V, --version  print version and exit
 #   -h, --help     this help
 #
-# xoa-support-collect version: 0.1.22
+# xoa-support-collect version: 0.1.23
 #
 # GPL-2.0-only. See ../LICENSE.
 set -euo pipefail
@@ -275,20 +275,41 @@ if [ -n "$XOCLI" ]; then
             fi
             # scrub the password from captured output (it must not land in the bundle)
             sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/recover-account.out" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-            # xo-cli's --url https://<token>@host/ form only works with a real
-            # authentication TOKEN, not a password (xo-cli signIn({token}) —
-            # JSON-RPC "invalid credentials" otherwise). register/create-token use
-            # signIn({email, password}) + token.create instead. So: register a
-            # throwaway client against the local API with the temp password, then
-            # use the saved {server, token}.
+            # xo-cli's --url https://<token>@host/ only accepts a real token
+            # (signIn({token})); password-in-URL -> "invalid credentials".
+            # AND: xo.exportConfig's $getFrom one-shot HTTP URL is NOT
+            # authenticated by the websocket token — xo-server serves it via
+            # express with NO auth middleware (xo.mjs _handleHttpRequest), but
+            # xo-cli fetches it with a bare fetch() and no cookie, so the export
+            # call itself keeps failing even when signIn succeeds. Therefore:
+            # skip the $getFrom dance entirely and call the underlying method
+            # directly over the registered websocket session:
+            #   xo-cli xo.exportConfig is $getFrom-based, so instead call the
+            #   mixin via xo-cli's generic call is not possible; use
+            #   'xo-cli rest get' is REST-only. Practical path: register a
+            #   throwaway client (signIn email/password + token.create), then
+            #   call the JSON-RPC method that exportConfig wraps is internal.
+            # Simplest reliable route on the appliance: register, then use the
+            # saved token as a COOKIE against the $getFrom URL with curl.
             for base in https://127.0.0.1/ http://127.0.0.1/ https://localhost/ http://localhost/; do
                 [ -s "$GEN_DIR/XO-config.json.gz" ] && break
                 log "registering temp xo-cli client against $base as xoa-support (password NOT logged)"
                 if timeout 60 "$XOCLI" register --allowUnauthorized "$base" xoa-support "$PW" </dev/null >>"$GEN_DIR/xo-cli.out" 2>&1; then
                     sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
-                    log "trying xo-cli export with freshly registered token against $base"
-                    xo_export "--allowUnauthorized --url $base" || true
+                    TOKEN=$(python3 -c 'import json,os; c=json.load(open(os.path.expanduser("~/.config/xo-cli/config.json"))); print(c.get("token",""))' 2>/dev/null || true)
+                    if [ -n "$TOKEN" ]; then
+                        log "got fresh auth token (not logged); calling xo.exportConfig over websocket to learn the \$getFrom URL, then curl with token cookie"
+                        GETFROM=$("$XOCLI" --json xo.exportConfig compress:=true 2>>"$GEN_DIR/xo-cli.out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("$getFrom",""))' 2>/dev/null || true)
+                        if [ -n "$GETFROM" ]; then
+                            case "$GETFROM" in http*) URL="$GETFROM";; *) URL="${base}${GETFROM#/}";; esac
+                            if command -v curl >/dev/null 2>&1; then
+                                curl -skf --max-time 120 -H "Cookie: token=$TOKEN" -o "$GEN_DIR/XO-config.json.gz" "$URL" >>"$GEN_DIR/xo-cli.out" 2>&1 || true
+                            fi
+                        fi
+                    fi
+                    [ -s "$GEN_DIR/XO-config.json.gz" ] || xo_export "--allowUnauthorized --url $base" || true
                     sed -i "s/$PW/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
+                    sed -i "s/$TOKEN/<REDACTED>/g" "$GEN_DIR/xo-cli.out" 2>/dev/null || true
                     # drop the temp registration again (root's xo-cli config)
                     "$XOCLI" unregister >>"$GEN_DIR/xo-cli.out" 2>&1 || true
                 else

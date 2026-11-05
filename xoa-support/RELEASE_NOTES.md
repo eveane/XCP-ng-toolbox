@@ -4,6 +4,11 @@ Semver `x.y.z`. Follows this repository's versioning rules: every
 commit/patch bumps `z`; a feature bumps `y` only with explicit confirmation;
 `x` stays 0 until the first release-ready version.
 
+## 0.1.23 (unreleased)
+
+- fix(collector): fetch the export URL with a token cookie via curl after register (root cause of repeated 'invalid credentials' after successful signIn) — xo-server serves $getFrom one-shot URLs with no auth middleware but xo-cli fetches them cookie-less. Token+password scrubbed from xo-cli.out; unregister afterwards.
+- bump 0.1.23
+
 ## 0.1.22 (unreleased)
 
 - fix(collector): temp-account export now uses the correct xo-cli flow —
