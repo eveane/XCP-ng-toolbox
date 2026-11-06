@@ -82,12 +82,13 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
             let product = if est.is_xcpng { "XCP-ng" } else { "XenServer" };
             if let Some(u) = &est.update_estimate {
                 // LTS releases (XCP-ng 8.3) get monthly updates without a
-                // product-version change: the xapi/xen timeline gives a much
-                // better "shipped" estimate than the GA date.
+                // product-version change: the xapi/xen timeline estimate is
+                // the accurate "shipped" date, so the GA date and the
+                // releases-behind count are not shown here (they mislead).
                 let _ = writeln!(
                     out,
-                    "  release: {product} {} (est. updated ~{}; GA shipped {}) — {} release(s) behind the newest known",
-                    est.matched_version, u.date, est.release_date, est.releases_behind
+                    "  release: {product} {} (est. updated ~{})",
+                    est.matched_version, u.date
                 );
                 let _ = writeln!(
                     out,
@@ -95,11 +96,7 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
                     u.source
                 );
             } else {
-                let _ = writeln!(
-                    out,
-                    "  release: {product} {} shipped {} — {} release(s) behind the newest known",
-                    est.matched_version, est.release_date, est.releases_behind
-                );
+                let _ = writeln!(out, "  release: {product} {}", est.matched_version);
             }
             if est.newer_than_table {
                 let _ = writeln!(
@@ -108,10 +105,15 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
                 );
             }
         }
+        let ht = if h.cpu_count > h.cpu_cores {
+            "on"
+        } else {
+            "off"
+        };
         let _ = writeln!(
             out,
-            "  cpu: {} x {} ({} sockets, {} cores/socket)",
-            h.cpu_count, h.cpu_model, h.sockets, h.cores_per_socket
+            "  cpu: {} x {} ({} sockets, {} cores/socket, {} cores / {} threads, HT {})",
+            h.cpu_count, h.cpu_model, h.sockets, h.cores_per_socket, h.cpu_cores, h.cpu_count, ht
         );
         let _ = writeln!(
             out,
@@ -1061,16 +1063,17 @@ mod host_release_line_tests {
     fn host_with_update_estimate_uses_the_estimated_update_date() {
         let text = hosts_text();
         // host1 is 8.3.0 with xapi 26.1: the LTS monthly-update timeline
-        // refines the GA date — the line leads with the estimated update
-        // date, not "shipped 2024-10-07"
+        // gives the accurate "shipped" estimate; the GA date and the
+        // releases-behind count are not shown on the release line (they
+        // mislead for LTS releases that get updates without a
+        // product-version change)
         let line = text
             .lines()
             .find(|l| l.contains("XCP-ng 8.3") && l.contains("release:"))
             .unwrap();
         assert!(line.contains("est. updated ~"), "{line}");
-        assert!(line.contains("GA shipped 2024-10-07"), "{line}");
-        assert!(line.contains("0 release(s) behind"), "{line}");
-        assert!(!line.contains("shipped 2024-10-07 —"), "{line}");
+        assert!(!line.contains("shipped"), "{line}");
+        assert!(!line.contains("release(s) behind"), "{line}");
         // the source link is on the following line
         let src = text
             .lines()
@@ -1080,15 +1083,25 @@ mod host_release_line_tests {
     }
 
     #[test]
-    fn host_without_update_estimate_keeps_the_ga_date() {
+    fn host_without_update_estimate_shows_the_plain_release_line() {
         let text = hosts_text();
-        // host2 is 8.2.1: no update timeline -> plain "shipped" line
+        // host2 is 8.2.1: no update timeline -> plain version line, without
+        // the "shipped <GA date> — N release(s) behind" clause
         let line = text.lines().find(|l| l.contains("XCP-ng 8.2.1")).unwrap();
-        assert!(
-            line.contains("release: XCP-ng 8.2.1 shipped 2022-02-28"),
-            "{line}"
-        );
-        assert!(line.contains("1 release(s) behind"), "{line}");
+        assert!(line.contains("release: XCP-ng 8.2.1"), "{line}");
+        assert!(!line.contains("shipped"), "{line}");
+        assert!(!line.contains("release(s) behind"), "{line}");
         assert!(!line.contains("est. updated"), "{line}");
+    }
+
+    #[test]
+    fn cpu_line_shows_cores_vs_threads_and_ht() {
+        let text = hosts_text();
+        // fixture hosts: cpu_count=8, sockets=2, cores_per_socket=4
+        // -> 8 physical cores / 8 threads, HT off
+        let line = text.lines().find(|l| l.contains("cpu:")).unwrap();
+        assert!(line.contains("2 sockets, 4 cores/socket"), "{line}");
+        assert!(line.contains("8 cores / 8 threads"), "{line}");
+        assert!(line.contains("HT off"), "{line}");
     }
 }

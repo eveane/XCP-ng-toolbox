@@ -243,6 +243,32 @@ self-contained HTML dashboard (XO-like single page, no external assets).
 
 ## Installation and usage, step by step
 
+### 0. Prebuilt binaries (Linux / Windows / macOS, no Rust needed)
+
+A pre-compiled binary is published as a GitHub Release
+(`xcp-bundle-analyzer-v<VERSION>`) on every merge to `main` that changes
+`xcp-bundle-analyzer/`:
+
+| Platform | Assets |
+|---|---|
+| Linux x86_64 | `.tar.gz`, `.deb`, `.rpm` |
+| Linux arm64 | `.tar.gz`, `.deb`, `.rpm` |
+| Windows x86_64 | `.zip` |
+| macOS Intel / Apple Silicon | `.tar.gz` |
+
+```bash
+# Linux (deb) — installs /usr/bin/xcp-bundle-analyzer
+wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/xcp-bundle-analyzer_*_amd64.deb
+wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/SHA256SUMS
+sha256sum -c SHA256SUMS
+sudo dpkg -i xcp-bundle-analyzer_*_amd64.deb
+
+# Linux / macOS from the tar.gz — or Windows from the .zip: extract and
+# put the binary on your PATH
+tar -xzf xcp-bundle-analyzer_*_amd64.tar.gz
+sudo install -m 755 xcp-bundle-analyzer_*_amd64/xcp-bundle-analyzer /usr/local/bin/
+```
+
 ### 1. Install a Rust toolchain (one-time)
 
 If you don't have Rust yet:
@@ -372,6 +398,13 @@ xcp-bundle-analyzer list XenServer-host1-20260616.tar.bz2
 # dump any raw xapi table (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
 xcp-bundle-analyzer xapi-db XenServer-host1-20260616.tar.bz2 host
 
+# search xapi-db.xml by name, uuid or OpaqueRef (full or partial): lists only
+# the matching objects themselves (name + uuid + OpaqueRef), never the objects
+# that merely reference them (e.g. the VBDs/VIFs of a matched VM)
+xcp-bundle-analyzer search XenServer-host1-20260616.tar.bz2 a5609e55-f48c-56c7-e795-5edee4841245
+xcp-bundle-analyzer search xapi-db.xml "my vm"
+xcp-bundle-analyzer search XenServer-host1-20260616.tar.bz2 OpaqueRef:vm1
+
 # detailed view of one VM (like `xe vm-param-list`): name, uuid, vCPUs, memory,
 # state, host, dom-id, VBDs -> VDIs (uuid, size, format vhd/qcow2/raw, SR),
 # VIFs -> MAC/IP/network, snapshot chain and template uuid
@@ -446,6 +479,10 @@ xcp-bundle-analyzer list host1.tar.bz2 [--grep xapi]
 
 # dump one raw table of xapi-db.xml (all fields, as parsed)
 xcp-bundle-analyzer xapi-db host1.tar.bz2 host
+
+# search xapi-db.xml by name, uuid or OpaqueRef (full or partial)
+xcp-bundle-analyzer search host1.tar.bz2 win2
+xcp-bundle-analyzer search host1.tar.bz2 uuid=<uuid>
 ```
 
 ## Snapshots, base disks and garbage collection

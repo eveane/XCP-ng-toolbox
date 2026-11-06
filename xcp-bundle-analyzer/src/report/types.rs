@@ -26,7 +26,11 @@ pub struct HostReport {
     pub enabled: bool,
     pub hostname: String,
     pub cpu_model: String,
+    /// Logical CPUs (threads) reported in host cpu_info:cpu_count.
     pub cpu_count: u64,
+    /// Physical cores total: sockets * cores_per_socket (falls back to
+    /// cpu_count when the dump only reports logical CPUs).
+    pub cpu_cores: u64,
     pub cores_per_socket: u64,
     pub sockets: u64,
     pub memory_total_bytes: u64,

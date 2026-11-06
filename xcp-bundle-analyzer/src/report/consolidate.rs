@@ -380,13 +380,11 @@ mod tests {
             .collect();
         // host1 is the master (pool.master=host1) and has the setting: no
         // "master has none" warning; host2 is a slave with the same setting
-        // -> info entry saying a failover keeps the same behaviour
+        // -> info entry saying it matches the master's setting
         assert!(
             scans.iter().any(|a| a.severity == "info"
-                && a.detail
-                    .contains("slave (non-master) host host2.example.com")
-                && a.detail
-                    .contains("failover to this host keeps the same behaviour")),
+                && a.detail.contains("slave host2.example.com")
+                && a.detail.contains("It matches the master's setting")),
             "scans: {scans:?}"
         );
         // master identified on the host reports
@@ -425,9 +423,8 @@ mod tests {
         );
         assert!(
             scans.iter().any(|a| a.severity == "warning"
-                && a.detail
-                    .contains("slave (non-master) host host2.example.com")
-                && a.detail.contains("would apply this setting")),
+                && a.detail.contains("slave host2.example.com")
+                && a.detail.contains("It differs from the master")),
             "scans: {scans:?}"
         );
         // per-SR wording: 30s default, 5min only for linstor/xostor

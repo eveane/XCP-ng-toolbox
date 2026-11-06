@@ -83,8 +83,10 @@ resolution.
 - Identity: `name`, `uuid`, `opaque_ref`, `hostname`, `address`, `enabled`,
   `power_state`, `is_master`, `is_bundle_origin` (bundle origin detection via
   `xensource-inventory` INSTALLATION_UUID/hostname).
-- CPU: `cpu_model`, `cpu_count`, `sockets`, `cores_per_socket` (derived:
-  cpu_count/sockets when only those are present).
+- CPU: `cpu_model`, `cpu_count` (logical CPUs = threads), `cpu_cores`
+  (physical cores = sockets * cores_per_socket, falling back to cpu_count),
+  `sockets`, `cores_per_socket` (derived: cpu_count/sockets when only those
+  are present).
 - Memory: `memory_total_bytes`, `memory_free_bytes`, `mem_free_stale` (true
   when the dump reported 0/missing free memory), `dom0_memory_config_mib` and
   `dom0_cpus_config` (from inventory CONTROL_DOMAIN_*), `dom0_memory_live_bytes`

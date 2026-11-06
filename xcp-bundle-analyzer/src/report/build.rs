@@ -196,6 +196,13 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                     0
                 }
             });
+        // Physical cores vs logical CPUs (threads): cpu_count is the thread
+        // count, sockets * cores_per_socket is the physical core count.
+        let cpu_cores = if sockets > 0 && cores_per_socket > 0 {
+            sockets * cores_per_socket
+        } else {
+            cpu_count
+        };
         report.hosts.push(HostReport {
             name: get2(host, "name__label").to_string(),
             uuid,
@@ -230,6 +237,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .collect::<Vec<_>>()
                 .join(" "),
             cpu_count,
+            cpu_cores,
             cores_per_socket,
             sockets,
             memory_total_bytes: mem_total,

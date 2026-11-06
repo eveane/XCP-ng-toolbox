@@ -130,6 +130,18 @@ VMs, VIFs, PIFs, PBDs, dom0 config) and outputs text, JSON or a self-contained H
 dashboard. Supports a consolidated pool view when several bundles are given.
 See `xcp-bundle-analyzer/README.md`.
 
+### Install xcp-bundle-analyzer (prebuilt binaries)
+
+Pre-compiled binaries for Linux (tar.gz / .deb / .rpm), Windows (.zip) and macOS
+(tar.gz) are published as a GitHub Release (`xcp-bundle-analyzer-v<VERSION>`)
+on every merge to `main` that changes `xcp-bundle-analyzer/`:
+
+```
+wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/xcp-bundle-analyzer_*_amd64.deb
+sudo dpkg -i xcp-bundle-analyzer_*_amd64.deb     # installs /usr/bin/xcp-bundle-analyzer
+xcp-bundle-analyzer analyze XenServer-host1-20260616.tar.bz2
+```
+
 ## xoa-support
 
 GPL-2.0-only toolkit to collect, scrub, optionally anonymise and inspect support
