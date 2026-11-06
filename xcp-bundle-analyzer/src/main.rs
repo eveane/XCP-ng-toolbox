@@ -176,9 +176,9 @@ OTHER COMMANDS:
   # Search xapi-db.xml by name, uuid or OpaqueRef (full or partial): lists
   # only the matching objects themselves (name + uuid + OpaqueRef), never
   # the objects that merely reference them (e.g. the VBDs/VIFs of a VM)
-  xcp-bundle-analyzer search XenServer-host1.tar.bz2 a5609e55-f48c-56c7-e795-5edee4841245
-  xcp-bundle-analyzer search xapi-db.xml "my vm"
-  xcp-bundle-analyzer search XenServer-host1.tar.bz2 OpaqueRef:vm1
+  xcp-bundle-analyzer search a5609e55-f48c-56c7-e795-5edee4841245 XenServer-host1.tar.bz2
+  xcp-bundle-analyzer search "my vm" xapi-db.xml
+  xcp-bundle-analyzer search OpaqueRef:vm1 XenServer-host1.tar.bz2
 
   # Shell completion scripts
   xcp-bundle-analyzer completions bash > xcp-bundle-analyzer.bash
@@ -263,12 +263,14 @@ enum Commands {
     },
     /// Search xapi-db.xml for objects by name, uuid or opaque-ref (full or partial)
     Search {
-        bundle: PathBuf,
         /// Search pattern: a name, uuid or OpaqueRef, full or partial
         /// (case-insensitive). Only the matching objects themselves are
         /// listed (name + uuid + OpaqueRef), never the objects that merely
         /// reference them (e.g. the VBDs/VIFs of a matched VM).
         pattern: String,
+        /// Bundle file (tar/tar.gz/tar.bz2/zip), decompressed bundle directory,
+        /// or bare xapi-db.xml file
+        bundle: PathBuf,
     },
     /// Show all details of one object, like `xe <object>-param-list`
     Object {
@@ -520,7 +522,7 @@ fn main() -> Result<()> {
         ),
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
-        Commands::Search { bundle, pattern } => cmd_search(&bundle, &pattern),
+        Commands::Search { pattern, bundle } => cmd_search(&pattern, &bundle),
         Commands::Object {
             object,
             uuid,
@@ -678,16 +680,17 @@ fn section_short_name(s: render::Section) -> &'static str {
     }
 }
 
-fn cmd_search(bundle_path: &Path, pattern: &str) -> Result<()> {
-    // Accept the arguments in either position, like vm-display: if the
-    // bundle arg looks like a uuid and the pattern does not, swap them.
+fn cmd_search(pattern: &str, bundle_path: &Path) -> Result<()> {
+    // Canonical order is `search <pattern> <bundle>` (bundle last, like the
+    // object command); accept the swapped order too: if the bundle arg
+    // looks like a uuid/pattern and the pattern arg does not, swap them.
     let bp = bundle_path.display().to_string();
     let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
-    let (bundle_path, pattern): (&Path, &str) = if looks_like_uuid(&bp) && !looks_like_uuid(pattern)
+    let (pattern, bundle_path): (&str, &Path) = if looks_like_uuid(&bp) && !looks_like_uuid(pattern)
     {
-        (Path::new(pattern), bp.as_str())
+        (bp.as_str(), Path::new(pattern))
     } else {
-        (bundle_path, pattern)
+        (pattern, bundle_path)
     };
     let pattern = pattern.strip_prefix("uuid=").unwrap_or(pattern);
     if pattern.trim().is_empty() {

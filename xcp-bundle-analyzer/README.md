@@ -401,9 +401,9 @@ xcp-bundle-analyzer xapi-db XenServer-host1-20260616.tar.bz2 host
 # search xapi-db.xml by name, uuid or OpaqueRef (full or partial): lists only
 # the matching objects themselves (name + uuid + OpaqueRef), never the objects
 # that merely reference them (e.g. the VBDs/VIFs of a matched VM)
-xcp-bundle-analyzer search XenServer-host1-20260616.tar.bz2 a5609e55-f48c-56c7-e795-5edee4841245
-xcp-bundle-analyzer search xapi-db.xml "my vm"
-xcp-bundle-analyzer search XenServer-host1-20260616.tar.bz2 OpaqueRef:vm1
+xcp-bundle-analyzer search a5609e55-f48c-56c7-e795-5edee4841245 XenServer-host1-20260616.tar.bz2
+xcp-bundle-analyzer search "my vm" xapi-db.xml
+xcp-bundle-analyzer search OpaqueRef:vm1 XenServer-host1-20260616.tar.bz2
 
 # detailed view of one VM (like `xe vm-param-list`): name, uuid, vCPUs, memory,
 # state, host, dom-id, VBDs -> VDIs (uuid, size, format vhd/qcow2/raw, SR),
@@ -481,8 +481,8 @@ xcp-bundle-analyzer list host1.tar.bz2 [--grep xapi]
 xcp-bundle-analyzer xapi-db host1.tar.bz2 host
 
 # search xapi-db.xml by name, uuid or OpaqueRef (full or partial)
-xcp-bundle-analyzer search host1.tar.bz2 win2
-xcp-bundle-analyzer search host1.tar.bz2 uuid=<uuid>
+xcp-bundle-analyzer search win2 host1.tar.bz2
+xcp-bundle-analyzer search uuid=<uuid> host1.tar.bz2
 ```
 
 ## Snapshots, base disks and garbage collection

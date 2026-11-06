@@ -4,10 +4,17 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.5.1 (patch)
+
+- fix: the `search` subcommand now takes the bundle last for consistency with
+  the other subcommands: `xcp-bundle-analyzer search <pattern> <bundle>`.
+  The swapped order is still accepted when the pattern is a full uuid
+  (`search <bundle> uuid=<uuid>`).
+
 ## v0.5.0 (minor)
 
 - feat: new `search` subcommand (issue #88):
-  `xcp-bundle-analyzer search <bundle> <pattern>` searches xapi-db.xml by
+  `xcp-bundle-analyzer search <pattern> <bundle>` searches xapi-db.xml by
   name, uuid or OpaqueRef (full or partial, case-insensitive) and lists only
   the matching objects themselves (name + uuid + OpaqueRef) — objects that
   merely reference a match (e.g. the VBDs/VIFs of a matched VM) are never
