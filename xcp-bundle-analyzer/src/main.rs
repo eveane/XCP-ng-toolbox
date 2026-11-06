@@ -173,6 +173,13 @@ OTHER COMMANDS:
   # Dump a raw xapi table from xapi-db.xml (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
   xcp-bundle-analyzer xapi-db XenServer-host1.tar.bz2 host
 
+  # Search xapi-db.xml by name, uuid or OpaqueRef (full or partial): lists
+  # only the matching objects themselves (name + uuid + OpaqueRef), never
+  # the objects that merely reference them (e.g. the VBDs/VIFs of a VM)
+  xcp-bundle-analyzer search XenServer-host1.tar.bz2 a5609e55-f48c-56c7-e795-5edee4841245
+  xcp-bundle-analyzer search xapi-db.xml "my vm"
+  xcp-bundle-analyzer search XenServer-host1.tar.bz2 OpaqueRef:vm1
+
   # Shell completion scripts
   xcp-bundle-analyzer completions bash > xcp-bundle-analyzer.bash
   xcp-bundle-analyzer completions zsh > _xcp-bundle-analyzer
@@ -253,6 +260,15 @@ enum Commands {
         bundle: PathBuf,
         /// Table name (e.g. host, VM, SR, VDI, VIF, PIF, PBD, network)
         table: String,
+    },
+    /// Search xapi-db.xml for objects by name, uuid or opaque-ref (full or partial)
+    Search {
+        bundle: PathBuf,
+        /// Search pattern: a name, uuid or OpaqueRef, full or partial
+        /// (case-insensitive). Only the matching objects themselves are
+        /// listed (name + uuid + OpaqueRef), never the objects that merely
+        /// reference them (e.g. the VBDs/VIFs of a matched VM).
+        pattern: String,
     },
     /// Show all details of one object, like `xe <object>-param-list`
     Object {
@@ -504,6 +520,7 @@ fn main() -> Result<()> {
         ),
         Commands::List { bundle, grep } => cmd_list(&bundle, grep.as_deref()),
         Commands::XapiDb { bundle, table } => cmd_xapidb(&bundle, &table),
+        Commands::Search { bundle, pattern } => cmd_search(&bundle, &pattern),
         Commands::Object {
             object,
             uuid,
@@ -659,6 +676,31 @@ fn section_short_name(s: render::Section) -> &'static str {
         render::Section::Tasks => "tasks",
         render::Section::Anomalies => "anomalies",
     }
+}
+
+fn cmd_search(bundle_path: &Path, pattern: &str) -> Result<()> {
+    // Accept the arguments in either position, like vm-display: if the
+    // bundle arg looks like a uuid and the pattern does not, swap them.
+    let bp = bundle_path.display().to_string();
+    let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
+    let (bundle_path, pattern): (&Path, &str) = if looks_like_uuid(&bp) && !looks_like_uuid(pattern)
+    {
+        (Path::new(pattern), bp.as_str())
+    } else {
+        (bundle_path, pattern)
+    };
+    let pattern = pattern.strip_prefix("uuid=").unwrap_or(pattern);
+    if pattern.trim().is_empty() {
+        bail!("empty search pattern");
+    }
+    let source = bundle::Source::open(bundle_path)?;
+    let db = source
+        .xapi_db()
+        .transpose()?
+        .context("no xapi-db.xml found in this source")?;
+    let text = render::render_search(&db, pattern);
+    print!("{text}");
+    Ok(())
 }
 
 fn cmd_object_display(object: &str, uuid: &str, bundle_path: &Path) -> Result<()> {

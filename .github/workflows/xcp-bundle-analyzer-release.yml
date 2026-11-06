@@ -1,0 +1,142 @@
+name: xcp-bundle-analyzer-release
+
+# Publishes pre-compiled xcp-bundle-analyzer binaries for Linux (tar.gz + .deb
+# + .rpm), Windows (.zip) and macOS (tar.gz) as a GitHub Release, following the
+# bugtool-collector-release / xoa-support-release pattern.
+#
+# Primary trigger: every merge/push to main that changes xcp-bundle-analyzer/
+# -> release "xcp-bundle-analyzer-v<VERSION>" (VERSION from Cargo.toml) is
+# created (or updated) automatically with all platform assets + SHA256SUMS.
+# Nothing to remember when approving a PR.
+#
+# Manual/tag fallbacks still work:
+#   - push of a tag xcp-bundle-analyzer-vX.Y.Z
+#   - workflow_dispatch (optional version input)
+
+"on":
+  push:
+    branches: [main]
+    paths: ["xcp-bundle-analyzer/**"]
+    tags: ["xcp-bundle-analyzer-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.5.0); defaults to the version in xcp-bundle-analyzer/Cargo.toml"
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # create/update the release and upload assets
+
+jobs:
+  build:
+    name: build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,   target: x86_64-unknown-linux-gnu,  name: linux-x86_64 }
+          - { os: ubuntu-latest,   target: aarch64-unknown-linux-gnu, name: linux-aarch64 }
+          - { os: windows-latest,  target: x86_64-pc-windows-msvc,    name: windows-x86_64 }
+          - { os: macos-13,        target: x86_64-apple-darwin,         name: macos-x86_64 }
+          - { os: macos-14,        target: aarch64-apple-darwin,        name: macos-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: install packaging tools (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip dpkg rpm $([ "${{ matrix.target }}" = aarch64-unknown-linux-gnu ] && echo gcc-aarch64-linux-gnu)
+      - name: build release binary
+        working-directory: xcp-bundle-analyzer
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: package
+        run: |
+          VER="$(sed -n 's/^version = "\(.*\)"/\1/p' xcp-bundle-analyzer/Cargo.toml | head -1)"
+          case "${{ matrix.target }}" in
+            *windows*) BIN="xcp-bundle-analyzer/target/${{ matrix.target }}/release/xcp-bundle-analyzer.exe" ;;
+            *)         BIN="xcp-bundle-analyzer/target/${{ matrix.target }}/release/xcp-bundle-analyzer" ;;
+          esac
+          chmod +x xcp-bundle-analyzer/packaging/build-packages.sh
+          xcp-bundle-analyzer/packaging/build-packages.sh "$BIN" "$VER" "${{ matrix.target }}" "dist-${{ matrix.name }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist-${{ matrix.name }}/*
+          retention-days: 1
+
+  release:
+    name: release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: '*'
+          merge-multiple: true
+      - name: resolve version
+        id: ver
+        run: |
+          V="${{ inputs.version }}"
+          [ -n "$V" ] || V="$(sed -n 's/^version = "\(.*\)"/\1/p' xcp-bundle-analyzer/Cargo.toml | head -1)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=xcp-bundle-analyzer-v$V" >> "$GITHUB_OUTPUT"
+      - name: checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cd ..
+      - name: create or update release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          cat > /tmp/release-notes.md <<NOTES
+          ## xcp-bundle-analyzer v${VERSION}
+
+          Pre-compiled binaries (no Rust toolchain needed):
+
+          | Platform | Assets |
+          |---|---|
+          | Linux x86_64 | \`xcp-bundle-analyzer_${VERSION}_amd64.tar.gz\` / \`.deb\` / \`.rpm\` |
+          | Linux arm64 | \`xcp-bundle-analyzer_${VERSION}_arm64.tar.gz\` / \`.deb\` / \`.rpm\` |
+          | Windows x86_64 | \`xcp-bundle-analyzer_${VERSION}_x86_64.zip\` |
+          | macOS Intel | \`xcp-bundle-analyzer_${VERSION}_x86_64.tar.gz\` |
+          | macOS Apple Silicon | \`xcp-bundle-analyzer_${VERSION}_arm64.tar.gz\` |
+
+          ### Install on Linux (deb package)
+
+              wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/xcp-bundle-analyzer_${VERSION}_amd64.deb
+              wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/SHA256SUMS
+              sha256sum -c SHA256SUMS
+              sudo dpkg -i xcp-bundle-analyzer_${VERSION}_amd64.deb   # installs /usr/bin/xcp-bundle-analyzer
+
+          ### Install from a tar.gz / zip: extract and put the binary on your PATH
+
+              tar -xzf xcp-bundle-analyzer_${VERSION}_amd64.tar.gz
+              sudo install -m 755 xcp-bundle-analyzer_${VERSION}_amd64/xcp-bundle-analyzer /usr/local/bin/
+
+          Usage: \`xcp-bundle-analyzer analyze XenServer-host1-20260616.tar.bz2\` — see
+          the [README](https://github.com/eveane/XCP-ng-toolbox/tree/main/xcp-bundle-analyzer) for details.
+
+          Built from commit ${{ github.sha }}.
+          NOTES
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG exists -> updating assets"
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file /tmp/release-notes.md --latest
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "xcp-bundle-analyzer v${VERSION}" --notes-file /tmp/release-notes.md --latest \
+              dist/*
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name]'

@@ -4,6 +4,30 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.5.0 (minor)
+
+- feat: new `search` subcommand (issue #88):
+  `xcp-bundle-analyzer search <bundle> <pattern>` searches xapi-db.xml by
+  name, uuid or OpaqueRef (full or partial, case-insensitive) and lists only
+  the matching objects themselves (name + uuid + OpaqueRef) — objects that
+  merely reference a match (e.g. the VBDs/VIFs of a matched VM) are never
+  returned, because only the rows' own identity fields are searched.
+- feat: pre-compiled binaries for Linux (tar.gz + .deb + .rpm), Windows (.zip)
+  and macOS (tar.gz) are published automatically as GitHub Release
+  `xcp-bundle-analyzer-v<VERSION>` on every merge to main that changes
+  `xcp-bundle-analyzer/` (issue #89); a version-guard workflow
+  (`xcp-bundle-analyzer-version-guard`) fails PRs that touch
+  `xcp-bundle-analyzer/` without bumping the version in Cargo.toml.
+- fix: display changes (issue #90): the hosts-section `release:` line no
+  longer shows the inaccurate `shipped <GA date> — N release(s) behind the
+  newest known` clause (the LTS update estimate from PR #52 is shown instead
+  when available); the cpu line now shows cores vs threads with the HT state
+  (`112 cores / 112 threads, HT off`); the auto-scan-interval anomaly for a
+  slave host is reworded to `slave <host> has other-config:... — It matches
+  the master's setting`.
+- `cpu_cores` is a new field on `HostReport` in the JSON output (physical
+  cores = sockets * cores_per_socket; `cpu_count` is the thread count).
+
 ## v0.4.5 (patch)
 
 - chore: document the mandatory open-source file header (purpose, authors

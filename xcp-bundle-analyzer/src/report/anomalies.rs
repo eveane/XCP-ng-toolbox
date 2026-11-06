@@ -355,11 +355,8 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
             }
             if let Some(interval) = h.auto_scan_interval {
                 let master_note = match master_interval {
-                    Some(mi) => format!(
-                        "matches the master's setting ({}s), so a master failover to this host keeps the same behaviour",
-                        mi
-                    ),
-                    None => "differs from the master (which has none): a master failover to this host would apply this setting".to_string(),
+                    Some(mi) => format!("It matches the master's setting ({mi}s)"),
+                    None => "It differs from the master (which has none)".to_string(),
                 };
                 let sev = if master_interval.is_some() {
                     "info"
@@ -371,7 +368,7 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                         "auto-scan-interval",
                         h.hostname.clone(),
                         format!(
-                            "slave (non-master) host {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
+                            "slave {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
                             h.hostname, interval, master_note
                         ),
                     )
@@ -380,7 +377,7 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                         "auto-scan-interval",
                         h.hostname.clone(),
                         format!(
-                            "slave (non-master) host {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
+                            "slave {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
                             h.hostname, interval, master_note
                         ),
                     )
