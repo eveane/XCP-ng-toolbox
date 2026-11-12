@@ -1,15 +1,25 @@
 Package: bugtool-collector
-Version: 0.1.0
+Version: 0.1.1
 Section: admin
 Priority: optional
 Architecture: all
 Maintainer: eveane <https://github.com/eveane/XCP-ng-toolbox>
-Depends: bash, sshpass, openssh-client, tar, coreutils, grep, gawk, findutils
+Depends: openssh-client
+Recommends: sshpass
 Description: Collect xen-bugtool archives from every host of an XCP-ng pool
  bugtool-collector runs xen-bugtool on every host of an XCP-ng pool over
  SSH, downloads the bundles in parallel (-j N, default 3, 0 = all at once)
  and packs them into one "<pool name or master IP>-<UTC date-time>.tar.gz"
- archive. Installed as /usr/bin/bugtool-collector. Required OS packages are
- listed, checked (dpkg -s on the Debian-based XOA) and installed with
- apt-get automatically when missing.
+ archive. Installed as /usr/bin/bugtool-collector.
+ .
+ With no argument, the pool is auto-detected from the XO server database
+ (xo-server-db ls server): a single registered pool is collected directly,
+ several pools are listed for interactive selection, and the SSH password is
+ read from the chosen server entry. Without sshpass, OpenSSH SSH_ASKPASS is
+ used, so no extra package is needed. bash/coreutils/grep/tar are
+ Essential/required on Debian and are therefore not dependencies.
+ .
+ For offline (airgapped) XOAs, a self-contained airgap bundle
+ (bugtool-collector_<version>_airgap.tar.gz) ships this package plus all
+ dependency .debs and an install.sh that runs dpkg -i locally.
 Homepage: https://github.com/eveane/XCP-ng-toolbox
