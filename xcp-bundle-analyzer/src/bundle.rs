@@ -67,6 +67,17 @@ impl Source {
         }
     }
 
+    /// Read one entry by its name as listed by `list()` (relative path for
+    /// directory bundles, archive entry name for archives). Unlike
+    /// `read_best`, the name must match the listed name exactly.
+    pub fn read_entry(&self, name: &str) -> Option<Result<Vec<u8>>> {
+        match self {
+            Source::Archive(b) => Some(b.read(name)),
+            Source::Dir(d) => d.read_entry(name),
+            Source::DbFile(_) => None,
+        }
+    }
+
     pub fn list(&self) -> Vec<(String, u64)> {
         match self {
             Source::Archive(b) => b.list().to_vec(),
@@ -108,6 +119,19 @@ impl DirBundle {
 
     pub fn read_best(&self, suffix: &str) -> Option<Result<Vec<u8>>> {
         self.find_best(suffix).map(|p| fs::read(p).context_msg(p))
+    }
+
+    /// Read the file whose path relative to the bundle root equals `name`
+    /// (the same names `list()` returns).
+    pub fn read_entry(&self, name: &str) -> Option<Result<Vec<u8>>> {
+        self.files
+            .iter()
+            .find(|(p, _)| {
+                p.strip_prefix(&self.path)
+                    .map(|r| r.to_string_lossy().replace('\\', "/") == name)
+                    .unwrap_or(false)
+            })
+            .map(|(p, _)| fs::read(p).context_msg(p))
     }
 
     pub fn list(&self) -> Vec<(String, u64)> {

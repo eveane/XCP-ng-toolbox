@@ -6,6 +6,7 @@
 mod build_info;
 mod bundle;
 mod inventory;
+mod logs;
 mod render;
 mod report;
 mod xapidb;
@@ -74,6 +75,13 @@ const EXAMPLES: &str = r#"EXAMPLES:
   # VDI snapshot trees: all of them, or just the tree containing one VDI
   xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2
   xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2 uuid=<vdi-uuid>
+
+  # Live-migration analysis: pass the bugtool bundles of the source,
+  # destination and master (or any subset); migrations found in
+  # var/log/xensource.log, var/log/SMlog and the xapi task table are
+  # correlated per VM, classified (succeeded/incomplete/failed) and timed
+  xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2
+  xcp-bundle-analyzer migrate -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
 
 SECTIONS AVAILABLE FOR THE ANALYZE COMMAND (--section, single or
 comma-separated list; the default is the full report):
@@ -179,6 +187,12 @@ OTHER COMMANDS:
   xcp-bundle-analyzer search a5609e55-f48c-56c7-e795-5edee4841245 XenServer-host1.tar.bz2
   xcp-bundle-analyzer search "my vm" xapi-db.xml
   xcp-bundle-analyzer search OpaqueRef:vm1 XenServer-host1.tar.bz2
+
+  # Live-migration analysis across bundles (source, destination, master):
+  # lists migrations per VM, classifies them (succeeded/incomplete/failed)
+  # and times them (start/end/duration/estimated downtime)
+  xcp-bundle-analyzer migrate XenServer-host1.tar.bz2 XenServer-host2.tar.bz2
+  xcp-bundle-analyzer migrate -f json host1.tar.bz2 host2.tar.bz2 master.tar.bz2
 
   # Shell completion scripts
   xcp-bundle-analyzer completions bash > xcp-bundle-analyzer.bash
@@ -311,6 +325,27 @@ enum Commands {
         /// generated: vdi-tree-$(date).txt / .json / .html, or
         /// vdi-tree-$(uuid)-$(date).ext when a VDI uuid is given. Use
         /// -o=<file> to pass an explicit filename.
+        #[arg(short, long, num_args = 0..=1, require_equals = true, default_missing_value = "__default__")]
+        output: Option<String>,
+        /// Compact JSON
+        #[arg(short, long, default_value = "false")]
+        compact: bool,
+    },
+    /// Analyze live migrations across one or more bundles (source, destination, master)
+    Migrate {
+        /// Bundle files (tar/tar.gz/tar.bz2/zip) or decompressed bundle
+        /// directories: pass the source, destination and master bundles
+        /// (or any subset) to correlate migrations per VM
+        #[arg(required = true)]
+        bundles: Vec<PathBuf>,
+        /// OUTPUT format: text (default) or json (html not supported yet);
+        /// use -o/--output <file> to write to a file instead of stdout
+        #[arg(short, long, value_enum, default_value = "text")]
+        format: Format,
+        /// Write output to a file instead of stdout. When given without a
+        /// value (bare -o before the bundles), a default filename is
+        /// generated: migrate-$(date).txt / .json. Use -o=<file> to pass
+        /// an explicit filename.
         #[arg(short, long, num_args = 0..=1, require_equals = true, default_missing_value = "__default__")]
         output: Option<String>,
         /// Compact JSON
@@ -544,6 +579,12 @@ fn main() -> Result<()> {
             output.as_deref(),
             compact,
         ),
+        Commands::Migrate {
+            bundles,
+            format,
+            output,
+            compact,
+        } => cmd_migrate(&bundles, format, output.as_deref(), compact),
         Commands::Completions { shell } => {
             generate(
                 shell.clap_shell(),
@@ -553,6 +594,84 @@ fn main() -> Result<()> {
             );
             Ok(())
         }
+    }
+}
+
+/// Hostname of the host a bundle was collected on, using the same rule as
+/// `report::build_report`: INSTALLATION_UUID / HOSTNAME from
+/// xensource-inventory matched against the host table ("" when unknown).
+fn bundle_origin_host(source: &bundle::Source, db: &Option<xapidb::XapiDb>) -> String {
+    let inventory = match source.read_best("xensource-inventory") {
+        Some(Ok(bytes)) => inventory::Inventory::parse(&String::from_utf8_lossy(&bytes)),
+        _ => inventory::Inventory::default(),
+    };
+    let inv_uuid = inventory.get("INSTALLATION_UUID").unwrap_or("");
+    let inv_host = inventory.get("HOSTNAME").unwrap_or("");
+    if let Some(db) = db {
+        for (_, host) in db.rows("host") {
+            let uuid = host.get("uuid").map(|s| s.as_str()).unwrap_or("");
+            let hostname = host.get("hostname").map(|s| s.as_str()).unwrap_or("");
+            if (!inv_uuid.is_empty() && uuid == inv_uuid)
+                || (!inv_host.is_empty() && hostname == inv_host)
+            {
+                return hostname.to_string();
+            }
+        }
+    }
+    inv_host.to_string()
+}
+
+fn cmd_migrate(
+    bundles: &[PathBuf],
+    format: Format,
+    output: Option<&str>,
+    compact: bool,
+) -> Result<()> {
+    if bundles.is_empty() {
+        bail!("no bundle given");
+    }
+    let mut inputs = Vec::new();
+    for b in bundles {
+        let source = bundle::Source::open(b).with_context(|| format!("opening {}", b.display()))?;
+        let db = match source.xapi_db() {
+            Some(Ok(db)) => Some(db),
+            Some(Err(e)) => {
+                eprintln!(
+                    "warning: {}: failed reading xapi-db.xml: {e:#}",
+                    b.display()
+                );
+                None
+            }
+            None => None,
+        };
+        let origin = bundle_origin_host(&source, &db);
+        let logs = logs::collect_source_logs(&source, db.as_ref(), &origin)
+            .with_context(|| format!("reading logs of {}", b.display()))?;
+        inputs.push(report::BundleInput { logs, db });
+    }
+    let rep = report::build_migration_report(inputs);
+    let ext = match format {
+        Format::Text => "txt",
+        Format::Json => "json",
+        Format::Html => "html",
+    };
+    let out_path = match output {
+        None => None,
+        Some("__default__") => Some(PathBuf::from(format!(
+            "migrate-{}.{ext}",
+            current_date_str()
+        ))),
+        Some(p) => Some(PathBuf::from(p)),
+    };
+    match format {
+        Format::Text => write_output(out_path.as_deref(), &render::render_migration_text(&rep)),
+        Format::Json => {
+            let s = render::render_json(&rep, !compact)?;
+            write_output(out_path.as_deref(), &s)
+        }
+        Format::Html => bail!(
+            "HTML output is not supported for the migrate command yet (use -f text or -f json)"
+        ),
     }
 }
 
