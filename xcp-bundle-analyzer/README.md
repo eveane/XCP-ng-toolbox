@@ -59,6 +59,19 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   srs, vms, vdis, vbds, vifs, pifs, tasks, or `anomalies` (settings needing
   attention, opt-in only). Accepts a single name or a comma-separated list
   (e.g. `--section pool,storage,anomalies`).
+- `migrate` subcommand: offline live-migration analysis across one or more
+  bundles (pass the source, destination and master bugtools, or any subset):
+  `xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2`.
+  It parses `var/log/xensource.log` (xapi/xenopsd lines), `var/log/SMlog`
+  (SM JSON-RPC `vm.migrate`/`vdi.migrate` calls) and the xapi `task` table,
+  correlates the events per VM across all bundles, and reports each migration
+  with its source/destination hosts, start/end/duration, an estimated VM
+  downtime window (last source-side activity before the destination resume),
+  max observed progress, per-host evidence and error lines — classified as
+  succeeded / incomplete / failed (failed sub-grouped by failure category:
+  storage, network, suspend-timeout, memory, power-state, cpu, cancelled,
+  destination, unknown). Output as text (`-f text`, default) or JSON
+  (`-f json`, schema in docs/SPEC.md); bare `-o` writes `migrate-$(date).ext`.
 - The host the bundle was collected from is highlighted (`<<< THIS BUNDLE` in
   text output, badge in the HTML dashboard) — detected by matching the
   bundle's `xensource-inventory` INSTALLATION_UUID/hostname against pool hosts.
@@ -483,6 +496,12 @@ xcp-bundle-analyzer xapi-db host1.tar.bz2 host
 # search xapi-db.xml by name, uuid or OpaqueRef (full or partial)
 xcp-bundle-analyzer search win2 host1.tar.bz2
 xcp-bundle-analyzer search uuid=<uuid> host1.tar.bz2
+
+# live-migration analysis across the bundles of source, destination, master
+xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2
+xcp-bundle-analyzer migrate -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
+# bare -o: migrate-$(date).txt / .json
+xcp-bundle-analyzer migrate -f json -o host1.tar.bz2 host2.tar.bz2
 ```
 
 ## Snapshots, base disks and garbage collection

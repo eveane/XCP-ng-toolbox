@@ -159,6 +159,42 @@ reports), plus deduplicated pool-wide `hosts`, `srs`, `vdis`, `vms`, `vifs`,
 `pifs`, `pbds`, `network_details`, and pool-wide `anomalies`. Entities are
 deduplicated by UUID; the first bundle wins for duplicated content.
 
+## `migrate` subcommand: `MigrationReport`
+
+Offline live-migration analysis over one or more bundles (source,
+destination, master). Events are collected per bundle from the xapi `task`
+table (rows whose name contains `migrate`), `var/log/xensource.log` /
+`SMlog` (current + rotated entries, `.gz` handled), then correlated per VM
+uuid across bundles (time gaps > 1 h split clusters). JSON contract:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `bundles` | `[MigrationBundleInfo]` | Per bundle: `path`, `origin_host`, `xensource_logs` / `smlogs` (name + size of each entry read) |
+| `migrations` | `[Migration]` | Sorted by `start` |
+| `warnings` | `[string]` | Missing logs, unreadable entries, ... |
+
+`Migration`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `vm_uuid` / `vm_name` | string | VM identity (""/"" when unknown) |
+| `kind` | string | `live` / `storage` / `pool` / `receive` |
+| `source_host` / `dest_host` | string | Hostnames ("" when unknown) |
+| `status` | string | `succeeded` / `incomplete` / `failed` |
+| `failure_category` | string \| null | When failed: `suspend_timeout`, `storage`, `network`, `memory`, `power_state`, `cpu_incompatible`, `cancelled`, `destination`, `unknown` |
+| `error` | string | First error excerpt (xapi error code or log line) |
+| `start` / `end` | u64 \| null | Unix epoch; `end` is the xapi task `finished` when a task record exists, else the last event (for `incomplete`: last seen) |
+| `duration_s` | u64 \| null | `end - start` |
+| `downtime` | `Downtime` \| null | Estimated VM-unavailable window: `start`, `end`, `seconds`, `basis` (heuristic: last source-side migration activity at or before the destination resume) |
+| `max_progress` | f64 \| null | Highest observed progress, fraction 0.0-1.0 |
+| `task_uuids` | `[string]` | xapi tasks involved |
+| `hosts` | `[HostEvidence]` | Per bundle: `host`, `bundle`, `events`, `first_event`, `last_event`, `errors` (up to 3 raw error lines) |
+
+Timestamps in syslog log lines carry no year; the year is inferred from the
+latest xapi timestamp in xapi-db.xml (else the bundle filename date, else the
+current year), with December logs in a January bundle attributed to the
+previous year.
+
 ## HTML output
 
 `render_html` embeds the JSON report verbatim in a `<script type="application/json">`

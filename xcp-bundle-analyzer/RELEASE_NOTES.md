@@ -4,6 +4,21 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.0 (minor)
+
+- feat: new `migrate` subcommand for offline live-migration analysis:
+  `xcp-bundle-analyzer migrate <bundle1> <bundle2> ...` takes the
+  xen-bugtool bundles of the source, destination and master (or any subset),
+  parses `var/log/xensource.log` and `var/log/SMlog` (current + rotated
+  entries) plus the xapi `task` table, correlates the events per VM across
+  all bundles, and reports each migration with source/destination hosts,
+  start/end/duration, max progress, per-host evidence and error lines, an
+  estimated VM downtime window, classified as succeeded / incomplete /
+  failed (failed sub-grouped by failure category: storage, network,
+  suspend-timeout, memory, power-state, cpu-incompatible, cancelled,
+  destination, unknown). Text output by default, `-f json` for the JSON
+  report (schema in docs/SPEC.md); bare `-o` writes `migrate-$(date).ext`.
+
 ## v0.5.1 (patch)
 
 - fix: the `search` subcommand now takes the bundle last for consistency with
