@@ -4,6 +4,29 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.1 (patch)
+
+Review-improvement batch (issue #95):
+
+- fix: hosts section — `xapi:` is now on the `product:` line; the `release:`
+  line is only shown when an update-level estimate exists (PR #52 timeline),
+  and then also shows the freshness date of the embedded release db
+  (`release db last updated: <date>`, new `RELEASE_DB_LAST_UPDATED` const);
+  a `xostor: <version>` line is shown when XOSTOR is installed (new
+  `HostReport.xostor_version` field from software_version:xostor/linstor).
+- chore: the embedded XCP-ng 8.3 LTS update timeline now covers the November
+  2026 update announcements (2026-11-03, 2026-11-04, 2026-11-10); the table
+  header now reminds maintainers to refresh it on every commit.
+- fix: anomalies — when every host carries the same
+  other-config:auto-scan-interval, a single entry from the master is shown
+  ("all N slave(s) match this setting"); only hosts that deviate get their
+  own entry, and the note now correctly says "differs from the master's
+  setting" when the values differ.
+- docs: `migrate` and the `tasks` section are now clearly marked
+  EXPERIMENTAL / WORK IN PROGRESS in `--help`, EXAMPLES and the README;
+  `vm-display` is documented as a comprehensive view of the VM config
+  (network, disks, ...) instead of "like `xe vm-param-list`".
+
 ## v0.6.0 (minor)
 
 - feat: new `migrate` subcommand for offline live-migration analysis:

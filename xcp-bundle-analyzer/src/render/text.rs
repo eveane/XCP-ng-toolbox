@@ -70,17 +70,22 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
             "  address: {}   state: {}   ref: {}",
             h.address, h.power_state, h.opaque_ref
         );
+        let xapi = if h.xapi_version.is_empty() {
+            String::new()
+        } else {
+            format!("   xapi: {}", h.xapi_version)
+        };
         let _ = writeln!(
             out,
-            "  product: {}   xen: {}   kernel: {}",
-            h.product_version, h.xen_version, h.kernel_version
+            "  product: {}   xen: {}   kernel: {}{}",
+            h.product_version, h.xen_version, h.kernel_version, xapi
         );
-        if !h.xapi_version.is_empty() {
-            let _ = writeln!(out, "  xapi: {}", h.xapi_version);
-        }
+        // The release line is only shown when we have an actual estimate of
+        // the installed update level (the PR #52 xapi/xen update timeline);
+        // without it only the product version above is shown.
         if let Some(est) = &h.release_estimate {
-            let product = if est.is_xcpng { "XCP-ng" } else { "XenServer" };
             if let Some(u) = &est.update_estimate {
+                let product = if est.is_xcpng { "XCP-ng" } else { "XenServer" };
                 // LTS releases (XCP-ng 8.3) get monthly updates without a
                 // product-version change: the xapi/xen timeline estimate is
                 // the accurate "shipped" date, so the GA date and the
@@ -95,8 +100,11 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
                     "  estimate source: {} (xapi/xen update timeline)",
                     u.source
                 );
-            } else {
-                let _ = writeln!(out, "  release: {product} {}", est.matched_version);
+                let _ = writeln!(
+                    out,
+                    "  release db last updated: {} (latest XCP-ng version known to this build)",
+                    crate::report::RELEASE_DB_LAST_UPDATED
+                );
             }
             if est.newer_than_table {
                 let _ = writeln!(
@@ -104,6 +112,9 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
                     "  note: component versions are newer than the newest known update — the built-in timeline may be stale"
                 );
             }
+        }
+        if let Some(xv) = &h.xostor_version {
+            let _ = writeln!(out, "  xostor: {xv} (installed)");
         }
         let ht = if h.cpu_count > h.cpu_cores {
             "on"
@@ -696,6 +707,10 @@ pub(crate) fn render_pbds_body(r: &BundleReport, out: &mut String) {
 
 pub(crate) fn render_tasks(r: &BundleReport, out: &mut String) {
     let _ = writeln!(out, "\n--- TASKS ({}) ---", r.tasks.len());
+    let _ = writeln!(
+        out,
+        "  (EXPERIMENTAL / work in progress: xapi tasks are usually purged quickly, so this section is often empty)"
+    );
     if r.tasks.is_empty() {
         let _ = writeln!(out, "  (no tasks recorded in the dump)");
         return;
@@ -1074,24 +1089,62 @@ mod host_release_line_tests {
         assert!(line.contains("est. updated ~"), "{line}");
         assert!(!line.contains("shipped"), "{line}");
         assert!(!line.contains("release(s) behind"), "{line}");
-        // the source link is on the following line
+        // the source link is on the following line, plus the offline
+        // release-db freshness date
         let src = text
             .lines()
             .find(|l| l.contains("estimate source:"))
             .unwrap();
         assert!(src.contains("https://xcp-ng.org/"), "{src}");
+        let dbdate = text
+            .lines()
+            .find(|l| l.contains("release db last updated:"))
+            .unwrap();
+        assert!(
+            dbdate.contains(crate::report::RELEASE_DB_LAST_UPDATED),
+            "{dbdate}"
+        );
     }
 
     #[test]
-    fn host_without_update_estimate_shows_the_plain_release_line() {
+    fn host_without_update_estimate_has_no_release_line() {
         let text = hosts_text();
-        // host2 is 8.2.1: no update timeline -> plain version line, without
-        // the "shipped <GA date> — N release(s) behind" clause
-        let line = text.lines().find(|l| l.contains("XCP-ng 8.2.1")).unwrap();
-        assert!(line.contains("release: XCP-ng 8.2.1"), "{line}");
-        assert!(!line.contains("shipped"), "{line}");
-        assert!(!line.contains("release(s) behind"), "{line}");
-        assert!(!line.contains("est. updated"), "{line}");
+        // host2 is 8.2.1: no update-timeline estimate -> no release line for
+        // it, only the product version on the product line
+        assert!(
+            !text.lines().any(|l| l.contains("release: XCP-ng 8.2.1")),
+            "{text}"
+        );
+        let prod = text.lines().find(|l| l.contains("product: 8.2.1")).unwrap();
+        assert!(prod.contains("xapi: 22.45.0"), "{prod}");
+    }
+
+    #[test]
+    fn xapi_is_on_the_product_line() {
+        let text = hosts_text();
+        let line = text.lines().find(|l| l.contains("product: 8.3.0")).unwrap();
+        assert!(line.contains("xen: 4.17.7-2"), "{line}");
+        assert!(line.contains("kernel: 4.19.0+1"), "{line}");
+        assert!(line.contains("xapi: 26.1"), "{line}");
+        // no standalone xapi line anymore
+        assert!(!text.lines().any(|l| l.trim_start().starts_with("xapi:")));
+    }
+
+    #[test]
+    fn xostor_version_line_only_when_installed() {
+        // fixture hosts have no xostor key in software_version
+        let text = hosts_text();
+        assert!(!text.lines().any(|l| l.contains("xostor:")), "{text}");
+        // add an xostor entry to host1's software_version
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml").replace(
+            r#"('xapi' '26.1')"#,
+            r#"('xapi' '26.1') ('xostor' '3.2.1')"#,
+        );
+        let db = XapiDb::from_xml(&xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        let text = render_sections(&r, &[Section::Hosts]);
+        let line = text.lines().find(|l| l.contains("xostor:")).unwrap();
+        assert!(line.contains("3.2.1"), "{line}");
     }
 
     #[test]

@@ -22,7 +22,7 @@ pub use build::build_report;
 pub use consolidate::{consolidate, ConsolidatedReport};
 pub use migration::{build_migration_report, BundleInput};
 pub use types::*;
-pub use versions::ReleaseEstimate;
+pub use versions::{ReleaseEstimate, RELEASE_DB_LAST_UPDATED};
 
 #[cfg(test)]
 mod time_tests {

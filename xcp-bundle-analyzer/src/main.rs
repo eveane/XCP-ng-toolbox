@@ -80,6 +80,8 @@ const EXAMPLES: &str = r#"EXAMPLES:
   # destination and master (or any subset); migrations found in
   # var/log/xensource.log, var/log/SMlog and the xapi task table are
   # correlated per VM, classified (succeeded/incomplete/failed) and timed
+  # WARNING: EXPERIMENTAL / WORK IN PROGRESS — results may be incomplete or
+  # inaccurate, use with caution and verify against the logs
   xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2
   xcp-bundle-analyzer migrate -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
 
@@ -99,6 +101,8 @@ comma-separated list; the default is the full report):
   pbd        (same as pbds below, singular accepted)
   pbds       PBDs grouped per SR, pool inconsistencies highlighted
   tasks      xapi asynchronous tasks (pending/failed first, subtasks)
+             EXPERIMENTAL / work in progress: xapi tasks are usually purged
+             quickly, so this section is often empty
   anomalies  settings needing attention, opt-in only, never shown by default
              (management MTU != 1500, VDIs on dom0, shared SR missing a host,
              SR free space < 2x largest VDI, multipath inconsistencies,
@@ -175,7 +179,8 @@ OTHER COMMANDS:
   xcp-bundle-analyzer list XenServer-host1.tar.bz2
   xcp-bundle-analyzer list --grep xapi XenServer-host1.tar.bz2
 
-  # Detailed view of one VM (like `xe vm-param-list`)
+  # Comprehensive view of one VM's config (network, disks, ...):
+  # name, uuid, vCPUs, memory, state, host, VBDs -> VDIs, VIFs, snapshot chain
   xcp-bundle-analyzer vm-display XenServer-host1.tar.bz2 uuid=a5609e55-f48c-56c7-e795-5edee4841245
 
   # Dump a raw xapi table from xapi-db.xml (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
@@ -191,6 +196,7 @@ OTHER COMMANDS:
   # Live-migration analysis across bundles (source, destination, master):
   # lists migrations per VM, classifies them (succeeded/incomplete/failed)
   # and times them (start/end/duration/estimated downtime)
+  # WARNING: EXPERIMENTAL / WORK IN PROGRESS — use with caution
   xcp-bundle-analyzer migrate XenServer-host1.tar.bz2 XenServer-host2.tar.bz2
   xcp-bundle-analyzer migrate -f json host1.tar.bz2 host2.tar.bz2 master.tar.bz2
 
@@ -236,7 +242,8 @@ enum Commands {
         /// SECTIONS AVAILABLE (single or comma-separated list, text
         /// output only; default: full report):
         ///   pool, hosts, vms, network, storage,
-        ///   srs, vdis, vbds, vifs, pifs, pbds, tasks,
+        ///   srs, vdis, vbds, vifs, pifs, pbds, tasks (EXPERIMENTAL,
+        ///   often empty — work in progress),
         ///   anomalies (settings needing attention, opt-in only)
         /// see `xcp-bundle-analyzer --help` for what each section contains
         #[arg(short, long, value_delimiter = ',')]
@@ -297,7 +304,9 @@ enum Commands {
         /// or bare xapi-db.xml file
         bundle: PathBuf,
     },
-    /// Show a detailed view of one VM, like `xe vm-param-list`
+    /// Show a comprehensive view of one VM's configuration (like
+    /// `xe vm-param-list`, plus network, disks, snapshot chain), including
+    /// name, uuid, vCPUs, memory, state, host, VBDs -> VDIs and VIFs
     VmDisplay {
         bundle: PathBuf,
         /// VM UUID, given as uuid=<uuid> or just <uuid>
@@ -332,6 +341,9 @@ enum Commands {
         compact: bool,
     },
     /// Analyze live migrations across one or more bundles (source, destination, master)
+    ///
+    /// EXPERIMENTAL / WORK IN PROGRESS: results may be incomplete or
+    /// inaccurate — use with caution and verify against the logs.
     Migrate {
         /// Bundle files (tar/tar.gz/tar.bz2/zip) or decompressed bundle
         /// directories: pass the source, destination and master bundles
