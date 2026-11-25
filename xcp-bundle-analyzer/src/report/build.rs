@@ -212,6 +212,9 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
                 .unwrap_or_default()
                 .to_string(),
             xapi_version: map_get(&software, "xapi").unwrap_or_default().to_string(),
+            xostor_version: map_get(&software, "xostor")
+                .or_else(|| map_get(&software, "linstor"))
+                .map(|v| v.to_string()),
             xen_version: map_get(&software, "xen_version")
                 .or_else(|| map_get(&software, "xen"))
                 .unwrap_or_default()

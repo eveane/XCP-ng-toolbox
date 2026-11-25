@@ -56,10 +56,13 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   `-f html` (a self-contained page rendering the same tree, works
   offline).
 - `--section` option to display only some parts of the report: pool, hosts,
-  srs, vms, vdis, vbds, vifs, pifs, tasks, or `anomalies` (settings needing
-  attention, opt-in only). Accepts a single name or a comma-separated list
+  srs, vms, vdis, vbds, vifs, pifs, tasks (EXPERIMENTAL, often empty — work
+  in progress), or `anomalies` (settings needing attention, opt-in only).
+  Accepts a single name or a comma-separated list
   (e.g. `--section pool,storage,anomalies`).
-- `migrate` subcommand: offline live-migration analysis across one or more
+- `migrate` subcommand (EXPERIMENTAL / WORK IN PROGRESS — results may be
+  incomplete or inaccurate, use with caution and verify against the logs):
+  offline live-migration analysis across one or more
   bundles (pass the source, destination and master bugtools, or any subset):
   `xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2`.
   It parses `var/log/xensource.log` (xapi/xenopsd lines), `var/log/SMlog`
@@ -142,7 +145,9 @@ self-contained HTML dashboard (XO-like single page, no external assets).
     (`paths=[8, 8]`) on multipathed SRs. Pool inconsistencies are
     highlighted on top: a shared SR missing a PBD on one of the pool
     hosts, or a shared SR whose PBD is unplugged on a host.
-- **Tasks** section: xapi asynchronous operations still recorded at dump
+- **Tasks** section (EXPERIMENTAL / work in progress — xapi tasks are usually
+  purged quickly, so this section is often empty): xapi asynchronous
+  operations still recorded at dump
   time (recently finished or stuck). Shows name (e.g. `Async.VM.clone`),
   status (pending/success/failure/cancelled), progress, created/finished
   timestamps, duration, resident host, result, error_info, and subtask
@@ -392,7 +397,8 @@ xcp-bundle-analyzer analyze -f json -o=pool.json host1.tar.bz2 host2.tar.bz2 hos
 xcp-bundle-analyzer analyze -f json -o XenServer-host1-20260616.tar.bz2
 
 # only display some sections (pool, hosts, srs, vms, vdis, vbds, vifs, pifs,
-# tasks); a comma-separated list shows several sections in one run
+# tasks [experimental, often empty]); a comma-separated list shows several
+# sections in one run
 xcp-bundle-analyzer analyze --section vms XenServer-host1-20260616.tar.bz2
 xcp-bundle-analyzer analyze --section pool,storage XenServer-host1-20260616.tar.bz2
 xcp-bundle-analyzer analyze --section tasks XenServer-host1-20260616.tar.bz2
@@ -418,7 +424,8 @@ xcp-bundle-analyzer search a5609e55-f48c-56c7-e795-5edee4841245 XenServer-host1-
 xcp-bundle-analyzer search "my vm" xapi-db.xml
 xcp-bundle-analyzer search OpaqueRef:vm1 XenServer-host1-20260616.tar.bz2
 
-# detailed view of one VM (like `xe vm-param-list`): name, uuid, vCPUs, memory,
+# comprehensive view of one VM's config (like `xe vm-param-list`, plus
+# network, disks, ...): name, uuid, vCPUs, memory,
 # state, host, dom-id, VBDs -> VDIs (uuid, size, format vhd/qcow2/raw, SR),
 # VIFs -> MAC/IP/network, snapshot chain and template uuid
 xcp-bundle-analyzer vm-display XenServer-host1-20260616.tar.bz2 uuid=a5609e55-f48c-56c7-e795-5edee4841245
@@ -498,6 +505,7 @@ xcp-bundle-analyzer search win2 host1.tar.bz2
 xcp-bundle-analyzer search uuid=<uuid> host1.tar.bz2
 
 # live-migration analysis across the bundles of source, destination, master
+# WARNING: EXPERIMENTAL / WORK IN PROGRESS — use with caution
 xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2
 xcp-bundle-analyzer migrate -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
 # bare -o: migrate-$(date).txt / .json

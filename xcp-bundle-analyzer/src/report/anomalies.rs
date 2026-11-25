@@ -334,6 +334,9 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
     //    default (30 s, or 5 min for linstor/xostor). Flag a master without
     //    the setting, and slaves that carry it (useful only if that slave
     //    ever takes over the master role; otherwise it is dead config).
+    //    When every host carries the same value, show a single entry from
+    //    the master stating that all slaves match; only hosts that deviate
+    //    get their own entry.
     {
         let master = r.hosts.iter().find(|h| h.is_master);
         let master_interval = master.and_then(|h| h.auto_scan_interval);
@@ -349,40 +352,62 @@ pub fn compute_anomalies(r: &BundleReport) -> Vec<Anomaly> {
                 ));
             }
         }
-        for h in &r.hosts {
-            if h.is_master {
-                continue;
+        let slaves: Vec<_> = r.hosts.iter().filter(|h| !h.is_master).collect();
+        let all_match = master_interval.is_some()
+            && !slaves.is_empty()
+            && slaves
+                .iter()
+                .all(|h| h.auto_scan_interval == master_interval);
+        if let (Some(m), Some(mi)) = (master, master_interval) {
+            if all_match {
+                out.push(info(
+                    "auto-scan-interval",
+                    m.hostname.clone(),
+                    format!(
+                        "pool master {} has other-config:auto-scan-interval={}s; all {} slave(s) match this setting",
+                        m.hostname,
+                        mi,
+                        slaves.len()
+                    ),
+                ));
             }
-            if let Some(interval) = h.auto_scan_interval {
-                let master_note = match master_interval {
-                    Some(mi) => format!("It matches the master's setting ({mi}s)"),
-                    None => "It differs from the master (which has none)".to_string(),
-                };
-                let sev = if master_interval.is_some() {
-                    "info"
-                } else {
-                    "warning"
-                };
-                let a = if sev == "info" {
-                    info(
-                        "auto-scan-interval",
-                        h.hostname.clone(),
-                        format!(
-                            "slave {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
-                            h.hostname, interval, master_note
-                        ),
-                    )
-                } else {
-                    warn(
-                        "auto-scan-interval",
-                        h.hostname.clone(),
-                        format!(
-                            "slave {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
-                            h.hostname, interval, master_note
-                        ),
-                    )
-                };
-                out.push(a);
+        }
+        if !all_match {
+            for h in &slaves {
+                if let Some(interval) = h.auto_scan_interval {
+                    let master_note = match master_interval {
+                        Some(mi) if Some(mi) == h.auto_scan_interval => {
+                            format!("It matches the master's setting ({mi}s)")
+                        }
+                        Some(mi) => format!("It differs from the master's setting ({mi}s)"),
+                        None => "It differs from the master (which has none)".to_string(),
+                    };
+                    let sev = if master_interval.is_some() {
+                        "info"
+                    } else {
+                        "warning"
+                    };
+                    let a = if sev == "info" {
+                        info(
+                            "auto-scan-interval",
+                            h.hostname.clone(),
+                            format!(
+                                "slave {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
+                                h.hostname, interval, master_note
+                            ),
+                        )
+                    } else {
+                        warn(
+                            "auto-scan-interval",
+                            h.hostname.clone(),
+                            format!(
+                                "slave {} has other-config:auto-scan-interval={}s; only effective while it is the master — {}",
+                                h.hostname, interval, master_note
+                            ),
+                        )
+                    };
+                    out.push(a);
+                }
             }
         }
     }
