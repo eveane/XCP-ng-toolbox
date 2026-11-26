@@ -12,6 +12,7 @@
 mod anomalies;
 mod build;
 mod consolidate;
+pub mod migrate_checks;
 pub mod migration;
 mod types;
 mod util;
@@ -20,7 +21,8 @@ mod versions;
 pub use anomalies::compute_anomalies;
 pub use build::build_report;
 pub use consolidate::{consolidate, ConsolidatedReport};
-pub use migration::{build_migration_report, BundleInput};
+pub use migrate_checks::{build_checklist, MigrateChecklist};
+pub use migration::{build_migration_report, select_migration, BundleInput};
 pub use types::*;
 pub use versions::{ReleaseEstimate, RELEASE_DB_LAST_UPDATED};
 
