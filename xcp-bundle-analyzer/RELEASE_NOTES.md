@@ -4,6 +4,63 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.5 (patch)
+
+- fix: `analyze --section pool` now ALWAYS shows the `migration-compression`
+  line — when the pool row omits the attribute (never set, xapi default
+  false) it prints "not set (defaults to false)" with the
+  `xe pool-param-set uuid=<pool> migration-compression=true` hint, instead
+  of printing nothing. Both db attribute spellings (`migration-compression` /
+  `migration_compression`) are read.
+
+## v0.6.4 (patch)
+
+- feat: `analyze --section pool` now shows the pool param
+  `migration-compression` (new `PoolSummary.migration_compression` field)
+  with the `xe pool-param-set uuid=<pool> migration-compression=true` hint
+  when false.
+- refactor(migrate check): the checklist now separates what is verifiable
+  from the bundle (pool `migration-compression` check added as `PoolCheck`,
+  auto-scan-interval, cpu governor, xen cmdline compression flag, VM dynamic
+  memory, disk count, parallelism) from `advice` items that cannot be
+  verified from the bugtool bundle: XO RPU `evacuation-batch-size = 1`
+  (limits concurrent live migrations) and xostor `multi_max_worker` worker
+  tuning (check on the hosts / in XOA). The xostor worker setting is no
+  longer looked up in bundle files.
+
+## v0.6.3 (patch)
+
+- feat(migrate, EXPERIMENTAL): the `migrate` command is now a subcommand
+  family — `migrate list` (short list of all live migrations found: index,
+  vm, kind, src -> dst, start -> end, duration, status, plus a summary of
+  durations/downtimes), `migrate analyze <#n|uuid|name>` (detailed analysis of
+  ONE migration; selector = 1-based list index, VM uuid — artefact uuids
+  ending in 000000000000/000000000001 resolve to the real VM — or VM name),
+  `migrate check` (best-practice checklist, see below) and `migrate all` (the
+  previous full report). Old syntax `migrate <bundles...>` is now
+  `migrate all <bundles...>`.
+- feat(migrate check): best-practice checklist for live migrations computed
+  from the bundles: (a) auto-scan-interval per host/master, (b) host power
+  setting via dom0 cpu governor from the bundle, (c) xostor/linstor
+  max-worker setting from `etc/linstor/*.toml`, (d) xen migration compression
+  flag from the kernel cmdline, (e) VM dynamic memory min/max (collapsed range
+  flagged), (f) attached disk count per VM, (g) parallel live migrations
+  (overlapping [start,end] windows from the migration report).
+  New `report/migrate_checks.rs` (`build_checklist`, `MigrateChecklist` JSON
+  contract in docs/SPEC.md), renderers in `render/migration.rs`.
+
+## v0.6.2 (patch)
+
+- fix(migrate, EXPERIMENTAL): migration artefact (shadow) VMs are now
+  recognized and linked to the real VM. During a migration xapi creates
+  temporary VMs whose uuid ends in `000000000000` (source host) /
+  `000000000001` (destination host) and shares the first four uuid groups
+  with the real VM; events mentioning those artefact uuids are now clustered
+  into the real VM's migration, and the artefact uuids are listed on it
+  (`artefact_uuids` field in JSON, `artefact VMs: ... (source/dest)` line in
+  text output; helpers `artefact_prefix` / `artefact_role` in
+  report/migration.rs).
+
 ## v0.6.1 (patch)
 
 Review-improvement batch (issue #95):

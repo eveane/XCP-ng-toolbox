@@ -60,11 +60,21 @@ self-contained HTML dashboard (XO-like single page, no external assets).
   in progress), or `anomalies` (settings needing attention, opt-in only).
   Accepts a single name or a comma-separated list
   (e.g. `--section pool,storage,anomalies`).
-- `migrate` subcommand (EXPERIMENTAL / WORK IN PROGRESS — results may be
-  incomplete or inaccurate, use with caution and verify against the logs):
+- `migrate` subcommand family (EXPERIMENTAL / WORK IN PROGRESS — results may
+  be incomplete or inaccurate, use with caution and verify against the logs):
   offline live-migration analysis across one or more
   bundles (pass the source, destination and master bugtools, or any subset):
-  `xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2`.
+  - `migrate list <bundles...>` — short list of all migrations found (index,
+    vm, kind, source -> destination, start -> end, duration, status) plus a
+    summary of the times;
+  - `migrate analyze <#n|uuid|name> <bundles...>` — detailed analysis of ONE
+    migration (index from `migrate list`, VM uuid — artefact uuids ending in
+    000000000000/000000000001 resolve to the real VM — or VM name);
+  - `migrate check <bundles...>` — best-practice checklist for live
+    migrations: auto-scan-interval, host power setting (cpu governor from the
+    bundle), xostor worker setting, xen migration compression flag, VM
+    dynamic-memory range, attached disk count, migration parallelism;
+  - `migrate all <bundles...>` — full report over all migrations.
   It parses `var/log/xensource.log` (xapi/xenopsd lines), `var/log/SMlog`
   (SM JSON-RPC `vm.migrate`/`vdi.migrate` calls) and the xapi `task` table,
   correlates the events per VM across all bundles, and reports each migration
@@ -504,12 +514,19 @@ xcp-bundle-analyzer xapi-db host1.tar.bz2 host
 xcp-bundle-analyzer search win2 host1.tar.bz2
 xcp-bundle-analyzer search uuid=<uuid> host1.tar.bz2
 
-# live-migration analysis across the bundles of source, destination, master
-# WARNING: EXPERIMENTAL / WORK IN PROGRESS — use with caution
-xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2
-xcp-bundle-analyzer migrate -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
-# bare -o: migrate-$(date).txt / .json
-xcp-bundle-analyzer migrate -f json -o host1.tar.bz2 host2.tar.bz2
+# live-migration analysis (EXPERIMENTAL / WORK IN PROGRESS — use with caution)
+# list all migrations found (index, vm, start/end, duration, status)
+xcp-bundle-analyzer migrate list host1.tar.bz2 host2.tar.bz2 master.tar.bz2
+# analyze ONE migration in detail (list index, VM uuid or name)
+xcp-bundle-analyzer migrate analyze #1 host1.tar.bz2 host2.tar.bz2
+xcp-bundle-analyzer migrate analyze uuid=<vm-uuid> host1.tar.bz2
+# best-practice checklist for live migrations
+xcp-bundle-analyzer migrate check host1.tar.bz2 host2.tar.bz2
+# full report over all migrations
+xcp-bundle-analyzer migrate all -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
+# bare -o: migrate-list-$(date).ext / migrate-analyze-$(sel)-$(date).ext /
+# migrate-check-$(date).ext / migrate-$(date).ext
+xcp-bundle-analyzer migrate all -f json -o host1.tar.bz2 host2.tar.bz2
 ```
 
 ## Snapshots, base disks and garbage collection
