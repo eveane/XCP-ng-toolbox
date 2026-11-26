@@ -74,9 +74,11 @@ sum of `virtual_size` per class).
 ## `PoolSummary`
 
 Pool name, UUID, master hostname, HA status (`ha_enabled`: true/false, or
-null when absent from the dump), and totals (`host_count`, `vm_running`,
-`vm_total`, plus per-type counters). Built from the pool table plus host/master
-resolution.
+null when absent from the dump), `migration_compression` (pool param
+`migration-compression`, null when absent — shown in the pool section with the
+`xe pool-param-set uuid=<pool> migration-compression=true` hint when false),
+and totals (`host_count`, `vm_running`, `vm_total`, plus per-type counters).
+Built from the pool table plus host/master resolution.
 
 ## `HostReport` (key fields)
 
@@ -180,6 +182,7 @@ uuid across bundles (time gaps > 1 h split clusters). JSON contract:
 | Field | Type | Meaning |
 |---|---|---|
 | `vm_uuid` / `vm_name` | string | VM identity (""/"" when unknown) |
+| `artefact_uuids` | `[string]` | Migration artefact (shadow) VM uuids linked to this VM: they end in `000000000000` (source side) / `000000000001` (destination side) and share the first four uuid groups with the real VM; their events are clustered into the real VM's migration |
 | `kind` | string | `live` / `storage` / `pool` / `receive` |
 | `source_host` / `dest_host` | string | Hostnames ("" when unknown) |
 | `status` | string | `succeeded` / `incomplete` / `failed` |
@@ -196,6 +199,32 @@ Timestamps in syslog log lines carry no year; the year is inferred from the
 latest xapi timestamp in xapi-db.xml (else the bundle filename date, else the
 current year), with December logs in a January bundle attributed to the
 previous year.
+
+### `migrate list` / `migrate analyze`
+
+`migrate list` renders the same `migrations` array compactly (one line per
+migration with its 1-based index, plus a summary of durations/downtimes); in
+JSON it serializes the `migrations` array directly. `migrate analyze <sel>`
+selects one migration — by 1-based list index (`#2` or `2`), VM uuid
+(artefact uuids ending in `000000000000`/`000000000001` resolve to the real
+VM via the shared first four uuid groups), or VM name — and serializes that
+single `Migration` in JSON.
+
+### `migrate check`: `MigrateChecklist`
+
+Best-practice checklist for live migrations, computed from the bundles
+(xapi-db.xml + small raw files: `sys/.../cpufreq/scaling_governor`,
+`proc/cmdline`, `etc/default/grub`, `etc/linstor/*.toml`) and the migration
+report:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `pool` | `PoolCheck` \\| null | Pool row checks: `name`, `uuid`, `migration_compression` (pool param, checked against `xe pool-param-set uuid=<pool> migration-compression=true`), `notes` |
+| `hosts` | `[HostCheck]` | Per host/bundle: `host`, `bundle`, `is_master`, `auto_scan_interval` (a), `cpu_governor` (b), `xen_compression` (d), `xostor_present` (c — worker tuning is NOT bundle-verifiable, see `advice`), `notes` |
+| `vms` | `[VmCheck]` | Per VM: `uuid`, `name`, `dynamic_min_bytes`/`dynamic_max_bytes` (e), `disk_count` (f), `notes` |
+| `parallelism` | `Parallelism` | (g) `total_migrations`, `max_concurrent`, `overlapping_pairs` (1-based index pairs, as in `migrate list`) |
+| `advice` | `[string]` | NOT verifiable from the bundle — check externally: XO RPU `evacuation-batch-size = 1`, xostor `multi_max_worker` tuning, pool `migration-compression=true` hint when not enabled |
+| `warnings` | `[string]` | Bundles without xapi-db.xml, ... |
 
 ## HTML output
 

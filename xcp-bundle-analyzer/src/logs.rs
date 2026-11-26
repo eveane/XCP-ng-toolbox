@@ -63,7 +63,7 @@ pub struct LogFile {
 }
 
 /// All log content extracted from one bundle.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SourceLogs {
     /// Bundle path as given on the CLI.
     pub path: String,
