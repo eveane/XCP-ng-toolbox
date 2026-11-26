@@ -9,7 +9,9 @@
 //! Rendering only formats the report; it never parses input.
 
 use super::util::utc_timestamp;
-use crate::report::migration::{FailureCategory, Migration, MigrationReport, MigrationStatus};
+use crate::report::migration::{
+    artefact_role, FailureCategory, Migration, MigrationReport, MigrationStatus,
+};
 use std::fmt::Write as _;
 
 /// Render the whole migration report as plain text.
@@ -175,6 +177,14 @@ fn render_migration(out: &mut String, m: &Migration) {
         "  vm '{name}' [{uuid}]  {src} -> {dst}  [{}]  {status}",
         m.kind
     );
+    if !m.artefact_uuids.is_empty() {
+        let arts: Vec<String> = m
+            .artefact_uuids
+            .iter()
+            .map(|u| format!("{u} ({})", artefact_role(u).unwrap_or("?")))
+            .collect();
+        let _ = writeln!(out, "    artefact VMs: {}", arts.join(", "));
+    }
     match (m.start, m.end) {
         (Some(s), Some(e)) => {
             let _ = writeln!(
@@ -283,6 +293,10 @@ mod tests {
                 Migration {
                     vm_uuid: "vm-uuid-1".into(),
                     vm_name: "vm1".into(),
+                    artefact_uuids: vec![
+                        "vm-uuid-1-000000000000".into(),
+                        "vm-uuid-1-000000000001".into(),
+                    ],
                     kind: "live".into(),
                     source_host: "host1.example.com".into(),
                     dest_host: "host2.example.com".into(),
@@ -312,6 +326,7 @@ mod tests {
                 Migration {
                     vm_uuid: "vm-uuid-2".into(),
                     vm_name: "vm2".into(),
+                    artefact_uuids: vec![],
                     kind: "live".into(),
                     source_host: "host1.example.com".into(),
                     dest_host: String::new(),
@@ -336,6 +351,7 @@ mod tests {
                 Migration {
                     vm_uuid: "vm-uuid-3".into(),
                     vm_name: "vm3".into(),
+                    artefact_uuids: vec![],
                     kind: "pool".into(),
                     source_host: "host1.example.com".into(),
                     dest_host: String::new(),
@@ -374,6 +390,13 @@ mod tests {
         assert!(text.contains("failed/storage: 1"), "{text}");
         assert!(text.contains("total estimated VM downtime: 2s"), "{text}");
         assert!(text.contains("--- SUCCEEDED (1)"), "{text}");
+        // artefact (shadow) VMs are listed with their side
+        assert!(
+            text.contains(
+                "artefact VMs: vm-uuid-1-000000000000 (source), vm-uuid-1-000000000001 (dest)"
+            ),
+            "{text}"
+        );
         assert!(text.contains("--- INCOMPLETE (1)"), "{text}");
         assert!(text.contains("--- FAILED (1)"), "{text}");
         assert!(text.contains("== failed/storage (1)"), "{text}");

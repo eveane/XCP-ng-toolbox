@@ -180,6 +180,7 @@ uuid across bundles (time gaps > 1 h split clusters). JSON contract:
 | Field | Type | Meaning |
 |---|---|---|
 | `vm_uuid` / `vm_name` | string | VM identity (""/"" when unknown) |
+| `artefact_uuids` | `[string]` | Migration artefact (shadow) VM uuids linked to this VM: they end in `000000000000` (source side) / `000000000001` (destination side) and share the first four uuid groups with the real VM; their events are clustered into the real VM's migration |
 | `kind` | string | `live` / `storage` / `pool` / `receive` |
 | `source_host` / `dest_host` | string | Hostnames ("" when unknown) |
 | `status` | string | `succeeded` / `incomplete` / `failed` |

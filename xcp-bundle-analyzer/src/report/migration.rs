@@ -96,6 +96,54 @@ pub enum FailureCategory {
     Unknown,
 }
 
+/// Suffix of the artefact VM uuid xapi creates on the SOURCE host during a
+/// migration (a shadow copy that facilitates the migration): the real VM's
+/// uuid with the last 12 hex chars replaced by `000000000000`.
+pub const ARTEFACT_SOURCE_SUFFIX: &str = "000000000000";
+/// Same, on the DESTINATION host (the receive-side copy): `000000000001`.
+pub const ARTEFACT_DEST_SUFFIX: &str = "000000000001";
+
+/// When `uuid` is a migration artefact VM (last 12 hex chars =
+/// [`ARTEFACT_SOURCE_SUFFIX`] on the source or [`ARTEFACT_DEST_SUFFIX`] on the
+/// destination), return the uuid prefix made of the first four groups — the
+/// part the artefact shares with the real VM, which links it to its owner.
+pub fn artefact_prefix(uuid: &str) -> Option<&str> {
+    if uuid.len() > ARTEFACT_SOURCE_SUFFIX.len() {
+        let (head, tail) = uuid.split_at(uuid.len() - ARTEFACT_SOURCE_SUFFIX.len());
+        if tail == ARTEFACT_SOURCE_SUFFIX || tail == ARTEFACT_DEST_SUFFIX {
+            return Some(head);
+        }
+    }
+    None
+}
+
+/// Role of a migration artefact VM: `"source"` or `"dest"`; None for a real
+/// VM uuid.
+pub fn artefact_role(uuid: &str) -> Option<&'static str> {
+    if uuid.ends_with(ARTEFACT_SOURCE_SUFFIX) {
+        Some("source")
+    } else if uuid.ends_with(ARTEFACT_DEST_SUFFIX) {
+        Some("dest")
+    } else {
+        None
+    }
+}
+
+/// Resolve a possibly-artefact VM uuid to the real VM's uuid: an artefact
+/// uuid maps to the known non-artefact uuid sharing its first four groups.
+/// Artefacts with no known owner are returned unchanged.
+fn resolve_vm_uuid(uuid: &str, known: &[String]) -> String {
+    if let Some(p) = artefact_prefix(uuid) {
+        if let Some(owner) = known
+            .iter()
+            .find(|u| artefact_prefix(u).is_none() && u.starts_with(p))
+        {
+            return owner.clone();
+        }
+    }
+    uuid.to_string()
+}
+
 /// One migration, correlated across all bundles.
 #[derive(Serialize, Debug, Clone)]
 pub struct Migration {
@@ -103,6 +151,11 @@ pub struct Migration {
     pub vm_uuid: String,
     /// VM name-label (from xapi-db or audit log lines).
     pub vm_name: String,
+    /// Artefact (shadow) VM uuids linked to this migration — the uuids ending
+    /// in 000000000000 (source side) / 000000000001 (destination side) that
+    /// share the first four uuid groups with the real VM. Empty when none
+    /// were seen.
+    pub artefact_uuids: Vec<String>,
     /// live / storage / pool / receive.
     pub kind: String,
     /// Source host (where migrate_send ran).
@@ -292,6 +345,33 @@ pub fn build_migration_report(inputs: Vec<BundleInput>) -> MigrationReport {
         }
     }
 
+    // Migration artefact VMs: during a migration xapi creates shadow VMs
+    // whose uuid ends in 000000000000 (source host) / 000000000001
+    // (destination host) and shares the first four uuid groups with the real
+    // VM. Resolve them to the real VM's uuid so their events join the real
+    // VM's cluster, and remember the mapping so the report can list the
+    // artefacts alongside the migration.
+    let mut known_uuids: Vec<String> = vm_names.keys().cloned().collect();
+    known_uuids.extend(
+        events
+            .iter()
+            .map(|e| e.vm_uuid.clone())
+            .filter(|u| !u.is_empty() && artefact_prefix(u).is_none()),
+    );
+    known_uuids.sort();
+    known_uuids.dedup();
+    let mut artefact_of: BTreeMap<usize, String> = BTreeMap::new(); // event idx -> artefact uuid
+    for (i, e) in events.iter_mut().enumerate() {
+        if e.vm_uuid.is_empty() {
+            continue;
+        }
+        let resolved = resolve_vm_uuid(&e.vm_uuid, &known_uuids);
+        if resolved != e.vm_uuid {
+            artefact_of.insert(i, e.vm_uuid.clone());
+            e.vm_uuid = resolved;
+        }
+    }
+
     // Cluster events per VM uuid, splitting on time gaps > 1 h.
     let mut clusters: Vec<Vec<usize>> = Vec::new();
     let mut by_vm: BTreeMap<String, Vec<usize>> = BTreeMap::new();
@@ -361,6 +441,7 @@ pub fn build_migration_report(inputs: Vec<BundleInput>) -> MigrationReport {
             &inputs,
             &vm_names,
             &host_names,
+            &artefact_of,
         ));
     }
     report.migrations.sort_by(|a, b| {
@@ -756,6 +837,7 @@ fn build_migration(
     inputs: &[BundleInput],
     vm_names: &BTreeMap<String, String>,
     host_names: &BTreeMap<String, String>,
+    artefact_of: &BTreeMap<usize, String>,
 ) -> Migration {
     let evs: Vec<&MigEvent> = cl.iter().map(|&i| &events[i]).collect();
     let vm_uuid = evs
@@ -928,6 +1010,15 @@ fn build_migration(
     task_uuids.sort();
     task_uuids.dedup();
 
+    // Artefact (shadow) VMs seen in this cluster, linked to the real VM via
+    // the shared uuid prefix (see artefact_prefix).
+    let mut artefact_uuids: Vec<String> = cl
+        .iter()
+        .filter_map(|&i| artefact_of.get(&i).cloned())
+        .collect();
+    artefact_uuids.sort();
+    artefact_uuids.dedup();
+
     // Per-bundle evidence.
     let mut hosts: Vec<HostEvidence> = Vec::new();
     let mut by_bundle: BTreeMap<usize, Vec<&MigEvent>> = BTreeMap::new();
@@ -965,6 +1056,7 @@ fn build_migration(
     Migration {
         vm_uuid,
         vm_name,
+        artefact_uuids,
         kind,
         source_host,
         dest_host,
@@ -1231,6 +1323,118 @@ mod tests {
             (progress_of("VM = x; domid = 7; progress = 85 / 100").unwrap() - 0.85).abs() < 1e-9
         );
         assert_eq!(dest_hint_of("Will migrate to remote host: srv-tri-xcp05, using remote network: MGNT_LAN. Here is the VDI mapping: VDI dd2cc891 -> SR 66eb4d5b"), "srv-tri-xcp05");
+    }
+
+    #[test]
+    fn artefact_uuid_detection() {
+        // real VM uuid: not an artefact
+        assert_eq!(
+            artefact_prefix("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"),
+            None
+        );
+        assert_eq!(artefact_role("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"), None);
+        // source-side artefact ...000000000000, dest-side ...000000000001:
+        // both share the first four groups with the real VM
+        assert_eq!(
+            artefact_prefix("aaaaaaaa-1111-4111-8111-000000000000"),
+            Some("aaaaaaaa-1111-4111-8111-")
+        );
+        assert_eq!(
+            artefact_prefix("aaaaaaaa-1111-4111-8111-000000000001"),
+            Some("aaaaaaaa-1111-4111-8111-")
+        );
+        assert_eq!(
+            artefact_role("aaaaaaaa-1111-4111-8111-000000000000"),
+            Some("source")
+        );
+        assert_eq!(
+            artefact_role("aaaaaaaa-1111-4111-8111-000000000001"),
+            Some("dest")
+        );
+        // resolution links an artefact to the real VM via the shared prefix
+        let known = vec!["aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa".to_string()];
+        assert_eq!(
+            resolve_vm_uuid("aaaaaaaa-1111-4111-8111-000000000000", &known),
+            "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
+        );
+        // unknown owner: the artefact uuid is kept as-is
+        assert_eq!(
+            resolve_vm_uuid("aaaaaaaa-1111-4111-8111-000000000001", &[]),
+            "aaaaaaaa-1111-4111-8111-000000000001"
+        );
+    }
+
+    #[test]
+    fn artefact_vm_events_join_the_real_vm_migration() {
+        // Source bundle logs reference the SOURCE artefact uuid
+        // (…000000000000), the destination bundle the DEST one
+        // (…000000000001); the xapi task row and the VM table carry the real
+        // uuid. Everything must cluster into ONE migration of the real VM,
+        // with both artefact uuids listed.
+        let src_lines = vec![
+            line(
+                "var/log/xensource.log",
+                1,
+                "20260615T12:00:00Z",
+                "xapi",
+                "debug",
+                "Async.VM.migrate_send R:t1",
+                "audit",
+                "VM.migrate_send: VM = 'aaaaaaaa-1111-4111-8111-000000000000 (vm1)'",
+            ),
+            line(
+                "var/log/xensource.log",
+                2,
+                "20260615T12:01:01Z",
+                "xenopsd-xc",
+                "debug",
+                "Async.VM.migrate_send R:t1",
+                "xenops",
+                "VM = aaaaaaaa-1111-4111-8111-000000000000; domid = 7; progress = 100 / 100",
+            ),
+        ];
+        let dst_lines = vec![line(
+            "var/log/xensource.log",
+            1,
+            "20260615T12:01:03Z",
+            "xapi",
+            "info",
+            "Async.VM.migrate_receive R:r1",
+            "audit",
+            "VM.start: VM = 'aaaaaaaa-1111-4111-8111-000000000001 (vm1)'",
+        )];
+        let inputs = vec![
+            BundleInput {
+                logs: source_logs("host1.tar.bz2", "host1.example.com", src_lines),
+                db: Some(db_with_tasks()),
+            },
+            BundleInput {
+                logs: source_logs("host2.tar.bz2", "host2.example.com", dst_lines),
+                db: Some(db_with_tasks()),
+            },
+        ];
+        let rep = build_migration_report(inputs);
+        let migs: Vec<&Migration> = rep
+            .migrations
+            .iter()
+            .filter(|m| m.vm_uuid == "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
+            .collect();
+        assert_eq!(migs.len(), 1, "migrations: {:#?}", rep.migrations);
+        let m = migs[0];
+        assert_eq!(m.vm_name, "vm1");
+        assert_eq!(m.status, MigrationStatus::Succeeded);
+        assert_eq!(
+            m.artefact_uuids,
+            vec![
+                "aaaaaaaa-1111-4111-8111-000000000000".to_string(),
+                "aaaaaaaa-1111-4111-8111-000000000001".to_string(),
+            ]
+        );
+        // the artefact-only clusters must not exist separately
+        assert!(!rep
+            .migrations
+            .iter()
+            .any(|m| m.vm_uuid.ends_with("000000000000") || m.vm_uuid.ends_with("000000000001")));
     }
 
     #[test]

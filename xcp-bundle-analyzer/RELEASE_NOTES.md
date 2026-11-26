@@ -4,6 +4,18 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.2 (patch)
+
+- fix(migrate, EXPERIMENTAL): migration artefact (shadow) VMs are now
+  recognized and linked to the real VM. During a migration xapi creates
+  temporary VMs whose uuid ends in `000000000000` (source host) /
+  `000000000001` (destination host) and shares the first four uuid groups
+  with the real VM; events mentioning those artefact uuids are now clustered
+  into the real VM's migration, and the artefact uuids are listed on it
+  (`artefact_uuids` field in JSON, `artefact VMs: ... (source/dest)` line in
+  text output; helpers `artefact_prefix` / `artefact_role` in
+  report/migration.rs).
+
 ## v0.6.1 (patch)
 
 Review-improvement batch (issue #95):
