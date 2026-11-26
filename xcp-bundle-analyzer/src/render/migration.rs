@@ -375,6 +375,33 @@ pub fn render_migration_detail_text(r: &MigrationReport, sel: &str, m: &Migratio
 pub fn render_migrate_checklist_text(c: &crate::report::MigrateChecklist) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "=== MIGRATION BEST-PRACTICE CHECKLIST ===");
+    if let Some(p) = &c.pool {
+        let _ = writeln!(out, "\n--- pool");
+        let _ = writeln!(out, "  {} [{}]", p.name, p.uuid);
+        match p.migration_compression {
+            Some(true) => {
+                let _ = writeln!(
+                    out,
+                    "    migration-compression: true (live-migration streams compressed)"
+                );
+            }
+            Some(false) => {
+                let _ = writeln!(
+                    out,
+                    "    migration-compression: false — enable with `xe pool-param-set uuid={} migration-compression=true`",
+                    p.uuid
+                );
+            }
+            None => {
+                let _ = writeln!(out, "    migration-compression: not set in the dump");
+            }
+        }
+        for n in &p.notes {
+            if n.starts_with("WARN") {
+                let _ = writeln!(out, "    {n}");
+            }
+        }
+    }
     let _ = writeln!(out, "\n--- hosts");
     for h in &c.hosts {
         let _ = writeln!(
@@ -429,17 +456,10 @@ pub fn render_migrate_checklist_text(c: &crate::report::MigrateChecklist) -> Str
             }
         }
         if h.xostor_present {
-            match &h.xostor_max_worker {
-                Some(l) => {
-                    let _ = writeln!(out, "    xostor: present — worker setting: {l}");
-                }
-                None => {
-                    let _ = writeln!(
-                        out,
-                        "    xostor: present — no max-worker setting found in etc/linstor (default applies)"
-                    );
-                }
-            }
+            let _ = writeln!(
+                out,
+                "    xostor: present (worker tuning not verifiable from the bundle — see advice)"
+            );
         } else {
             let _ = writeln!(out, "    xostor: not present");
         }
@@ -474,6 +494,13 @@ pub fn render_migrate_checklist_text(c: &crate::report::MigrateChecklist) -> Str
             "  parallel (overlapping) migrations: {}",
             pairs.join(", ")
         );
+    }
+    let _ = writeln!(
+        out,
+        "\n--- advice (NOT verifiable from the bundle — check externally)"
+    );
+    for a in &c.advice {
+        let _ = writeln!(out, "  * {a}");
     }
     for w in &c.warnings {
         let _ = writeln!(out, "  WARNING: {w}");

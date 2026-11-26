@@ -35,6 +35,21 @@ pub(crate) fn render_pool(r: &BundleReport, out: &mut String) {
             None => "unknown".to_string(),
         }
     );
+    if let Some(mc) = r.pool.migration_compression {
+        let _ = writeln!(
+            out,
+            "migration-compression: {}{}",
+            if mc { "true" } else { "false" },
+            if mc {
+                " (live-migration streams are compressed)".to_string()
+            } else {
+                format!(
+                    " — enable with `xe pool-param-set uuid={} migration-compression=true`",
+                    r.pool.uuid
+                )
+            }
+        );
+    }
     let _ = writeln!(
         out,
         "Hosts: {}   VMs: {} running / {} total   Networks: {}   disk VDIs: {} (CD/ISO excluded)",
@@ -1057,6 +1072,39 @@ pub(crate) fn render_consolidated_text(c: &ConsolidatedReport) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod pool_section_tests {
+    use crate::inventory::Inventory;
+    use crate::render::{render_sections, Section};
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    #[test]
+    fn pool_section_shows_migration_compression_when_set() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml").replace(
+            "master=\"OpaqueRef:host1\"",
+            "master=\"OpaqueRef:host1\" migration-compression=\"true\"",
+        );
+        let db = XapiDb::from_xml(&xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        let text = render_sections(&r, &[Section::Pool]);
+        let line = text
+            .lines()
+            .find(|l| l.contains("migration-compression"))
+            .unwrap();
+        assert!(line.contains("true"), "{line}");
+    }
+
+    #[test]
+    fn pool_section_omits_migration_compression_when_absent() {
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        let text = render_sections(&r, &[Section::Pool]);
+        assert!(!text.contains("migration-compression"), "{text}");
+    }
 }
 
 #[cfg(test)]

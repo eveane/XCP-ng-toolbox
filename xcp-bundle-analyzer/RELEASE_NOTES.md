@@ -4,6 +4,21 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.4 (patch)
+
+- feat: `analyze --section pool` now shows the pool param
+  `migration-compression` (new `PoolSummary.migration_compression` field)
+  with the `xe pool-param-set uuid=<pool> migration-compression=true` hint
+  when false.
+- refactor(migrate check): the checklist now separates what is verifiable
+  from the bundle (pool `migration-compression` check added as `PoolCheck`,
+  auto-scan-interval, cpu governor, xen cmdline compression flag, VM dynamic
+  memory, disk count, parallelism) from `advice` items that cannot be
+  verified from the bugtool bundle: XO RPU `evacuation-batch-size = 1`
+  (limits concurrent live migrations) and xostor `multi_max_worker` worker
+  tuning (check on the hosts / in XOA). The xostor worker setting is no
+  longer looked up in bundle files.
+
 ## v0.6.3 (patch)
 
 - feat(migrate, EXPERIMENTAL): the `migrate` command is now a subcommand

@@ -74,9 +74,11 @@ sum of `virtual_size` per class).
 ## `PoolSummary`
 
 Pool name, UUID, master hostname, HA status (`ha_enabled`: true/false, or
-null when absent from the dump), and totals (`host_count`, `vm_running`,
-`vm_total`, plus per-type counters). Built from the pool table plus host/master
-resolution.
+null when absent from the dump), `migration_compression` (pool param
+`migration-compression`, null when absent — shown in the pool section with the
+`xe pool-param-set uuid=<pool> migration-compression=true` hint when false),
+and totals (`host_count`, `vm_running`, `vm_total`, plus per-type counters).
+Built from the pool table plus host/master resolution.
 
 ## `HostReport` (key fields)
 
@@ -217,9 +219,11 @@ report:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `hosts` | `[HostCheck]` | Per host/bundle: `host`, `bundle`, `is_master`, `auto_scan_interval` (a), `cpu_governor` (b), `xen_compression` (d), `xostor_max_worker` + `xostor_present` (c), `notes` |
+| `pool` | `PoolCheck` \\| null | Pool row checks: `name`, `uuid`, `migration_compression` (pool param, checked against `xe pool-param-set uuid=<pool> migration-compression=true`), `notes` |
+| `hosts` | `[HostCheck]` | Per host/bundle: `host`, `bundle`, `is_master`, `auto_scan_interval` (a), `cpu_governor` (b), `xen_compression` (d), `xostor_present` (c — worker tuning is NOT bundle-verifiable, see `advice`), `notes` |
 | `vms` | `[VmCheck]` | Per VM: `uuid`, `name`, `dynamic_min_bytes`/`dynamic_max_bytes` (e), `disk_count` (f), `notes` |
 | `parallelism` | `Parallelism` | (g) `total_migrations`, `max_concurrent`, `overlapping_pairs` (1-based index pairs, as in `migrate list`) |
+| `advice` | `[string]` | NOT verifiable from the bundle — check externally: XO RPU `evacuation-batch-size = 1`, xostor `multi_max_worker` tuning, pool `migration-compression=true` hint when not enabled |
 | `warnings` | `[string]` | Bundles without xapi-db.xml, ... |
 
 ## HTML output

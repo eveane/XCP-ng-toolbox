@@ -469,6 +469,11 @@ pub struct PoolSummary {
     /// Pool-level HA status from the pool row (pool.ha_enabled).
     /// None when the field is absent or unparseable in the dump.
     pub ha_enabled: Option<bool>,
+    /// Pool param migration-compression (xe pool-param-set uuid=<pool>
+    /// migration-compression=true): compresses live-migration streams.
+    /// None when absent/unparseable in the dump.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_compression: Option<bool>,
     pub sr_total_size_bytes: u64,
     pub sr_total_used_bytes: u64,
     pub vdi_total_size_bytes: u64,

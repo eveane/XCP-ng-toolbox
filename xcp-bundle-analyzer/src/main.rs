@@ -674,7 +674,7 @@ fn bundle_origin_host(source: &bundle::Source, db: &Option<xapidb::XapiDb>) -> S
 }
 
 /// Read the small extra files used by `migrate check` from a bundle:
-/// cpu governor, kernel/xen cmdline, grub, and any linstor config files.
+/// cpu governor, kernel/xen cmdline and grub defaults.
 fn read_migrate_extra_files(source: &bundle::Source) -> std::collections::BTreeMap<String, String> {
     let mut out = std::collections::BTreeMap::new();
     for w in [
@@ -687,16 +687,6 @@ fn read_migrate_extra_files(source: &bundle::Source) -> std::collections::BTreeM
                 w.to_string(),
                 String::from_utf8_lossy(&bytes).trim().to_string(),
             );
-        }
-    }
-    for (name, _size) in source.list() {
-        if out.len() >= 16 {
-            break;
-        }
-        if name.contains("linstor") && (name.ends_with(".toml") || name.ends_with(".conf")) {
-            if let Some(Ok(bytes)) = source.read_entry(&name) {
-                out.insert(name, String::from_utf8_lossy(&bytes).to_string());
-            }
         }
     }
     out

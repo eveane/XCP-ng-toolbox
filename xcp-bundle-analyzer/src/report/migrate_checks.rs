@@ -20,21 +20,39 @@
 
 use super::migration::{BundleInput, MigrationReport};
 use super::util::{get, get2};
-use crate::xapidb::{as_ref, as_u64, decode_map, XapiDb};
+use crate::xapidb::{as_bool, as_ref, as_u64, decode_map, XapiDb};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
 /// Checklist computed by `migrate check` (the JSON contract).
 #[derive(Serialize, Default, Debug)]
 pub struct MigrateChecklist {
+    /// Pool-level checks verifiable from xapi-db.xml (first bundle with a
+    /// pool row).
+    pub pool: Option<PoolCheck>,
     /// One entry per bundle/host.
     pub hosts: Vec<HostCheck>,
     /// One entry per VM seen in the bundles' xapi-db.xml.
     pub vms: Vec<VmCheck>,
     /// Migration parallelism observed in the analyzed bundles.
     pub parallelism: Parallelism,
+    /// Advice that CANNOT be verified from the bugtool bundle — check these
+    /// externally (on the hosts, in Xen Orchestra, ...).
+    pub advice: Vec<String>,
     /// Non-fatal problems (missing files, unreadable dbs, ...).
     pub warnings: Vec<String>,
+}
+
+/// Pool-level checks from the pool row of xapi-db.xml.
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct PoolCheck {
+    pub name: String,
+    pub uuid: String,
+    /// pool param migration-compression (xe pool-param-set uuid=<pool>
+    /// migration-compression=true): compresses live-migration streams.
+    pub migration_compression: Option<bool>,
+    /// Free-form review notes (ok / warn).
+    pub notes: Vec<String>,
 }
 
 /// Per-host checklist entry.
@@ -53,9 +71,9 @@ pub struct HostCheck {
     /// Xen cmdline migration-compression flag: Some(true) when a `compress`
     /// flag is present, Some(false) when a cmdline was read without it.
     pub xen_compression: Option<bool>,
-    /// XOSTOR/linstor max-worker setting line found in the bundle, if any.
-    pub xostor_max_worker: Option<String>,
     /// True when an XOSTOR (linstor) SR or software_version:xostor is present.
+    /// (The xostor worker tuning — e.g. multi_max_worker — is NOT visible in
+    /// the bundle; see the checklist's `advice`.)
     pub xostor_present: bool,
     /// Free-form review notes (ok / warn).
     pub notes: Vec<String>,
@@ -92,6 +110,7 @@ pub fn build_checklist(inputs: &[BundleInput], mig: &MigrationReport) -> Migrate
         ..Default::default()
     };
 
+    let mut xostor_seen = false;
     for inp in inputs {
         let Some(db) = &inp.db else {
             out.warnings.push(format!(
@@ -100,12 +119,61 @@ pub fn build_checklist(inputs: &[BundleInput], mig: &MigrationReport) -> Migrate
             ));
             continue;
         };
-        out.hosts.push(host_check(inp, db));
+        if out.pool.is_none() {
+            out.pool = Some(pool_check(db));
+        }
+        let hc = host_check(inp, db);
+        xostor_seen = xostor_seen || hc.xostor_present;
+        out.hosts.push(hc);
         out.vms.extend(vm_checks(db));
     }
     out.vms
         .sort_by(|a, b| a.name.cmp(&b.name).then(a.uuid.cmp(&b.uuid)));
+
+    // Advice: things that CANNOT be verified from the bugtool bundle and
+    // must be checked externally (on the hosts, in Xen Orchestra, ...).
+    out.advice.push(
+        "Xen Orchestra rolling pool update (RPU): set evacuation-batch-size = 1 so hosts are evacuated one at a time — this limits concurrent live migrations (XO-side setting, not visible in the bundle; relates to the parallelism check above)".to_string(),
+    );
+    if xostor_seen {
+        out.advice.push(
+            "XOSTOR: worker tuning (e.g. linstor multi_max_worker / max_workers) is not visible in the bugtool bundle — check it on the hosts (linstor CLI) or in XOA".to_string(),
+        );
+    }
+    if let Some(p) = &out.pool {
+        if p.migration_compression != Some(true) {
+            out.advice.push(format!(
+                "pool migration-compression is not enabled — set `xe pool-param-set uuid={} migration-compression=true` to compress live-migration streams (also shown in `analyze --section pool`)",
+                p.uuid
+            ));
+        }
+    }
     out
+}
+
+/// Pool-level checks from the pool row of xapi-db.xml.
+fn pool_check(db: &XapiDb) -> PoolCheck {
+    let mut notes = Vec::new();
+    let Some((_, pool)) = db.rows("pool").next() else {
+        return PoolCheck::default();
+    };
+    let uuid = get(pool, "uuid").to_string();
+    let mc = as_bool(get(pool, "migration-compression"));
+    match mc {
+        Some(true) => {
+            notes.push("migration-compression: true (live-migration streams compressed)".into())
+        }
+        Some(false) => notes.push(format!(
+            "WARN: migration-compression: false — enable with `xe pool-param-set uuid={uuid} migration-compression=true`"
+        )),
+        None => notes.push("migration-compression: not set in the dump".into()),
+    }
+    PoolCheck {
+        name: get2(pool, "name__label").to_string(),
+        uuid,
+        migration_compression: mc,
+        notes,
+    }
 }
 
 /// Per-host checks: auto-scan-interval, cpu governor, xen compression flag,
@@ -192,32 +260,14 @@ fn host_check(inp: &BundleInput, db: &XapiDb) -> HostCheck {
         None => notes.push("xen cmdline: not found in bundle (proc/cmdline)".into()),
     }
 
-    // (c) xostor/linstor worker setting + presence
+    // (c) xostor presence (worker tuning is NOT visible in the bundle — it
+    // is listed under `advice` instead)
     let sw = decode_map(get(row, "software_version"));
-    let xostor_sw = sw
-        .iter()
-        .find(|(k, _)| k == "xostor" || k == "linstor")
-        .map(|(_, v)| v.clone());
+    let xostor_sw = sw.iter().any(|(k, _)| k == "xostor" || k == "linstor");
     let xostor_sr = db
         .rows("SR")
         .any(|(_, sr)| get(sr, "type").contains("linstor") || get(sr, "type").contains("xostor"));
-    hc.xostor_present = xostor_sr || xostor_sw.is_some();
-    for (k, v) in &inp.extra_files {
-        if k.contains("linstor") {
-            for line in v.lines() {
-                let l = line.trim();
-                if l.to_lowercase().contains("max_worker") {
-                    hc.xostor_max_worker = Some(l.to_string());
-                }
-            }
-        }
-    }
-    if hc.xostor_present {
-        match &hc.xostor_max_worker {
-            Some(l) => notes.push(format!("xostor present; worker setting: {l}")),
-            None => notes.push("xostor present; no max-worker setting found in etc/linstor files (default applies)".into()),
-        }
-    }
+    hc.xostor_present = xostor_sr || xostor_sw;
 
     // (a) auto-scan-interval semantics
     match (hc.is_master, hc.auto_scan_interval) {
@@ -361,7 +411,7 @@ mod tests {
     fn db() -> XapiDb {
         XapiDb::from_xml(
             r#"<?xml version="1.0"?><database>
-<table name="pool"><row ref="OpaqueRef:p" uuid="pool-uuid" name__label="mypool" master="OpaqueRef:h1"/></table>
+<table name="pool"><row ref="OpaqueRef:p" uuid="pool-uuid" name__label="mypool" master="OpaqueRef:h1" migration-compression="false"/></table>
 <table name="host">
 <row ref="OpaqueRef:h1" uuid="host-uuid-1" hostname="host1.example.com" name__label="host1" other_config="(('auto-scan-interval' '600'))" software_version="(('product_version' '8.3.0') ('xostor' '3.2.1'))"/>
 <row ref="OpaqueRef:h2" uuid="host-uuid-2" hostname="host2.example.com" name__label="host2" other_config="()"/>
@@ -423,10 +473,6 @@ mod tests {
             "proc/cmdline".into(),
             "BOOT_IMAGE=/boot/xen.gz ... compress ...".into(),
         );
-        extra.insert(
-            "etc/linstor/linstor_satellite.toml".into(),
-            "[global]\n  max_workers = 4\n".into(),
-        );
         let inputs = vec![BundleInput {
             logs: empty_logs("host1.tar.bz2", "host1.example.com"),
             db: Some(db()),
@@ -440,11 +486,21 @@ mod tests {
         assert_eq!(h.cpu_governor.as_deref(), Some("powersave"));
         assert_eq!(h.xen_compression, Some(true));
         assert!(h.xostor_present);
-        assert!(h
-            .xostor_max_worker
-            .as_ref()
-            .unwrap()
-            .contains("max_workers = 4"));
+        // pool check: migration-compression=false in the fixture -> WARN + advice
+        let p = cl.pool.as_ref().unwrap();
+        assert_eq!(p.migration_compression, Some(false));
+        assert!(p.notes.iter().any(|n| n.contains("WARN")));
+        // advice: XO RPU evacuation-batch-size always; xostor worker tuning
+        // because xostor is present; pool migration-compression because false
+        assert!(cl
+            .advice
+            .iter()
+            .any(|a| a.contains("evacuation-batch-size = 1")));
+        assert!(cl.advice.iter().any(|a| a.contains("multi_max_worker")));
+        assert!(cl
+            .advice
+            .iter()
+            .any(|a| a.contains("migration-compression=true")));
         // vms
         let vm1 = cl.vms.iter().find(|v| v.name == "vm1").unwrap();
         assert_eq!(vm1.disk_count, 7);
