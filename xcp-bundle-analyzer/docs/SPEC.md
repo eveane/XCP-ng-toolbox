@@ -173,7 +173,16 @@ uuid across bundles (time gaps > 1 h split clusters). JSON contract:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `bundles` | `[MigrationBundleInfo]` | Per bundle: `path`, `origin_host`, `xensource_logs` / `smlogs` (name + size of each entry read) |
+| `bundles` | `[MigrationBundleInfo]` | Per bundle: `path`, `origin_host`, `xensource_logs` / `smlogs` (name + size of each entry read), `scan` (`ScanSummary`: per-file `declared_bytes`/`read_bytes`/`truncated` resource evaluation, stage-1 `pattern_counts`, `events_kept`, `truncated`) |
+
+Log processing is staged and budgeted (`logs::LogScanOptions`, CLI:
+`--max-events N`, `--full-history`): stage 0 evaluates resources from the
+bundle listing alone, stage 1 counts `MIGRATION_PATTERNS` hits per 50k-line
+batch without storing lines, stage 2 extracts only matching lines capped per
+file (200k default) and globally (`max_events`, default 800k). Caps always
+apply — truncation degrades gracefully with a warning, never OOMs.
+`--full-history` lifts the byte caps (all rotations read, oldest occurrences
+included) but keeps large line/event ceilings.
 | `migrations` | `[Migration]` | Sorted by `start` |
 | `warnings` | `[string]` | Missing logs, unreadable entries, ... |
 

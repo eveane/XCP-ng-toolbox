@@ -260,6 +260,17 @@ struct MigrateOpts {
     /// Compact JSON
     #[arg(short, long, default_value = "false")]
     compact: bool,
+    /// Cap on matched log lines (events) processed across all bundles:
+    /// patterns are still counted (stage 1), but only up to N matching lines
+    /// are extracted and analyzed (default 800000). Protects CPU/memory on
+    /// huge logs.
+    #[arg(long)]
+    max_events: Option<usize>,
+    /// Read ALL log rotations without byte caps, to catch even the oldest
+    /// occurrences in history. Resource-heavy: a resource evaluation is
+    /// printed and large line/event ceilings still apply (graceful).
+    #[arg(long)]
+    full_history: bool,
 }
 
 #[derive(Subcommand)]
@@ -693,9 +704,17 @@ fn read_migrate_extra_files(source: &bundle::Source) -> std::collections::BTreeM
 }
 
 /// Build the per-bundle inputs (logs + xapi-db + extra files) for migrate.
-fn migrate_inputs(bundles: &[PathBuf]) -> Result<Vec<report::BundleInput>> {
+fn migrate_inputs(bundles: &[PathBuf], opts: &MigrateOpts) -> Result<Vec<report::BundleInput>> {
     if bundles.is_empty() {
         bail!("no bundle given");
+    }
+    let mut scan_opts = if opts.full_history {
+        logs::LogScanOptions::full_history()
+    } else {
+        logs::LogScanOptions::default()
+    };
+    if let Some(m) = opts.max_events {
+        scan_opts.max_events = Some(m);
     }
     let mut inputs = Vec::new();
     for b in bundles {
@@ -712,7 +731,7 @@ fn migrate_inputs(bundles: &[PathBuf]) -> Result<Vec<report::BundleInput>> {
             None => None,
         };
         let origin = bundle_origin_host(&source, &db);
-        let logs = logs::collect_source_logs(&source, db.as_ref(), &origin)
+        let logs = logs::collect_source_logs(&source, db.as_ref(), &origin, &scan_opts)
             .with_context(|| format!("reading logs of {}", b.display()))?;
         let extra_files = read_migrate_extra_files(&source);
         inputs.push(report::BundleInput {
@@ -776,7 +795,7 @@ fn write_migrate_output(
 
 /// `migrate all`: full migration report over all migrations.
 fn cmd_migrate_all(opts: &MigrateOpts) -> Result<()> {
-    let rep = report::build_migration_report(migrate_inputs(&opts.bundles)?);
+    let rep = report::build_migration_report(migrate_inputs(&opts.bundles, opts)?);
     write_migrate_output(
         opts.output.as_deref(),
         opts.format,
@@ -790,7 +809,7 @@ fn cmd_migrate_all(opts: &MigrateOpts) -> Result<()> {
 
 /// `migrate list`: short list of all live migrations found + summary of times.
 fn cmd_migrate_list(opts: &MigrateOpts) -> Result<()> {
-    let rep = report::build_migration_report(migrate_inputs(&opts.bundles)?);
+    let rep = report::build_migration_report(migrate_inputs(&opts.bundles, opts)?);
     write_migrate_output(
         opts.output.as_deref(),
         opts.format,
@@ -804,7 +823,7 @@ fn cmd_migrate_list(opts: &MigrateOpts) -> Result<()> {
 
 /// `migrate analyze <selector>`: detailed analysis of one migration.
 fn cmd_migrate_analyze(selector: &str, opts: &MigrateOpts) -> Result<()> {
-    let rep = report::build_migration_report(migrate_inputs(&opts.bundles)?);
+    let rep = report::build_migration_report(migrate_inputs(&opts.bundles, opts)?);
     let m = report::select_migration(&rep, selector)?;
     write_migrate_output(
         opts.output.as_deref(),
@@ -819,7 +838,7 @@ fn cmd_migrate_analyze(selector: &str, opts: &MigrateOpts) -> Result<()> {
 
 /// `migrate check`: best-practice checklist for live migrations.
 fn cmd_migrate_check(opts: &MigrateOpts) -> Result<()> {
-    let inputs = migrate_inputs(&opts.bundles)?;
+    let inputs = migrate_inputs(&opts.bundles, opts)?;
     let mig = report::build_migration_report(inputs.clone());
     let cl = report::build_checklist(&inputs, &mig);
     write_migrate_output(

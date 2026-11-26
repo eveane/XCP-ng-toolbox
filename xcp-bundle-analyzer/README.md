@@ -516,7 +516,16 @@ xcp-bundle-analyzer search uuid=<uuid> host1.tar.bz2
 
 # live-migration analysis (EXPERIMENTAL / WORK IN PROGRESS — use with caution)
 # list all migrations found (index, vm, start/end, duration, status)
+# log processing is staged + budgeted (resource evaluation printed per bundle):
+#   stage 0 resource evaluation from the listing, stage 1 counts key-pattern
+#   hits per batch without storing lines, stage 2 extracts only matches,
+#   capped per file and globally; truncation is reported as a warning
 xcp-bundle-analyzer migrate list host1.tar.bz2 host2.tar.bz2 master.tar.bz2
+# --max-events N    cap matched log lines analyzed (default 800000)
+# --full-history    read ALL rotations without byte caps, to catch the oldest
+#                   occurrences (resource-heavy; still gracefully capped)
+xcp-bundle-analyzer migrate list --max-events 50000 host1.tar.bz2
+xcp-bundle-analyzer migrate list --full-history host1.tar.bz2 host2.tar.bz2
 # analyze ONE migration in detail (list index, VM uuid or name)
 xcp-bundle-analyzer migrate analyze #1 host1.tar.bz2 host2.tar.bz2
 xcp-bundle-analyzer migrate analyze uuid=<vm-uuid> host1.tar.bz2
