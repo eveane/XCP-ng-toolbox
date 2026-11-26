@@ -4,6 +4,37 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.7 (patch)
+
+- feat(migrate): staged, budgeted log pipeline so log analysis always degrades
+  gracefully. `logs::LogScanOptions` holds the resource budgets; every migrate
+  subcommand accepts `--max-events <N>` (cap on matched log lines analyzed;
+  default 800000) and `--full-history` (lift the per-entry byte caps and read
+  ALL rotations to catch even the oldest occurrences — still bounded by large
+  line/event ceilings, with a printed resource evaluation). Pipeline stages:
+  stage 0 resource evaluation from the bundle listing alone
+  (`estimate_log_resources`: declared vs planned bytes per log entry), stage 1
+  counts key-pattern hits (`MIGRATION_PATTERNS`) per 50k-line batch without
+  storing lines, stage 2 extracts only matching lines capped per file and by
+  the remaining global event budget. Truncation is always reported as a
+  warning; the per-bundle scan summary (files, pattern counts, events kept,
+  truncated flag) is shown in the text output and in JSON
+  (`MigrationBundleInfo.scan`).
+
+## v0.6.6 (patch)
+
+- fix(migrate): bound memory and CPU on huge bundles — the migrate path used
+  to read every log entry fully (decompressed) and keep every parsed line,
+  which OOM-killed the analyzer on hosts with multi-GB rotated logs, and the
+  task/log correlation loops were O(n^2). Now: per-entry byte caps
+  (`Source::read_entry_capped` / `Bundle::read_capped`, 512 MiB raw /
+  256 MiB decompressed per log entry), xensource.log lines are filtered to
+  migration-relevant ones before being stored (raw-line predicate mirroring
+  `is_migration_line` + error/progress markers), a per-file line cap
+  (200k) applies, truncation is reported as a warning, the task->log uuid
+  resolution is indexed per bundle with binary search (O(n log n)), and
+  cluster spans are precomputed once for orphan attachment.
+
 ## v0.6.5 (patch)
 
 - fix: `analyze --section pool` now ALWAYS shows the `migration-compression`

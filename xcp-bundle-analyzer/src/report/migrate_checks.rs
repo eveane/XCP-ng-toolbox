@@ -405,6 +405,7 @@ mod tests {
             lines: vec![],
             sm_lines: vec![],
             warnings: vec![],
+            scan: Default::default(),
         }
     }
 

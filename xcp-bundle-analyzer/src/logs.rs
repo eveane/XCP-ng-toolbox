@@ -25,7 +25,141 @@
 use crate::bundle::Source;
 use crate::xapidb::XapiDb;
 use anyhow::Result;
+use serde::Serialize;
+use std::collections::BTreeMap;
 use std::io::Read;
+
+/// Max raw/compressed bytes read per log entry from a bundle (bounds memory
+/// on huge logs; the migrate analysis only needs migration-relevant lines).
+pub const MAX_LOG_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+/// Max decompressed bytes per `.gz` log entry.
+pub const MAX_LOG_DECOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
+/// Max parsed lines kept per log file.
+pub const MAX_LOG_LINES_PER_FILE: usize = 200_000;
+/// Stage-1 scan batch size (lines per batch when counting pattern hits).
+pub const SCAN_BATCH_LINES: usize = 50_000;
+
+/// Key patterns the log pipeline looks for, as (name, substring) pairs.
+/// Stage 1 counts hits of these per batch without storing lines; stage 2
+/// extracts only the matching lines (capped). Register new patterns here
+/// when a new log analysis needs them.
+pub const MIGRATION_PATTERNS: &[(&str, &str)] = &[
+    ("migrate", "migrate"),
+    ("server_error", "server_error"),
+    ("xenopsd_error", "xenopsd_error"),
+    ("exception", "exception"),
+    ("progress", "progress = "),
+    ("error-level", "[error|"),
+];
+
+/// Case-insensitive substring search without allocating.
+pub fn contains_ci(hay: &str, needle: &str) -> bool {
+    let (h, n) = (hay.as_bytes(), needle.as_bytes());
+    if n.is_empty() {
+        return true;
+    }
+    h.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n))
+}
+
+/// True when a raw xensource.log line matches at least one key pattern
+/// (mirrors `is_migration_line` plus the error/progress markers used at
+/// event extraction), matched on the raw text so irrelevant lines can be
+/// dropped before they are stored.
+pub fn raw_line_migration_relevant(raw: &str) -> bool {
+    MIGRATION_PATTERNS
+        .iter()
+        .any(|(_, pat)| contains_ci(raw, pat))
+}
+
+/// Resource budgets + processing options for log analysis. Always enforced
+/// (graceful degradation via caps + warnings, never an OOM); `full_history`
+/// lifts the byte caps so rotated logs are read too and the oldest
+/// occurrences are caught.
+#[derive(Debug, Clone)]
+pub struct LogScanOptions {
+    /// Cap on raw/compressed bytes read per log entry.
+    pub max_entry_bytes: u64,
+    /// Cap on decompressed bytes per `.gz` log entry.
+    pub max_decompressed_bytes: u64,
+    /// Cap on matched lines kept per file (stage-2 events per file).
+    pub max_lines_per_file: usize,
+    /// Hard cap on total matched events across all files of a bundle
+    /// (None = only the per-file cap applies).
+    pub max_events: Option<usize>,
+    /// Read all rotations without byte caps (oldest occurrences included).
+    pub full_history: bool,
+}
+
+impl Default for LogScanOptions {
+    fn default() -> Self {
+        Self {
+            max_entry_bytes: MAX_LOG_ENTRY_BYTES,
+            max_decompressed_bytes: MAX_LOG_DECOMPRESSED_BYTES,
+            max_lines_per_file: MAX_LOG_LINES_PER_FILE,
+            max_events: Some(4 * MAX_LOG_LINES_PER_FILE),
+            full_history: false,
+        }
+    }
+}
+
+impl LogScanOptions {
+    /// `--full-history`: read every rotation without byte caps. Still bounded
+    /// by large line/event ceilings so it degrades gracefully (warning) instead
+    /// of exhausting memory; a resource evaluation is reported either way.
+    pub fn full_history() -> Self {
+        Self {
+            max_entry_bytes: u64::MAX,
+            max_decompressed_bytes: u64::MAX,
+            max_lines_per_file: 2_000_000,
+            max_events: Some(8_000_000),
+            full_history: true,
+        }
+    }
+}
+
+/// Per log file: declared vs actually-read bytes + truncation flag
+/// (the resource evaluation, computed from the bundle listing before reading).
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct ScanFile {
+    pub name: String,
+    pub declared_bytes: u64,
+    pub read_bytes: u64,
+    pub truncated: bool,
+}
+
+/// Stage-1 scan summary of one bundle: per-file resource evaluation and
+/// per-pattern hit counts, plus how many matched lines were kept (stage 2).
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct ScanSummary {
+    pub files: Vec<ScanFile>,
+    /// Pattern name -> hit count across all files (stage 1, no line storage).
+    pub pattern_counts: BTreeMap<String, usize>,
+    /// Matched lines kept after stage-2 caps.
+    pub events_kept: usize,
+    /// True when any cap truncated input (graceful degradation happened).
+    pub truncated: bool,
+}
+
+/// Resource evaluation from the bundle listing alone (no content read):
+/// per candidate log entry, planned read = min(declared, cap).
+pub fn estimate_log_resources(
+    list: &[(String, u64)],
+    base: &str,
+    opts: &LogScanOptions,
+) -> Vec<(String, u64, u64)> {
+    log_candidates(list, base)
+        .into_iter()
+        .map(|n| {
+            let declared = list
+                .iter()
+                .find(|(m, _)| *m == n)
+                .map(|(_, sz)| *sz)
+                .unwrap_or(0);
+            let planned = declared.min(opts.max_entry_bytes);
+            (n, declared, planned)
+        })
+        .collect()
+}
 
 /// One parsed log line.
 #[derive(Debug, Clone)]
@@ -79,6 +213,8 @@ pub struct SourceLogs {
     pub sm_lines: Vec<LogLine>,
     /// Non-fatal problems (missing logs, unreadable entries, ...).
     pub warnings: Vec<String>,
+    /// Stage-1 scan summary: resource evaluation + per-pattern hit counts.
+    pub scan: ScanSummary,
 }
 
 /// Read every `xensource.log*` / `SMlog*` entry of a bundle and parse them.
@@ -90,6 +226,7 @@ pub fn collect_source_logs(
     source: &Source,
     db: Option<&XapiDb>,
     origin_host: &str,
+    opts: &LogScanOptions,
 ) -> Result<SourceLogs> {
     let mut out = SourceLogs {
         path: source.path().display().to_string(),
@@ -97,8 +234,24 @@ pub fn collect_source_logs(
         ..Default::default()
     };
     let ref_time = reference_time(source, db);
+    if opts.full_history {
+        out.warnings.push(format!(
+            "{}: full-history mode: byte caps lifted, reading ALL log rotations (resource-heavy; line/event caps still apply)",
+            source.path().display()
+        ));
+    }
+    let mut events_budget = opts.max_events;
     for (base, is_sm) in [("xensource.log", false), ("SMlog", true)] {
         let names = log_candidates(&source.list(), base);
+        // stage 0: resource evaluation from the listing alone (no content read)
+        for (n, declared, planned) in estimate_log_resources(&source.list(), base, opts) {
+            out.scan.files.push(ScanFile {
+                name: n,
+                declared_bytes: declared,
+                read_bytes: planned,
+                truncated: declared > planned,
+            });
+        }
         if names.is_empty() {
             out.warnings.push(format!(
                 "{}: no {base} entry found in bundle",
@@ -107,7 +260,13 @@ pub fn collect_source_logs(
             continue;
         }
         for name in names {
-            let entry = source.read_entry(&name);
+            let declared = source
+                .list()
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, s)| *s)
+                .unwrap_or(0);
+            let entry = source.read_entry_capped(&name, opts.max_entry_bytes);
             let bytes = match entry {
                 Some(Ok(b)) => b,
                 Some(Err(e)) => {
@@ -119,11 +278,19 @@ pub fn collect_source_logs(
                 }
                 None => continue,
             };
-            let size = bytes.len() as u64;
+            if declared > bytes.len() as u64 {
+                out.warnings.push(format!(
+                    "{}: {name}: truncated to {} bytes (entry is {declared} bytes)",
+                    source.path().display(),
+                    bytes.len()
+                ));
+                out.scan.truncated = true;
+            }
+            let size = declared;
             let text = if name.ends_with(".gz") {
-                let mut dec = flate2::read::GzDecoder::new(&bytes[..]);
+                let dec = flate2::read::GzDecoder::new(&bytes[..]);
                 let mut s = String::new();
-                match dec.read_to_string(&mut s) {
+                match dec.take(opts.max_decompressed_bytes).read_to_string(&mut s) {
                     Ok(_) => s,
                     Err(e) => {
                         out.warnings.push(format!(
@@ -140,7 +307,44 @@ pub fn collect_source_logs(
                 name: name.clone(),
                 size,
             };
-            let parsed = parse_log(&text, &name, ref_time);
+            // stage 1: count key-pattern hits per batch, without storing lines
+            for batch in text.lines().collect::<Vec<_>>().chunks(SCAN_BATCH_LINES) {
+                for raw in batch {
+                    for (pname, pat) in MIGRATION_PATTERNS {
+                        if contains_ci(raw, pat) {
+                            *out.scan
+                                .pattern_counts
+                                .entry(pname.to_string())
+                                .or_default() += 1;
+                        }
+                    }
+                }
+            }
+            // stage 2: extract only the matching lines, in batches, capped per
+            // file and by the remaining global event budget. xensource.log
+            // lines are self-contained; SMlog JSON request/result pairs span
+            // lines, so only the caps apply there.
+            let keep: &dyn Fn(&str) -> bool = if is_sm {
+                &|_| true
+            } else {
+                &raw_line_migration_relevant
+            };
+            let file_cap = match events_budget {
+                Some(b) => opts.max_lines_per_file.min(b),
+                None => opts.max_lines_per_file,
+            };
+            let (parsed, hit_cap) = parse_log_filtered(&text, &name, ref_time, keep, file_cap);
+            if let Some(b) = events_budget.as_mut() {
+                *b = b.saturating_sub(parsed.len());
+            }
+            if hit_cap {
+                out.warnings.push(format!(
+                    "{}: {name}: kept only the first {file_cap} relevant lines (cap hit)",
+                    source.path().display()
+                ));
+                out.scan.truncated = true;
+            }
+            out.scan.events_kept += parsed.len();
             if is_sm {
                 out.smlog_files.push(file);
                 out.sm_lines.extend(parsed);
@@ -223,18 +427,35 @@ fn reference_time(source: &Source, db: Option<&XapiDb>) -> Option<u64> {
 /// Parse the whole text of one log file into lines. Lines without a
 /// timestamp (SMlog continuations, JSON-RPC result objects) inherit the
 /// previous line's timestamp and host.
+#[allow(dead_code)]
 pub fn parse_log(text: &str, file: &str, ref_time: Option<u64>) -> Vec<LogLine> {
+    parse_log_filtered(text, file, ref_time, &|_| true, usize::MAX).0
+}
+
+/// Parse with a raw-line filter and a cap on kept lines. Returns the kept
+/// lines and whether the cap was hit.
+pub fn parse_log_filtered(
+    text: &str,
+    file: &str,
+    ref_time: Option<u64>,
+    keep: &dyn Fn(&str) -> bool,
+    max_lines: usize,
+) -> (Vec<LogLine>, bool) {
     let mut out = Vec::new();
+    let mut hit_cap = false;
     for (i, raw) in text.lines().enumerate() {
-        if raw.trim().is_empty() {
+        if raw.trim().is_empty() || !keep(raw) {
             continue;
         }
-        match parse_line(raw, file, i + 1, out.last(), ref_time) {
-            Some(line) => out.push(line),
-            None => continue,
+        if out.len() >= max_lines {
+            hit_cap = true;
+            break;
+        }
+        if let Some(line) = parse_line(raw, file, i + 1, out.last(), ref_time) {
+            out.push(line);
         }
     }
-    out
+    (out, hit_cap)
 }
 
 /// Parse one raw line. `prev` is the previous parsed line (for timestamp
@@ -784,5 +1005,78 @@ mod tests {
         let line = "Jun 15 12:00:01 host1 xapi: [debug|host1|5|pool.get_all D:xxx|audit] Session.create trackid=abc";
         let lines = parse_log(line, "xensource.log", None);
         assert!(!is_migration_line(&lines[0]));
+    }
+
+    #[test]
+    fn staged_pipeline_counts_patterns_estimates_resources_and_caps() {
+        // contains_ci + pattern predicate
+        assert!(contains_ci("VM.Migrate_Send", "migrate"));
+        assert!(!contains_ci("routine heartbeat", "migrate"));
+        assert!(raw_line_migration_relevant("... [Error|h|1 |T|x] boom"));
+        assert!(!raw_line_migration_relevant("... routine heartbeat"));
+
+        // resource evaluation from the listing alone
+        let list = vec![
+            ("h1/var/log/xensource.log".to_string(), 1_000u64),
+            ("h1/var/log/xensource.log.1.gz".to_string(), 5_000),
+            ("h1/var/log/other".to_string(), 1),
+        ];
+        let mut opts = LogScanOptions::default();
+        opts.max_entry_bytes = 100;
+        let est = estimate_log_resources(&list, "xensource.log", &opts);
+        assert_eq!(est.len(), 2);
+        assert_eq!(est[0], ("h1/var/log/xensource.log".to_string(), 1_000, 100)); // capped
+        assert_eq!(est[1].2, 100);
+        let fh = LogScanOptions::full_history();
+        assert!(fh.full_history && fh.max_entry_bytes == u64::MAX);
+        let est_fh = estimate_log_resources(&list, "xensource.log", &fh);
+        assert_eq!(est_fh[0].2, 1_000); // not capped in full-history mode
+
+        // end-to-end on a temp dir bundle: stage-1 counts + stage-2 budget cap
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("h1");
+        std::fs::create_dir_all(root.join("var/log")).unwrap();
+        let mut text = String::new();
+        for i in 0..1000 {
+            text.push_str(&format!(
+                "Jun 15 12:00:{:02} h xapi: [debug|h|1 |T|audit] routine noise {i}\n",
+                i % 60
+            ));
+        }
+        text.push_str("Jun 15 12:00:00 h xapi: [debug|h|1 |Async.VM.migrate_send R:t|audit] VM.migrate_send: VM = 'x'\n");
+        text.push_str("Jun 15 12:00:01 h xapi: [error|h|1 |T|x] Caught Server_error(X, [])\n");
+        std::fs::write(root.join("var/log/xensource.log"), text).unwrap();
+        let src = Source::open(&root).unwrap();
+        let mut capped = LogScanOptions::default();
+        capped.max_events = Some(1);
+        let logs = collect_source_logs(&src, None, "h", &capped).unwrap();
+        assert_eq!(logs.scan.pattern_counts.get("migrate"), Some(&1));
+        assert_eq!(logs.scan.pattern_counts.get("server_error"), Some(&1));
+        assert_eq!(logs.scan.events_kept, 1);
+        assert_eq!(logs.lines.len(), 1);
+        assert!(logs.scan.truncated);
+        // default options: both relevant lines kept, no truncation
+        let logs2 = collect_source_logs(&src, None, "h", &LogScanOptions::default()).unwrap();
+        assert_eq!(logs2.lines.len(), 2);
+        assert!(!logs2.scan.truncated);
+    }
+
+    #[test]
+    fn raw_filter_drops_irrelevant_lines_and_cap_stops() {
+        let text = "Jun 15 12:00:00 h xapi: [debug|h|1 |T|audit] VM.migrate_send: VM = 'x'\n\
+                    Jun 15 12:00:01 h xapi: [info|h|1 |T|xapi] routine heartbeat line\n\
+                    Jun 15 12:00:02 h xapi: [error|h|1 |T|xapi] Caught Server_error(X, [])\n\
+                    Jun 15 12:00:03 h xapi: [debug|h|1 |T|xenops] VM = u; domid = 7; progress = 50 / 100\n";
+        let (lines, cap) = parse_log_filtered(text, "f", None, &raw_line_migration_relevant, 100);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(!cap);
+        // line cap
+        let (lines, cap) = parse_log_filtered(text, "f", None, &|_| true, 2);
+        assert_eq!(lines.len(), 2);
+        assert!(cap);
+        // raw filter keeps error/progress lines even without 'migrate'
+        assert!(raw_line_migration_relevant("... [error|h|1 |T|x] boom"));
+        assert!(raw_line_migration_relevant("... progress = 3 / 100"));
+        assert!(!raw_line_migration_relevant("... routine heartbeat"));
     }
 }

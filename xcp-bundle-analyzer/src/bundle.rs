@@ -6,6 +6,7 @@
 use crate::xapidb::XapiDb;
 use anyhow::{bail, Context, Result};
 use std::fs;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -70,10 +71,17 @@ impl Source {
     /// Read one entry by its name as listed by `list()` (relative path for
     /// directory bundles, archive entry name for archives). Unlike
     /// `read_best`, the name must match the listed name exactly.
+    #[allow(dead_code)]
     pub fn read_entry(&self, name: &str) -> Option<Result<Vec<u8>>> {
+        self.read_entry_capped(name, u64::MAX)
+    }
+
+    /// Read an entry but stop after `max` bytes (bounds memory on huge
+    /// entries such as multi-GB logs).
+    pub fn read_entry_capped(&self, name: &str, max: u64) -> Option<Result<Vec<u8>>> {
         match self {
-            Source::Archive(b) => Some(b.read(name)),
-            Source::Dir(d) => d.read_entry(name),
+            Source::Archive(b) => Some(b.read_capped(name, max)),
+            Source::Dir(d) => d.read_entry_capped(name, max),
             Source::DbFile(_) => None,
         }
     }
@@ -123,7 +131,13 @@ impl DirBundle {
 
     /// Read the file whose path relative to the bundle root equals `name`
     /// (the same names `list()` returns).
+    #[allow(dead_code)]
     pub fn read_entry(&self, name: &str) -> Option<Result<Vec<u8>>> {
+        self.read_entry_capped(name, u64::MAX)
+    }
+
+    /// Read an entry but stop after `max` bytes.
+    pub fn read_entry_capped(&self, name: &str, max: u64) -> Option<Result<Vec<u8>>> {
         self.files
             .iter()
             .find(|(p, _)| {
@@ -131,7 +145,16 @@ impl DirBundle {
                     .map(|r| r.to_string_lossy().replace('\\', "/") == name)
                     .unwrap_or(false)
             })
-            .map(|(p, _)| fs::read(p).context_msg(p))
+            .map(|(p, _)| {
+                let p = p.clone();
+                (|| -> Result<Vec<u8>> {
+                    let f = fs::File::open(&p)?;
+                    let mut out = Vec::new();
+                    std::io::Read::take(f, max).read_to_end(&mut out)?;
+                    Ok(out)
+                })()
+                .with_context(|| format!("reading {}", p.display()))
+            })
     }
 
     pub fn list(&self) -> Vec<(String, u64)> {
@@ -197,7 +220,7 @@ impl ContextMsg for std::result::Result<Vec<u8>, std::io::Error> {
     }
 }
 
-type EntryReader = Box<dyn Fn(&str) -> Result<Vec<u8>>>;
+type EntryReader = Box<dyn Fn(&str, u64) -> Result<Vec<u8>>>;
 
 pub struct Bundle {
     pub path: Arc<PathBuf>,
@@ -231,38 +254,40 @@ impl Bundle {
                     entry.size(),
                 ));
             }
-            Box::new(move |needle: &str| -> Result<Vec<u8>> {
+            Box::new(move |needle: &str, max: u64| -> Result<Vec<u8>> {
                 let mut zip = zip::ZipArchive::new(fs::File::open(p.as_ref())?)?;
                 let mut entry = zip
                     .by_name(needle)
                     .with_context(|| format!("entry not found: {needle}"))?;
                 let mut out = Vec::new();
-                std::io::Read::read_to_end(&mut entry, &mut out)?;
+                std::io::Read::take(&mut entry, max).read_to_end(&mut out)?;
                 Ok(out)
             })
         } else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") {
             let p = path.clone();
             collect_tar(bzip2::read::BzDecoder::new(file), &mut files)?;
-            Box::new(move |needle: &str| -> Result<Vec<u8>> {
+            Box::new(move |needle: &str, max: u64| -> Result<Vec<u8>> {
                 read_tar(
                     bzip2::read::BzDecoder::new(fs::File::open(p.as_ref())?),
                     needle,
+                    max,
                 )
             })
         } else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
             let p = path.clone();
             collect_tar(flate2::read::GzDecoder::new(file), &mut files)?;
-            Box::new(move |needle: &str| -> Result<Vec<u8>> {
+            Box::new(move |needle: &str, max: u64| -> Result<Vec<u8>> {
                 read_tar(
                     flate2::read::GzDecoder::new(fs::File::open(p.as_ref())?),
                     needle,
+                    max,
                 )
             })
         } else if lower.ends_with(".tar") {
             let p = path.clone();
             collect_tar(file, &mut files)?;
-            Box::new(move |needle: &str| -> Result<Vec<u8>> {
-                read_tar(fs::File::open(p.as_ref())?, needle)
+            Box::new(move |needle: &str, max: u64| -> Result<Vec<u8>> {
+                read_tar(fs::File::open(p.as_ref())?, needle, max)
             })
         } else {
             bail!(
@@ -279,7 +304,13 @@ impl Bundle {
     }
 
     pub fn read(&self, name: &str) -> Result<Vec<u8>> {
-        (self.reader)(name).with_context(|| format!("reading entry {name}"))
+        self.read_capped(name, u64::MAX)
+    }
+
+    /// Read an entry but stop after `max` bytes (bounds memory on huge
+    /// entries such as multi-GB logs).
+    pub fn read_capped(&self, name: &str, max: u64) -> Result<Vec<u8>> {
+        (self.reader)(name, max).with_context(|| format!("reading entry {name}"))
     }
 
     pub fn find_best(&self, suffix: &str) -> Option<&str> {
@@ -318,7 +349,7 @@ fn collect_tar<R: std::io::Read>(r: R, files: &mut Vec<(String, u64)>) -> Result
     Ok(())
 }
 
-fn read_tar<R: std::io::Read>(r: R, needle: &str) -> Result<Vec<u8>> {
+fn read_tar<R: std::io::Read>(r: R, needle: &str, max: u64) -> Result<Vec<u8>> {
     let mut tar = tar::Archive::new(r);
     for entry in tar.entries()? {
         let mut entry = entry?;
@@ -329,7 +360,7 @@ fn read_tar<R: std::io::Read>(r: R, needle: &str) -> Result<Vec<u8>> {
             .to_string();
         if name == needle || name.ends_with(needle) {
             let mut out = Vec::new();
-            std::io::Read::read_to_end(&mut entry, &mut out)?;
+            std::io::Read::take(&mut entry, max).read_to_end(&mut out)?;
             return Ok(out);
         }
     }
