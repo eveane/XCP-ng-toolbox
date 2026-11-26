@@ -54,23 +54,33 @@ XCP-ng pool over SSH and packs them into one archive named
 Usage:
 
 ```
-./bugtool_collector.sh [-j N] <pool_master_ip>     # -j N: max hosts in parallel (default 3, 0 = all at once)
+./bugtool_collector.sh [-j N] [pool_master_ip]    # -j N: max hosts in parallel (default 3, 0 = all at once)
 ```
+
+`pool_master_ip` is optional: when omitted, the pools registered in the local
+XO database are listed (`xo-server-db ls server`) — a single pool is collected
+directly, several pools are listed for interactive selection, and the SSH
+password is read from the chosen XO server entry.
 
 It checks its OS package dependencies itself and installs the missing ones
 automatically: `dpkg -s` / `apt-get` on Debian-based hosts (the XOA), `rpm -q`
-/ `dnf`/`yum` on XCP-ng hosts.
+/ `dnf`/`yum` on XCP-ng hosts. Only `openssh-client`/`tar` are real
+dependencies; without `sshpass` the script uses OpenSSH `SSH_ASKPASS`.
 
 ### Install on the XOA (Debian package)
 
 A self-contained `.deb` is published as a GitHub Release
 (`bugtool-collector-v<VERSION>`) on every merge to `main` that changes
-`bugtool-collector/` — same pattern as `xoa-support`:
+`bugtool-collector/` — same pattern as `xoa-support` — together with an
+**airgap bundle** (`bugtool-collector_*_airgap.tar.gz`: the package + all
+dependency `.deb`s + an offline `install.sh`) for customers without internet
+access:
 
 ```
 wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/bugtool-collector_*_all.deb
 sudo dpkg -i bugtool-collector_*_all.deb     # installs /usr/bin/bugtool-collector
-sudo bugtool-collector -j 3 10.0.0.1
+sudo bugtool-collector -j 3                  # pool auto-detected from the XO DB
+# airgapped XOA:  tar -xzf bugtool-collector_*_airgap.tar.gz && cd airgap && sudo ./install.sh
 ```
 
 See [bugtool-collector/README.md](bugtool-collector/README.md) for details.

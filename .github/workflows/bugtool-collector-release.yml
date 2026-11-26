@@ -1,7 +1,9 @@
 name: bugtool-collector-release
 
 # Publishes the self-contained bugtool-collector .deb as a GitHub Release
-# asset, exactly like xoa-support-release does for xoa-support.
+# asset, exactly like xoa-support-release does for xoa-support, plus an
+# airgap bundle (this .deb + all dependency .debs + offline install.sh) for
+# customers without internet access.
 #
 # Primary trigger: every merge/push to main that changes bugtool-collector/
 # or bugtool_collector.sh -> release "bugtool-collector-v<VERSION>" is created
@@ -9,7 +11,7 @@ name: bugtool-collector-release
 #
 # Manual/tag fallbacks still work:
 #   - push of a tag bugtool-collector-vX.Y.Z
-#   - workflow_dispatch (optional version input)
+#   - workflow_dispatch (optional version and debian_codename inputs)
 
 "on":
   push:
@@ -22,6 +24,10 @@ name: bugtool-collector-release
         description: "Version to release (e.g. 0.1.0); defaults to bugtool-collector/VERSION"
         required: false
         default: ""
+      debian_codename:
+        description: "Debian codename the airgap dependency .debs are built for (XOA base; e.g. bookworm)"
+        required: false
+        default: "bookworm"
 
 permissions:
   contents: write   # create/update the release and upload assets
@@ -47,6 +53,30 @@ jobs:
           ./packaging/build-deb.sh dist
           sha256sum dist/*.deb > dist/SHA256SUMS
           dpkg-deb --info dist/bugtool-collector_*_all.deb | head -12
+      - name: build the airgap bundle (offline installer)
+        env:
+          CODENAME: ${{ inputs.debian_codename || 'bookworm' }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p dist/airgap/debs
+          cp dist/bugtool-collector_*_all.deb dist/airgap/
+          # download the dependency .debs (and their lib deps) for the XOA's
+          # Debian release inside a matching container, so glibc versions match
+          docker run --rm -v "$PWD/dist/airgap/debs:/deps" "debian:${CODENAME}" sh -c \
+            "mkdir -p /deps/partial && apt-get update && apt-get -o Dir::Cache::archives=/deps install -y --download-only sshpass openssh-client tar"
+          cat > dist/airgap/install.sh <<'EOS'
+          #!/bin/sh
+          # Offline install on the XOA: verify checksums, then install all .debs locally.
+          set -e
+          cd "$(dirname "$0")"
+          sha256sum -c SHA256SUMS
+          dpkg -i ./debs/*.deb ./bugtool-collector_*_all.deb
+          echo "bugtool-collector installed: run 'sudo bugtool-collector [-j N] [pool_master_ip]'"
+          EOS
+          chmod +x dist/airgap/install.sh
+          (cd dist/airgap && sha256sum install.sh bugtool-collector_*_all.deb debs/*.deb > SHA256SUMS)
+          tar -czf "dist/bugtool-collector_${VERSION}_airgap.tar.gz" -C dist/airgap .
+          ls -la dist dist/airgap dist/airgap/debs | head -30
       - name: create or update release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -54,6 +84,7 @@ jobs:
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
           DEB=$(ls dist/bugtool-collector_*_all.deb)
+          AIRGAP=$(ls dist/bugtool-collector_*_airgap.tar.gz)
           cat > /tmp/release-notes.md <<NOTES
           ## bugtool-collector v${VERSION}
 
@@ -66,20 +97,28 @@ jobs:
               sha256sum -c SHA256SUMS
               sudo dpkg -i $(basename "$DEB")
 
+          ### Fully offline install (customer without internet access)
+
+              wget https://github.com/eveane/XCP-ng-toolbox/releases/latest/download/$(basename "$AIRGAP")
+              tar -xzf $(basename "$AIRGAP")
+              cd bugtool-collector_${VERSION}_airgap 2>/dev/null || cd airgap
+              sudo ./install.sh        # verifies SHA256SUMS, then dpkg -i all .debs locally
+
           Command installed: \`bugtool-collector\` — run
-          \`sudo bugtool-collector [-j N] <pool_master_ip>\` to collect the
-          xen-bugtool bundles of every host of a pool into one
+          \`sudo bugtool-collector [-j N] [pool_master_ip]\`. Without an argument the
+          pool is auto-detected from the XO database (\`xo-server-db ls server\`);
+          the bundles of every host are collected into one
           \`<pool name or master IP>-<UTC date-time>.tar.gz\` archive.
 
           Built from commit ${{ github.sha }}.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $TAG exists -> updating assets"
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$DEB" dist/SHA256SUMS
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$DEB" dist/SHA256SUMS "$AIRGAP"
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file /tmp/release-notes.md --latest
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --title "bugtool-collector v${VERSION}" --notes-file /tmp/release-notes.md --latest \
-              "$DEB" dist/SHA256SUMS
+              "$DEB" dist/SHA256SUMS "$AIRGAP"
           fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name]'

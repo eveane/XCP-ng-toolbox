@@ -5,27 +5,37 @@
 # Open source: free to use, modify and share, as-is without warranty; see the repository README
 
 # Configuration
-SSH_USER="root"                          # SSH username
-SSH_PASSWORD=""                          # Will prompt if not set
+SSH_USER="root"                          # SSH username (taken from the XO server entry when auto-detecting)
+SSH_PASSWORD=""                          # Prompted if not set; taken from `xo-server-db ls server` when available
 REMOTE_BUGTOOL_DIRS=("/tmp" "/var/opt/xen/bug-report")  # Possible directories for archives
 LOCAL_DOWNLOAD_DIR="./bugtool_archives"  # Local directory to save archives
 PARALLEL_LIMIT=3                         # Max hosts processed in parallel; 0 = all at once
-POOL_MASTER_IP=""                        # Pass pool master IP as argument
+POOL_MASTER_IP=""                        # Optional argument; auto-detected from the XO DB otherwise
 
-# OS packages required locally. Debian-based hosts (e.g. the XOA) are checked
-# with dpkg -s and completed with apt-get; RPM-based hosts (e.g. XCP-ng) with
-# rpm -q and dnf/yum.
-DEB_DEPS=(bash sshpass openssh-client tar coreutils grep gawk findutils)
-RPM_DEPS=(sshpass openssh-clients tar coreutils grep gawk findutils)
+# Packages providing the hard runtime requirements (ssh/scp, tar). Checked with
+# dpkg -s (Debian/XOA) or rpm -q (XCP-ng) and installed with apt-get/dnf/yum when
+# missing. sshpass is NOT required: without it the script uses OpenSSH's
+# SSH_ASKPASS mechanism. On Debian, bash/coreutils/grep/findutils/tar are
+# Essential/required and awk comes from the required-priority mawk, so they
+# are not listed as dependencies.
+DEB_DEPS=(openssh-client tar)
+RPM_DEPS=(openssh-clients tar)
 
 usage() {
     cat <<EOF
-Usage: $0 [-j N] <pool_master_ip>
+Usage: $0 [-j N] [pool_master_ip]
 
 Options:
   -j N   Max number of hosts processed in parallel (default: 3).
          Use 0 to collect all the bundles at once.
   -h     Show this help.
+
+Arguments:
+  pool_master_ip   Optional. When omitted, the pools registered in the local
+                   XO server database are listed (xo-server-db ls server): with
+                   a single pool it is collected directly; with several you
+                   are asked to choose one. SSH credentials are taken from the
+                   chosen XO server entry when available.
 
 The final archive is named "<pool name or master IP>-<UTC date-time>.tar.gz".
 Missing OS packages are listed, checked and installed automatically
@@ -33,10 +43,70 @@ Missing OS packages are listed, checked and installed automatically
 EOF
 }
 
+# ---------------------------------------------------------------------------
+# SSH helpers: use sshpass when installed, otherwise OpenSSH's SSH_ASKPASS
+# mechanism (SSH_ASKPASS_REQUIRE=force on OpenSSH >= 8.4; setsid + DISPLAY for
+# older versions), so no extra package is needed for password authentication.
+ASKPASS_FILE=""
+cleanup_askpass() { [ -n "$ASKPASS_FILE" ] && rm -f "$ASKPASS_FILE"; }
+trap cleanup_askpass EXIT
+
+make_askpass() {
+    ASKPASS_FILE=$(mktemp /tmp/bugtool-askpass.XXXXXX)
+    chmod 700 "$ASKPASS_FILE"
+    printf '#!/bin/sh\nprintf %%s "$BUGTOOL_SSH_PASSWORD"\n' > "$ASKPASS_FILE"
+    # set the trap here as well: background subshells do not inherit the
+    # parent's EXIT trap, so each subshell that creates the file cleans it up
+    trap cleanup_askpass EXIT
+}
+
+ssh_remote() {  # ssh_remote <host> <command>
+    local host="$1" cmd="$2"
+    if command -v sshpass >/dev/null 2>&1; then
+        sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "$SSH_USER@$host" "$cmd"
+    else
+        [ -n "$ASKPASS_FILE" ] || make_askpass
+        BUGTOOL_SSH_PASSWORD="$SSH_PASSWORD" SSH_ASKPASS="$ASKPASS_FILE" \
+        SSH_ASKPASS_REQUIRE=force DISPLAY="${DISPLAY:-:0}" \
+            setsid ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "$SSH_USER@$host" "$cmd" < /dev/null
+    fi
+}
+
+scp_remote() {  # scp_remote <host> <remote_path> <local_path>
+    local host="$1" remote="$2" local="$3"
+    if command -v sshpass >/dev/null 2>&1; then
+        sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no \
+            "$SSH_USER@$host:$remote" "$local"
+    else
+        [ -n "$ASKPASS_FILE" ] || make_askpass
+        BUGTOOL_SSH_PASSWORD="$SSH_PASSWORD" SSH_ASKPASS="$ASKPASS_FILE" \
+        SSH_ASKPASS_REQUIRE=force DISPLAY="${DISPLAY:-:0}" \
+            setsid scp -o StrictHostKeyChecking=no \
+            "$SSH_USER@$host:$remote" "$local" < /dev/null
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # List the required OS packages, check them (dpkg -s on Debian, rpm -q on
 # RPM-based systems) and install the missing ones (apt-get / dnf / yum)
 ensure_package_deps() {
-    local pkg missing=() still=()
+    local cmd bin pkg p missing_bins=() missing=() still=() dup
+
+    for cmd in ssh scp tar; do
+        command -v "$cmd" >/dev/null 2>&1 || missing_bins+=("$cmd")
+    done
+    if command -v sshpass >/dev/null 2>&1; then
+        echo "  [OK] sshpass (optional password helper)"
+    else
+        echo "  [NOTE] sshpass not installed: OpenSSH SSH_ASKPASS will be used instead (no package needed)"
+    fi
+    if [ "${#missing_bins[@]}" -eq 0 ]; then
+        echo "[OK] all required binaries present (ssh scp tar)"
+        return 0
+    fi
+    echo "Missing required binaries: ${missing_bins[*]}"
 
     if command -v dpkg >/dev/null 2>&1; then
         echo "Package dependencies (dpkg):"
@@ -49,16 +119,18 @@ ensure_package_deps() {
             fi
         done
         if [ "${#missing[@]}" -eq 0 ]; then
+            echo "[WARN] binaries missing but packages present; check your PATH"
             return 0
         fi
         echo "Installing missing packages: ${missing[*]}"
         if command -v apt-get >/dev/null 2>&1; then
             apt-get install -y "${missing[@]}" || { apt-get update && apt-get install -y "${missing[@]}"; } || {
-                echo "[ERROR] apt-get failed (run as root on the XOA?); install manually with: apt-get install -y ${missing[*]}"
+                echo "[ERROR] apt-get failed (offline host?). Use the airgap release asset instead:"
+                echo "         bugtool-collector_<version>_airgap.tar.gz -> install.sh (dpkg -i, no network needed)"
                 return 1
             }
         else
-            echo "[ERROR] no apt-get to resolve ${missing[*]}; install them manually with dpkg -i <package>.deb"
+            echo "[ERROR] no apt-get; install manually with: dpkg -i <package>.deb"
             return 1
         fi
         for pkg in "${missing[@]}"; do
@@ -83,6 +155,7 @@ ensure_package_deps() {
             fi
         done
         if [ "${#missing[@]}" -eq 0 ]; then
+            echo "[WARN] binaries missing but packages present; check your PATH"
             return 0
         fi
         echo "Installing missing packages: ${missing[*]}"
@@ -91,7 +164,7 @@ ensure_package_deps() {
         elif command -v yum >/dev/null 2>&1; then
             yum -y install "${missing[@]}" || return 1
         else
-            echo "[ERROR] no dnf/yum to resolve ${missing[*]}; install them manually with rpm -ivh <package>.rpm"
+            echo "[ERROR] no dnf/yum; install them manually with rpm -ivh <package>.rpm"
             return 1
         fi
         for pkg in "${missing[@]}"; do
@@ -105,36 +178,73 @@ ensure_package_deps() {
         return 0
     fi
 
-    echo "[WARN] neither dpkg nor rpm on this host; checking binaries directly"
-    local cmd missing_bin=0
-    for cmd in sshpass ssh scp tar; do
-        if command -v "$cmd" >/dev/null 2>&1; then
-            echo "  [OK] $cmd"
-        else
-            echo "  [MISSING] $cmd"
-            missing_bin=1
-        fi
-    done
-    if [ "$missing_bin" -ne 0 ]; then
-        echo "[ERROR] required binaries are missing and no package manager is available to install them"
-        return 1
-    fi
-    return 0
+    echo "[ERROR] missing binaries (${missing_bins[*]}) and no dpkg/rpm to install them; install manually"
+    return 1
 }
 
+# ---------------------------------------------------------------------------
+# XO pool auto-detection via xo-server-db (xo-server's db CLI on the XOA)
+find_xo_server_db() {
+    local c
+    for c in "$(command -v xo-server-db 2>/dev/null)" \
+             /usr/local/bin/xo-server-db \
+             /opt/xen-orchestra/node_modules/.bin/xo-server-db \
+             /opt/xen-orchestra/bin/xo-server-db; do
+        if [ -n "$c" ] && [ -x "$c" ]; then
+            printf '%s' "$c"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Parse `xo-server-db ls server` output (Node console.log format: one flat
+# record per { ... } block, fields as `  key: 'value',`) into tab-separated
+# lines: host, username, password, label
+parse_xo_servers() {
+    awk '
+        BEGIN { q = sprintf("%c", 39) }
+        /^\}/ {
+            if (host != "") printf "%s\t%s\t%s\t%s\n", host, user, pass, label
+            host = user = pass = label = ""
+            next
+        }
+        {
+            line = $0
+            sub(/^[ \t]+/, "", line)
+            if (match(line, /^[A-Za-z_][A-Za-z0-9_-]*: /)) {
+                key = substr(line, 1, RLENGTH - 2)
+                val = substr(line, RLENGTH + 1)
+                sub(/,[ \t]*$/, "", val)
+                if (length(val) >= 2 && (substr(val, 1, 1) == q || substr(val, 1, 1) == "\""))
+                    val = substr(val, 2, length(val) - 2)
+                if (key == "host") host = val
+                else if (key == "username") user = val
+                else if (key == "password") pass = val
+                else if (key == "label" || key == "name") label = val
+            }
+        }
+    '
+}
+
+# ---------------------------------------------------------------------------
 # Function to get all host IPs in the pool
 get_host_ips() {
     # Run xe host-list and extract only the IPs (lines starting with "address")
-    sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$POOL_MASTER_IP" \
-        "xe host-list params=name-label,address" | \
-        grep "address" | \
-        awk '{print $NF}'  # Extract the last field (IP)
+    ssh_remote "$POOL_MASTER_IP" "xe host-list params=name-label,address" |
+    while read -r line; do
+        case "$line" in
+            address*)
+                ip=""; for w in $line; do ip="$w"; done  # last field = IP
+                [ -n "$ip" ] && echo "$ip"
+                ;;
+        esac
+    done
 }
 
 # Function to get the pool name-label (used in the final archive name)
 get_pool_name() {
-    sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$POOL_MASTER_IP" \
-        "xe pool-list params=name-label" 2>/dev/null | \
+    ssh_remote "$POOL_MASTER_IP" "xe pool-list params=name-label" 2>/dev/null |
         sed -n 's/^name-label[^:]*: *//p' | head -1
 }
 
@@ -146,13 +256,11 @@ find_latest_archive() {
 
     for dir in "${REMOTE_BUGTOOL_DIRS[@]}"; do
         # Find all bugtool archives in the directory
-        archives=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$host" \
-            "ls -1 $dir/bug-report-*.tar.* 2>/dev/null")
+        archives=$(ssh_remote "$host" "ls -1 $dir/bug-report-*.tar.* 2>/dev/null")
 
         for archive in $archives; do
             # Get the modification time of the archive
-            mod_time=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$host" \
-                "stat -c %Y $archive 2>/dev/null")
+            mod_time=$(ssh_remote "$host" "stat -c %Y $archive 2>/dev/null")
 
             if [ -n "$mod_time" ] && [ "$mod_time" -gt "$latest_time" ]; then
                 latest_time="$mod_time"
@@ -171,13 +279,11 @@ process_host() {
     echo "Processing $host..."
 
     # Step 1: Get the hostname and current timestamp (UTC)
-    hostname=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$host" \
-        "hostname")
+    hostname=$(ssh_remote "$host" "hostname")
     timestamp=$(date -u +%Y%m%d-%H%M%SZ)
 
     # Step 2: Run xen-bugtool
-    sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$host" \
-        "xen-bugtool -ys"
+    ssh_remote "$host" "xen-bugtool -ys"
 
     # Step 3: Find the latest archive
     latest_archive=$(find_latest_archive "$host")
@@ -190,8 +296,7 @@ process_host() {
 
     # Step 4: Download the archive (unique temp name per host to stay parallel-safe)
     temp_local_file="$LOCAL_DOWNLOAD_DIR/.incoming-$host-$(basename "$latest_archive")"
-    if sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no \
-        "$SSH_USER@$host:$latest_archive" "$temp_local_file"; then
+    if scp_remote "$host" "$latest_archive" "$temp_local_file"; then
         # Step 5: Rename the downloaded file to include hostname and UTC timestamp
         new_local_file="$LOCAL_DOWNLOAD_DIR/xen-bugtool-$hostname-$timestamp.tar.gz"
         if ! mv "$temp_local_file" "$new_local_file"; then
@@ -202,8 +307,7 @@ process_host() {
         echo "[SUCCESS] Downloaded and renamed to $new_local_file"
 
         # Step 6: Clean up remote archive
-        sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$host" \
-            "rm $latest_archive"
+        ssh_remote "$host" "rm $latest_archive"
         echo "[CLEANUP] Removed $latest_archive from $host"
     else
         echo "[ERROR] Failed to download $latest_archive"
@@ -260,11 +364,6 @@ done
 shift $((OPTIND - 1))
 POOL_MASTER_IP="${1:-}"
 
-if [ -z "$POOL_MASTER_IP" ]; then
-    usage
-    exit 1
-fi
-
 case "$PARALLEL_LIMIT" in
     ''|*[!0-9]*)
         echo "[ERROR] -j must be a non-negative integer (0 = collect all bundles in parallel)"
@@ -279,9 +378,66 @@ mkdir -p "$LOCAL_DOWNLOAD_DIR"
 HOST_LOG_DIR="$LOCAL_DOWNLOAD_DIR/host-logs"
 mkdir -p "$HOST_LOG_DIR"
 
-# Prompt for SSH password if not set
+XOSERVERDB=$(find_xo_server_db || true)
+SRV_LABEL=""
+
+if [ -z "$POOL_MASTER_IP" ]; then
+    # No pool master IP given: auto-detect the pools registered in the local XO DB
+    if [ -z "$XOSERVERDB" ]; then
+        echo "[ERROR] no pool master IP given and xo-server-db not found on this host to auto-detect pools"
+        usage
+        exit 1
+    fi
+    mapfile -t SRV_LINES < <("$XOSERVERDB" ls server 2>/dev/null | parse_xo_servers)
+    n=${#SRV_LINES[@]}
+    if [ "$n" -eq 0 ]; then
+        echo "[ERROR] no pools (servers) found in the XO database (xo-server-db ls server)"
+        exit 1
+    fi
+    if [ "$n" -eq 1 ]; then
+        IFS=$'\t' read -r POOL_MASTER_IP SSH_USER SSH_PASSWORD SRV_LABEL <<< "${SRV_LINES[0]}"
+        echo "Single pool registered in XO -> collecting: ${SRV_LABEL:-$POOL_MASTER_IP} ($POOL_MASTER_IP)"
+    else
+        echo "Multiple pools registered in XO:"
+        for i in "${!SRV_LINES[@]}"; do
+            IFS=$'\t' read -r h u p l <<< "${SRV_LINES[$i]}"
+            echo "  $((i + 1))) ${l:-$h} ($h)"
+        done
+        choice=""
+        while :; do
+            read -r -p "Choose a pool to collect [1-$n]: " choice
+            case "$choice" in
+                ''|*[!0-9]*) echo "Please enter a number between 1 and $n"; continue ;;
+            esac
+            if [ "$choice" -ge 1 ] && [ "$choice" -le "$n" ]; then break; fi
+            echo "Please enter a number between 1 and $n"
+        done
+        IFS=$'\t' read -r POOL_MASTER_IP SSH_USER SSH_PASSWORD SRV_LABEL <<< "${SRV_LINES[$((choice - 1))]}"
+        echo "Collecting pool: ${SRV_LABEL:-$POOL_MASTER_IP} ($POOL_MASTER_IP)"
+    fi
+    [ -n "$SSH_USER" ] || SSH_USER="root"
+    case "$SSH_PASSWORD" in
+        ""|enc:*) SSH_PASSWORD="" ;;  # empty or encrypted-at-rest -> will prompt
+    esac
+else
+    # Pool master IP given: try to find matching credentials in the XO DB to avoid prompting
+    if [ -n "$XOSERVERDB" ]; then
+        while IFS=$'\t' read -r h u p l; do
+            if [ "$h" = "$POOL_MASTER_IP" ]; then
+                [ -n "$u" ] && SSH_USER="$u"
+                case "$p" in
+                    ""|enc:*) ;;
+                    *) SSH_PASSWORD="$p" ;;
+                esac
+                break
+            fi
+        done < <("$XOSERVERDB" ls server 2>/dev/null | parse_xo_servers)
+    fi
+fi
+
+# Prompt for SSH password if still not set
 if [ -z "$SSH_PASSWORD" ]; then
-    read -s -p "Enter SSH password for $SSH_USER: " SSH_PASSWORD
+    read -s -p "Enter SSH password for $SSH_USER@$POOL_MASTER_IP: " SSH_PASSWORD
     echo
 fi
 
