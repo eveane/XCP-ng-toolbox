@@ -264,6 +264,223 @@ fn fmt_duration(secs: u64) -> String {
     )
 }
 
+/// Render the short migration list (`migrate list`): one line per migration
+/// with its 1-based index (usable as `migrate analyze #<n>`), plus a summary
+/// of the times.
+pub fn render_migration_list_text(r: &MigrationReport) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "=== LIVE MIGRATIONS ({}) ===", r.migrations.len());
+    if r.migrations.is_empty() {
+        let _ = writeln!(out, "  (no migration found in the bundles)");
+        return out;
+    }
+    for (i, m) in r.migrations.iter().enumerate() {
+        let name = if m.vm_name.is_empty() {
+            "?"
+        } else {
+            m.vm_name.as_str()
+        };
+        let uuid = if m.vm_uuid.is_empty() {
+            "?"
+        } else {
+            m.vm_uuid.as_str()
+        };
+        let status = match m.status {
+            MigrationStatus::Succeeded => "SUCCEEDED",
+            MigrationStatus::Incomplete => "INCOMPLETE",
+            MigrationStatus::Failed => "FAILED",
+        };
+        let start = m.start.map(utc_timestamp).unwrap_or_else(|| "?".into());
+        let end = m.end.map(utc_timestamp).unwrap_or_else(|| "?".into());
+        let dur = m.duration_s.map(fmt_duration).unwrap_or_else(|| "?".into());
+        let src = if m.source_host.is_empty() {
+            "?"
+        } else {
+            m.source_host.as_str()
+        };
+        let dst = if m.dest_host.is_empty() {
+            "?"
+        } else {
+            m.dest_host.as_str()
+        };
+        let err = if m.status == MigrationStatus::Failed && !m.error.is_empty() {
+            format!("  err: {}", m.error.chars().take(80).collect::<String>())
+        } else {
+            String::new()
+        };
+        let _ = writeln!(
+            out,
+            "#{:<2} '{name}' [{uuid}]  {}  {src} -> {dst}  {start} -> {end}  {dur}  {status}{err}",
+            i + 1,
+            m.kind
+        );
+    }
+    let count = |s: MigrationStatus| r.migrations.iter().filter(|m| m.status == s).count();
+    let total_dur: u64 = r.migrations.iter().filter_map(|m| m.duration_s).sum();
+    let max_dur = r.migrations.iter().filter_map(|m| m.duration_s).max();
+    let total_dt: u64 = r
+        .migrations
+        .iter()
+        .filter_map(|m| m.downtime.as_ref().map(|d| d.seconds))
+        .sum();
+    let _ = writeln!(
+        out,
+        "summary: {} migration(s): {} succeeded, {} incomplete, {} failed; total duration {}, max {}, total downtime {}",
+        r.migrations.len(),
+        count(MigrationStatus::Succeeded),
+        count(MigrationStatus::Incomplete),
+        count(MigrationStatus::Failed),
+        fmt_duration(total_dur),
+        max_dur.map(fmt_duration).unwrap_or_else(|| "?".into()),
+        fmt_duration(total_dt)
+    );
+    out
+}
+
+/// Render the detailed analysis of ONE migration (`migrate analyze <sel>`).
+pub fn render_migration_detail_text(r: &MigrationReport, sel: &str, m: &Migration) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "=== MIGRATION ANALYSIS (selector '{sel}') ===");
+    render_migration(&mut out, m);
+    let _ = writeln!(
+        out,
+        "    stats: duration {}, downtime {}, max progress {:.0}%",
+        m.duration_s.map(fmt_duration).unwrap_or_else(|| "?".into()),
+        m.downtime
+            .as_ref()
+            .map(|d| fmt_duration(d.seconds))
+            .unwrap_or_else(|| "n/a".into()),
+        m.max_progress.map(|p| p * 100.0).unwrap_or(0.0)
+    );
+    let _ = writeln!(
+        out,
+        "    tasks: {}",
+        if m.task_uuids.is_empty() {
+            "-".to_string()
+        } else {
+            m.task_uuids.join(", ")
+        }
+    );
+    let _ = writeln!(
+        out,
+        "  (run `migrate list` for the indexes of all migrations; `migrate analyze #<n>` selects one)"
+    );
+    for w in &r.warnings {
+        let _ = writeln!(out, "  WARNING: {w}");
+    }
+    out
+}
+
+/// Render the best-practice checklist (`migrate check`).
+pub fn render_migrate_checklist_text(c: &crate::report::MigrateChecklist) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "=== MIGRATION BEST-PRACTICE CHECKLIST ===");
+    let _ = writeln!(out, "\n--- hosts");
+    for h in &c.hosts {
+        let _ = writeln!(
+            out,
+            "  {} ({}){}",
+            h.host,
+            h.bundle,
+            if h.is_master { "  [POOL MASTER]" } else { "" }
+        );
+        match h.auto_scan_interval {
+            Some(s) => {
+                let _ = writeln!(
+                    out,
+                    "    auto-scan-interval: {s}s{}",
+                    if h.is_master {
+                        " (effective on the master)"
+                    } else {
+                        " (only effective after a failover)"
+                    }
+                );
+            }
+            None => {
+                let _ = writeln!(out, "    auto-scan-interval: not set");
+            }
+        }
+        match &h.cpu_governor {
+            Some(g) => {
+                let _ = writeln!(out, "    host power setting (cpu governor): {g}");
+            }
+            None => {
+                let _ = writeln!(
+                    out,
+                    "    host power setting: not found in bundle (sys/.../cpufreq/scaling_governor)"
+                );
+            }
+        }
+        match h.xen_compression {
+            Some(true) => {
+                let _ = writeln!(
+                    out,
+                    "    xen migration compression: enabled (compress flag)"
+                );
+            }
+            Some(false) => {
+                let _ = writeln!(out, "    xen migration compression: NOT enabled");
+            }
+            None => {
+                let _ = writeln!(
+                    out,
+                    "    xen migration compression: unknown (no cmdline in bundle)"
+                );
+            }
+        }
+        if h.xostor_present {
+            match &h.xostor_max_worker {
+                Some(l) => {
+                    let _ = writeln!(out, "    xostor: present — worker setting: {l}");
+                }
+                None => {
+                    let _ = writeln!(
+                        out,
+                        "    xostor: present — no max-worker setting found in etc/linstor (default applies)"
+                    );
+                }
+            }
+        } else {
+            let _ = writeln!(out, "    xostor: not present");
+        }
+        for n in &h.notes {
+            if n.starts_with("WARN") {
+                let _ = writeln!(out, "    {n}");
+            }
+        }
+    }
+    let _ = writeln!(out, "\n--- vms");
+    for v in &c.vms {
+        let _ = writeln!(out, "  '{}' [{}]  disks: {}", v.name, v.uuid, v.disk_count);
+        for n in &v.notes {
+            let _ = writeln!(out, "    {n}");
+        }
+    }
+    let _ = writeln!(out, "\n--- parallelism");
+    let _ = writeln!(
+        out,
+        "  {} migration(s) found; max {} running concurrently",
+        c.parallelism.total_migrations, c.parallelism.max_concurrent
+    );
+    if !c.parallelism.overlapping_pairs.is_empty() {
+        let pairs: Vec<String> = c
+            .parallelism
+            .overlapping_pairs
+            .iter()
+            .map(|(a, b)| format!("#{a}-#{b}"))
+            .collect();
+        let _ = writeln!(
+            out,
+            "  parallel (overlapping) migrations: {}",
+            pairs.join(", ")
+        );
+    }
+    for w in &c.warnings {
+        let _ = writeln!(out, "  WARNING: {w}");
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

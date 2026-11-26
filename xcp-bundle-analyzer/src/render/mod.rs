@@ -21,7 +21,10 @@ mod vm_display;
 
 pub use html::render_html;
 pub use json::render_json;
-pub use migration::render_migration_text;
+pub use migration::{
+    render_migrate_checklist_text, render_migration_detail_text, render_migration_list_text,
+    render_migration_text,
+};
 pub use object_display::{object_table, render_object_display, OBJECTS};
 pub use search::render_search;
 pub use vdi_tree::{render_vdi_tree, render_vdi_tree_html, render_vdi_tree_json};

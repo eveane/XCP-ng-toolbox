@@ -198,6 +198,30 @@ latest xapi timestamp in xapi-db.xml (else the bundle filename date, else the
 current year), with December logs in a January bundle attributed to the
 previous year.
 
+### `migrate list` / `migrate analyze`
+
+`migrate list` renders the same `migrations` array compactly (one line per
+migration with its 1-based index, plus a summary of durations/downtimes); in
+JSON it serializes the `migrations` array directly. `migrate analyze <sel>`
+selects one migration — by 1-based list index (`#2` or `2`), VM uuid
+(artefact uuids ending in `000000000000`/`000000000001` resolve to the real
+VM via the shared first four uuid groups), or VM name — and serializes that
+single `Migration` in JSON.
+
+### `migrate check`: `MigrateChecklist`
+
+Best-practice checklist for live migrations, computed from the bundles
+(xapi-db.xml + small raw files: `sys/.../cpufreq/scaling_governor`,
+`proc/cmdline`, `etc/default/grub`, `etc/linstor/*.toml`) and the migration
+report:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `hosts` | `[HostCheck]` | Per host/bundle: `host`, `bundle`, `is_master`, `auto_scan_interval` (a), `cpu_governor` (b), `xen_compression` (d), `xostor_max_worker` + `xostor_present` (c), `notes` |
+| `vms` | `[VmCheck]` | Per VM: `uuid`, `name`, `dynamic_min_bytes`/`dynamic_max_bytes` (e), `disk_count` (f), `notes` |
+| `parallelism` | `Parallelism` | (g) `total_migrations`, `max_concurrent`, `overlapping_pairs` (1-based index pairs, as in `migrate list`) |
+| `warnings` | `[string]` | Bundles without xapi-db.xml, ... |
+
 ## HTML output
 
 `render_html` embeds the JSON report verbatim in a `<script type="application/json">`

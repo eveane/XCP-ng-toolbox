@@ -76,14 +76,13 @@ const EXAMPLES: &str = r#"EXAMPLES:
   xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2
   xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2 uuid=<vdi-uuid>
 
-  # Live-migration analysis: pass the bugtool bundles of the source,
-  # destination and master (or any subset); migrations found in
-  # var/log/xensource.log, var/log/SMlog and the xapi task table are
-  # correlated per VM, classified (succeeded/incomplete/failed) and timed
-  # WARNING: EXPERIMENTAL / WORK IN PROGRESS — results may be incomplete or
-  # inaccurate, use with caution and verify against the logs
-  xcp-bundle-analyzer migrate host1.tar.bz2 host2.tar.bz2 master.tar.bz2
-  xcp-bundle-analyzer migrate -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
+  # Live-migration analysis (EXPERIMENTAL): pass the bugtool bundles of the
+  # source, destination and master (or any subset)
+  xcp-bundle-analyzer migrate list host1.tar.bz2 host2.tar.bz2 master.tar.bz2
+  xcp-bundle-analyzer migrate analyze #1 host1.tar.bz2 host2.tar.bz2    # by list index
+  xcp-bundle-analyzer migrate analyze a5609e55-f48c-56c7-e795-5edee4841245 host1.tar.bz2  # by uuid
+  xcp-bundle-analyzer migrate check host1.tar.bz2 host2.tar.bz2         # best-practice checklist
+  xcp-bundle-analyzer migrate all -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
 
 SECTIONS AVAILABLE FOR THE ANALYZE COMMAND (--section, single or
 comma-separated list; the default is the full report):
@@ -193,12 +192,20 @@ OTHER COMMANDS:
   xcp-bundle-analyzer search "my vm" xapi-db.xml
   xcp-bundle-analyzer search OpaqueRef:vm1 XenServer-host1.tar.bz2
 
-  # Live-migration analysis across bundles (source, destination, master):
-  # lists migrations per VM, classifies them (succeeded/incomplete/failed)
-  # and times them (start/end/duration/estimated downtime)
-  # WARNING: EXPERIMENTAL / WORK IN PROGRESS — use with caution
-  xcp-bundle-analyzer migrate XenServer-host1.tar.bz2 XenServer-host2.tar.bz2
-  xcp-bundle-analyzer migrate -f json host1.tar.bz2 host2.tar.bz2 master.tar.bz2
+  # Live-migration analysis (EXPERIMENTAL / WORK IN PROGRESS — use with
+  # caution and verify against the logs):
+  #   migrate list     short list of all migrations found (index, vm,
+  #                    start/end, duration, status) + summary of times
+  #   migrate analyze  detailed analysis of ONE migration, by list index
+  #                    (#1), VM uuid or VM name
+  #   migrate check    best-practice checklist (auto-scan-interval, cpu
+  #                    governor, xostor workers, xen compression, VM
+  #                    dynamic memory, disk count, parallelism)
+  #   migrate all      full report over all migrations
+  xcp-bundle-analyzer migrate list XenServer-host1.tar.bz2 XenServer-host2.tar.bz2
+  xcp-bundle-analyzer migrate analyze #1 host1.tar.bz2 host2.tar.bz2
+  xcp-bundle-analyzer migrate check host1.tar.bz2 host2.tar.bz2
+  xcp-bundle-analyzer migrate all -f json host1.tar.bz2 host2.tar.bz2 master.tar.bz2
 
   # Shell completion scripts
   xcp-bundle-analyzer completions bash > xcp-bundle-analyzer.bash
@@ -229,6 +236,55 @@ xapi-db.xml, plus dom0 configuration, uptime and bundle origin.",
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+}
+
+/// Shared options of the `migrate` sub-actions.
+#[derive(clap::Args)]
+struct MigrateOpts {
+    /// Bundle files (tar/tar.gz/tar.bz2/zip) or decompressed bundle
+    /// directories: pass the source, destination and master bundles
+    /// (or any subset) to correlate migrations per VM
+    #[arg(required = true)]
+    bundles: Vec<PathBuf>,
+    /// OUTPUT format: text (default) or json (html not supported yet);
+    /// use -o/--output <file> to write to a file instead of stdout
+    #[arg(short, long, value_enum, default_value = "text")]
+    format: Format,
+    /// Write output to a file instead of stdout. When given without a
+    /// value (bare -o), a default filename is generated per action:
+    /// migrate-list-$(date).ext / migrate-analyze-$(sel)-$(date).ext /
+    /// migrate-check-$(date).ext / migrate-$(date).ext for `all`.
+    /// Use -o=<file> to pass an explicit filename.
+    #[arg(short, long, num_args = 0..=1, require_equals = true, default_missing_value = "__default__")]
+    output: Option<String>,
+    /// Compact JSON
+    #[arg(short, long, default_value = "false")]
+    compact: bool,
+}
+
+#[derive(Subcommand)]
+enum MigrateAction {
+    /// Short list of all live migrations found in the bundles: index, vm,
+    /// kind, source -> destination, start -> end, duration, status, plus a
+    /// summary of the times. Use the index with `migrate analyze #<n>`.
+    List(MigrateOpts),
+    /// Analyze ONE migration in detail (full event correlation + timing).
+    /// The selector is a list index (#2 or 2), a VM uuid (artefact uuids
+    /// ending in 000000000000/000000000001 resolve to the real VM), or a
+    /// VM name.
+    Analyze {
+        /// Migration selector: list index (#2 / 2), VM uuid or VM name
+        selector: String,
+        #[command(flatten)]
+        opts: MigrateOpts,
+    },
+    /// Best-practice checklist for live migrations, computed from the
+    /// bundles: auto-scan-interval, host power setting (cpu governor),
+    /// xostor worker setting, xen migration compression, VM dynamic memory
+    /// range, attached disk count, migration parallelism
+    Check(MigrateOpts),
+    /// Full migration report over all migrations (grouped by status)
+    All(MigrateOpts),
 }
 
 #[derive(Subcommand)]
@@ -345,24 +401,8 @@ enum Commands {
     /// EXPERIMENTAL / WORK IN PROGRESS: results may be incomplete or
     /// inaccurate — use with caution and verify against the logs.
     Migrate {
-        /// Bundle files (tar/tar.gz/tar.bz2/zip) or decompressed bundle
-        /// directories: pass the source, destination and master bundles
-        /// (or any subset) to correlate migrations per VM
-        #[arg(required = true)]
-        bundles: Vec<PathBuf>,
-        /// OUTPUT format: text (default) or json (html not supported yet);
-        /// use -o/--output <file> to write to a file instead of stdout
-        #[arg(short, long, value_enum, default_value = "text")]
-        format: Format,
-        /// Write output to a file instead of stdout. When given without a
-        /// value (bare -o before the bundles), a default filename is
-        /// generated: migrate-$(date).txt / .json. Use -o=<file> to pass
-        /// an explicit filename.
-        #[arg(short, long, num_args = 0..=1, require_equals = true, default_missing_value = "__default__")]
-        output: Option<String>,
-        /// Compact JSON
-        #[arg(short, long, default_value = "false")]
-        compact: bool,
+        #[command(subcommand)]
+        action: MigrateAction,
     },
     /// Print a shell completion script for the given shell
     Completions {
@@ -591,12 +631,12 @@ fn main() -> Result<()> {
             output.as_deref(),
             compact,
         ),
-        Commands::Migrate {
-            bundles,
-            format,
-            output,
-            compact,
-        } => cmd_migrate(&bundles, format, output.as_deref(), compact),
+        Commands::Migrate { action } => match action {
+            MigrateAction::List(opts) => cmd_migrate_list(&opts),
+            MigrateAction::Analyze { selector, opts } => cmd_migrate_analyze(&selector, &opts),
+            MigrateAction::Check(opts) => cmd_migrate_check(&opts),
+            MigrateAction::All(opts) => cmd_migrate_all(&opts),
+        },
         Commands::Completions { shell } => {
             generate(
                 shell.clap_shell(),
@@ -633,12 +673,37 @@ fn bundle_origin_host(source: &bundle::Source, db: &Option<xapidb::XapiDb>) -> S
     inv_host.to_string()
 }
 
-fn cmd_migrate(
-    bundles: &[PathBuf],
-    format: Format,
-    output: Option<&str>,
-    compact: bool,
-) -> Result<()> {
+/// Read the small extra files used by `migrate check` from a bundle:
+/// cpu governor, kernel/xen cmdline, grub, and any linstor config files.
+fn read_migrate_extra_files(source: &bundle::Source) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    for w in [
+        "sys/devices/system/cpu/cpu0/cpufreq/scaling_governor",
+        "proc/cmdline",
+        "etc/default/grub",
+    ] {
+        if let Some(Ok(bytes)) = source.read_best(w) {
+            out.insert(
+                w.to_string(),
+                String::from_utf8_lossy(&bytes).trim().to_string(),
+            );
+        }
+    }
+    for (name, _size) in source.list() {
+        if out.len() >= 16 {
+            break;
+        }
+        if name.contains("linstor") && (name.ends_with(".toml") || name.ends_with(".conf")) {
+            if let Some(Ok(bytes)) = source.read_entry(&name) {
+                out.insert(name, String::from_utf8_lossy(&bytes).to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Build the per-bundle inputs (logs + xapi-db + extra files) for migrate.
+fn migrate_inputs(bundles: &[PathBuf]) -> Result<Vec<report::BundleInput>> {
     if bundles.is_empty() {
         bail!("no bundle given");
     }
@@ -659,32 +724,123 @@ fn cmd_migrate(
         let origin = bundle_origin_host(&source, &db);
         let logs = logs::collect_source_logs(&source, db.as_ref(), &origin)
             .with_context(|| format!("reading logs of {}", b.display()))?;
-        inputs.push(report::BundleInput { logs, db });
+        let extra_files = read_migrate_extra_files(&source);
+        inputs.push(report::BundleInput {
+            logs,
+            db,
+            extra_files,
+        });
     }
-    let rep = report::build_migration_report(inputs);
+    Ok(inputs)
+}
+
+/// Resolve the -o/--output of a migrate sub-action to a path (default
+/// filename per action when bare -o was given).
+fn migrate_out_path(
+    output: Option<&str>,
+    format: Format,
+    prefix: &str,
+    selector: Option<&str>,
+) -> Option<PathBuf> {
     let ext = match format {
         Format::Text => "txt",
         Format::Json => "json",
         Format::Html => "html",
     };
-    let out_path = match output {
+    match output {
         None => None,
-        Some("__default__") => Some(PathBuf::from(format!(
-            "migrate-{}.{ext}",
-            current_date_str()
-        ))),
+        Some("__default__") => {
+            let date = current_date_str();
+            let mid = match selector {
+                Some(s) => format!("-{}", s.trim_start_matches('#')),
+                None => String::new(),
+            };
+            Some(PathBuf::from(format!("{prefix}{mid}-{date}.{ext}")))
+        }
         Some(p) => Some(PathBuf::from(p)),
-    };
+    }
+}
+
+fn write_migrate_output(
+    output: Option<&str>,
+    format: Format,
+    prefix: &str,
+    selector: Option<&str>,
+    compact: bool,
+    text: impl FnOnce() -> String,
+    json: impl FnOnce() -> Result<String>,
+) -> Result<()> {
+    let out_path = migrate_out_path(output, format, prefix, selector);
     match format {
-        Format::Text => write_output(out_path.as_deref(), &render::render_migration_text(&rep)),
+        Format::Text => write_output(out_path.as_deref(), &text()),
         Format::Json => {
-            let s = render::render_json(&rep, !compact)?;
+            let s = json()?;
+            let _ = compact;
             write_output(out_path.as_deref(), &s)
         }
         Format::Html => bail!(
             "HTML output is not supported for the migrate command yet (use -f text or -f json)"
         ),
     }
+}
+
+/// `migrate all`: full migration report over all migrations.
+fn cmd_migrate_all(opts: &MigrateOpts) -> Result<()> {
+    let rep = report::build_migration_report(migrate_inputs(&opts.bundles)?);
+    write_migrate_output(
+        opts.output.as_deref(),
+        opts.format,
+        "migrate",
+        None,
+        opts.compact,
+        || render::render_migration_text(&rep),
+        || render::render_json(&rep, !opts.compact),
+    )
+}
+
+/// `migrate list`: short list of all live migrations found + summary of times.
+fn cmd_migrate_list(opts: &MigrateOpts) -> Result<()> {
+    let rep = report::build_migration_report(migrate_inputs(&opts.bundles)?);
+    write_migrate_output(
+        opts.output.as_deref(),
+        opts.format,
+        "migrate-list",
+        None,
+        opts.compact,
+        || render::render_migration_list_text(&rep),
+        || render::render_json(&rep.migrations, !opts.compact),
+    )
+}
+
+/// `migrate analyze <selector>`: detailed analysis of one migration.
+fn cmd_migrate_analyze(selector: &str, opts: &MigrateOpts) -> Result<()> {
+    let rep = report::build_migration_report(migrate_inputs(&opts.bundles)?);
+    let m = report::select_migration(&rep, selector)?;
+    write_migrate_output(
+        opts.output.as_deref(),
+        opts.format,
+        "migrate-analyze",
+        Some(selector),
+        opts.compact,
+        || render::render_migration_detail_text(&rep, selector, &m),
+        || render::render_json(&m, !opts.compact),
+    )
+}
+
+/// `migrate check`: best-practice checklist for live migrations.
+fn cmd_migrate_check(opts: &MigrateOpts) -> Result<()> {
+    let inputs = migrate_inputs(&opts.bundles)?;
+    let mig = report::build_migration_report(inputs.clone());
+    let cl = report::build_checklist(&inputs, &mig);
+    write_migrate_output(
+        opts.output.as_deref(),
+        opts.format,
+        "migrate-check",
+        None,
+        opts.compact,
+        || render::render_migrate_checklist_text(&cl),
+        || render::render_json(&cl, !opts.compact),
+    )
 }
 
 fn cmd_vdi_tree(

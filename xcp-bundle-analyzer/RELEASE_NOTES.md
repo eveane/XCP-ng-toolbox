@@ -4,6 +4,27 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.3 (patch)
+
+- feat(migrate, EXPERIMENTAL): the `migrate` command is now a subcommand
+  family — `migrate list` (short list of all live migrations found: index,
+  vm, kind, src -> dst, start -> end, duration, status, plus a summary of
+  durations/downtimes), `migrate analyze <#n|uuid|name>` (detailed analysis of
+  ONE migration; selector = 1-based list index, VM uuid — artefact uuids
+  ending in 000000000000/000000000001 resolve to the real VM — or VM name),
+  `migrate check` (best-practice checklist, see below) and `migrate all` (the
+  previous full report). Old syntax `migrate <bundles...>` is now
+  `migrate all <bundles...>`.
+- feat(migrate check): best-practice checklist for live migrations computed
+  from the bundles: (a) auto-scan-interval per host/master, (b) host power
+  setting via dom0 cpu governor from the bundle, (c) xostor/linstor
+  max-worker setting from `etc/linstor/*.toml`, (d) xen migration compression
+  flag from the kernel cmdline, (e) VM dynamic memory min/max (collapsed range
+  flagged), (f) attached disk count per VM, (g) parallel live migrations
+  (overlapping [start,end] windows from the migration report).
+  New `report/migrate_checks.rs` (`build_checklist`, `MigrateChecklist` JSON
+  contract in docs/SPEC.md), renderers in `render/migration.rs`.
+
 ## v0.6.2 (patch)
 
 - fix(migrate, EXPERIMENTAL): migration artefact (shadow) VMs are now

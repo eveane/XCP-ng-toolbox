@@ -27,11 +27,56 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 /// One bundle's worth of input for [`build_migration_report`].
+#[derive(Clone)]
 pub struct BundleInput {
     /// Parsed logs of the bundle.
     pub logs: SourceLogs,
     /// Parsed xapi-db.xml, when the bundle has one.
     pub db: Option<XapiDb>,
+    /// Small extra files read from the bundle for the best-practice
+    /// checklist (`migrate check`): bundle entry name -> content, e.g.
+    /// `proc/cmdline`, `sys/.../scaling_governor`, `etc/linstor/*.toml`.
+    pub extra_files: BTreeMap<String, String>,
+}
+
+/// Select one migration from a report by list index (`#2` or `2`, 1-based as
+/// shown by `migrate list`), VM uuid (artefact uuids resolve to their owner),
+/// or VM name. Errors when nothing or several migrations match.
+pub fn select_migration(rep: &MigrationReport, selector: &str) -> anyhow::Result<Migration> {
+    let sel = selector.strip_prefix('#').unwrap_or(selector);
+    if let Ok(n) = sel.parse::<usize>() {
+        if n >= 1 && n <= rep.migrations.len() {
+            return Ok(rep.migrations[n - 1].clone());
+        }
+        anyhow::bail!(
+            "no migration #{n} (list has {} migration(s); use `migrate list` to see indexes)",
+            rep.migrations.len()
+        );
+    }
+    // exact uuid, then artefact-prefix link, then name
+    let by_uuid = rep.migrations.iter().find(|m| m.vm_uuid == sel);
+    let by_artefact = rep.migrations.iter().find(|m| {
+        artefact_prefix(sel).is_some() && artefact_prefix(&m.vm_uuid) == artefact_prefix(sel)
+    });
+    let by_name: Vec<&Migration> = rep.migrations.iter().filter(|m| m.vm_name == sel).collect();
+    if let Some(m) = by_uuid.or(by_artefact) {
+        return Ok(m.clone());
+    }
+    match by_name.len() {
+        1 => Ok(by_name[0].clone()),
+        0 => anyhow::bail!(
+            "no migration matching '{selector}' (try a list index like #1, a VM uuid, or a VM name; see `migrate list`)"
+        ),
+        _ => anyhow::bail!(
+            "'{selector}' matches {} migrations by name: {} — use the uuid or the list index instead",
+            by_name.len(),
+            by_name
+                .iter()
+                .map(|m| format!("#{} {}", rep.migrations.iter().position(|x| x.vm_uuid == m.vm_uuid).unwrap() + 1, m.vm_uuid))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 /// Top-level report of the `migrate` subcommand (the JSON contract).
@@ -1182,10 +1227,12 @@ mod tests {
             BundleInput {
                 logs: source_logs("host1.tar.bz2", "host1.example.com", src_lines),
                 db: Some(db_with_tasks()),
+                extra_files: BTreeMap::new(),
             },
             BundleInput {
                 logs: source_logs("host2.tar.bz2", "host2.example.com", dst_lines),
                 db: Some(db_with_tasks()),
+                extra_files: BTreeMap::new(),
             },
         ]
     }
@@ -1274,6 +1321,7 @@ mod tests {
         let rep = build_migration_report(vec![BundleInput {
             logs,
             db: Some(db_with_tasks()),
+            extra_files: BTreeMap::new(),
         }]);
         let m = rep
             .migrations
@@ -1407,10 +1455,12 @@ mod tests {
             BundleInput {
                 logs: source_logs("host1.tar.bz2", "host1.example.com", src_lines),
                 db: Some(db_with_tasks()),
+                extra_files: BTreeMap::new(),
             },
             BundleInput {
                 logs: source_logs("host2.tar.bz2", "host2.example.com", dst_lines),
                 db: Some(db_with_tasks()),
+                extra_files: BTreeMap::new(),
             },
         ];
         let rep = build_migration_report(inputs);
@@ -1467,7 +1517,11 @@ mod tests {
         let logs = logs::collect_source_logs(&source, db.as_ref(), "host1.example.com").unwrap();
         assert_eq!(logs.lines.len(), 2);
         assert_eq!(logs.lines[0].ts, Some(ts("20260615T12:00:00Z")));
-        let rep = build_migration_report(vec![BundleInput { logs, db }]);
+        let rep = build_migration_report(vec![BundleInput {
+            logs,
+            db,
+            extra_files: BTreeMap::new(),
+        }]);
         assert_eq!(rep.migrations.len(), 1);
         assert_eq!(rep.migrations[0].status, MigrationStatus::Succeeded);
         assert_eq!(rep.migrations[0].vm_name, "vm1");
