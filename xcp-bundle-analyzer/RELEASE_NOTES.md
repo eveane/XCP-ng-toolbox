@@ -4,6 +4,20 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.6 (patch)
+
+- fix(migrate): bound memory and CPU on huge bundles — the migrate path used
+  to read every log entry fully (decompressed) and keep every parsed line,
+  which OOM-killed the analyzer on hosts with multi-GB rotated logs, and the
+  task/log correlation loops were O(n^2). Now: per-entry byte caps
+  (`Source::read_entry_capped` / `Bundle::read_capped`, 512 MiB raw /
+  256 MiB decompressed per log entry), xensource.log lines are filtered to
+  migration-relevant ones before being stored (raw-line predicate mirroring
+  `is_migration_line` + error/progress markers), a per-file line cap
+  (200k) applies, truncation is reported as a warning, the task->log uuid
+  resolution is indexed per bundle with binary search (O(n log n)), and
+  cluster spans are precomputed once for orphan attachment.
+
 ## v0.6.5 (patch)
 
 - fix: `analyze --section pool` now ALWAYS shows the `migration-compression`

@@ -362,30 +362,44 @@ pub fn build_migration_report(inputs: Vec<BundleInput>) -> MigrationReport {
     // Resolve the VM uuid of task events from nearby log lines of the same
     // operation (same bundle, within 5 min of task creation, task tag or
     // message naming the same API op, e.g. "Async.VM.migrate_send").
+    // Indexed per bundle + binary search on time: O(n log n), not O(n^2)
+    // (raw logs can hold hundreds of thousands of relevant lines).
+    let mut log_index: BTreeMap<usize, Vec<(u64, usize)>> = BTreeMap::new();
+    for (i, e) in events.iter().enumerate() {
+        if e.is_task || e.vm_uuid.is_empty() {
+            continue;
+        }
+        if let Some(t) = e.ts {
+            log_index.entry(e.bundle).or_default().push((t, i));
+        }
+    }
+    for v in log_index.values_mut() {
+        v.sort_by_key(|&(t, _)| t);
+    }
     for i in 0..events.len() {
         if !events[i].is_task || !events[i].vm_uuid.is_empty() {
             continue;
         }
-        let ts = events[i].ts;
-        let bundle = events[i].bundle;
+        let (Some(ts), bundle) = (events[i].ts, events[i].bundle) else {
+            continue;
+        };
         let core = events[i].op_tag.trim_start_matches("Async.").to_string();
-        let mut best: Option<String> = None;
-        for e in &events {
-            if e.bundle != bundle || e.vm_uuid.is_empty() || e.is_task {
-                continue;
-            }
-            if let (Some(a), Some(b2)) = (ts, e.ts) {
-                if a.abs_diff(b2) <= 300
-                    && (e.op_tag.contains(&core)
-                        || e.excerpt.contains(&core)
-                        || e.raw.contains(&core))
-                {
-                    best = Some(e.vm_uuid.clone());
+        let mut best: Option<(usize, String)> = None; // (event idx, uuid)
+        if let Some(v) = log_index.get(&bundle) {
+            let lo = v.partition_point(|&(t, _)| t < ts.saturating_sub(300));
+            for &(t, j) in &v[lo..] {
+                if t > ts.saturating_add(300) {
                     break;
+                }
+                let e = &events[j];
+                if (e.op_tag.contains(&core) || e.excerpt.contains(&core) || e.raw.contains(&core))
+                    && best.as_ref().map(|(bi, _)| j < *bi).unwrap_or(true)
+                {
+                    best = Some((j, e.vm_uuid.clone()));
                 }
             }
         }
-        if let Some(u) = best {
+        if let Some((_, u)) = best {
             events[i].vm_uuid = u;
         }
     }
@@ -446,6 +460,18 @@ pub fn build_migration_report(inputs: Vec<BundleInput>) -> MigrationReport {
     }
     // Events without a VM uuid attach to the nearest cluster in the same
     // bundle within 5 min; otherwise they form their own cluster.
+    // Cluster spans are precomputed once (was O(orphans x cluster-size)).
+    let cluster_spans: Vec<(std::collections::BTreeSet<usize>, Option<u64>, Option<u64>)> =
+        clusters
+            .iter()
+            .map(|cl| {
+                let bundles: std::collections::BTreeSet<usize> =
+                    cl.iter().map(|&j| events[j].bundle).collect();
+                let cmin = cl.iter().filter_map(|&j| events[j].ts).min();
+                let cmax = cl.iter().filter_map(|&j| events[j].ts).max();
+                (bundles, cmin, cmax)
+            })
+            .collect();
     let orphan: Vec<usize> = (0..events.len())
         .filter(|&i| events[i].vm_uuid.is_empty())
         .collect();
@@ -453,12 +479,11 @@ pub fn build_migration_report(inputs: Vec<BundleInput>) -> MigrationReport {
         let ts = events[i].ts;
         let bundle = events[i].bundle;
         let mut best: Option<(u64, usize)> = None;
-        for (ci, cl) in clusters.iter().enumerate() {
-            if !cl.iter().any(|&j| events[j].bundle == bundle) {
+        for (ci, (cbs, cmin, cmax)) in cluster_spans.iter().enumerate() {
+            if !cbs.contains(&bundle) {
                 continue;
             }
-            let cmin = cl.iter().filter_map(|&j| events[j].ts).min();
-            let cmax = cl.iter().filter_map(|&j| events[j].ts).max();
+            let (cmin, cmax) = (*cmin, *cmax);
             if let (Some(t), Some(cmin), Some(cmax)) = (ts, cmin, cmax) {
                 if t + 300 >= cmin && t <= cmax + 300 {
                     let d = if t < cmin {

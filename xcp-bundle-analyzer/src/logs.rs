@@ -27,6 +27,29 @@ use crate::xapidb::XapiDb;
 use anyhow::Result;
 use std::io::Read;
 
+/// Max raw/compressed bytes read per log entry from a bundle (bounds memory
+/// on huge logs; the migrate analysis only needs migration-relevant lines).
+pub const MAX_LOG_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+/// Max decompressed bytes per `.gz` log entry.
+pub const MAX_LOG_DECOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
+/// Max parsed lines kept per log file.
+pub const MAX_LOG_LINES_PER_FILE: usize = 200_000;
+
+/// True when a raw xensource.log line can matter for migration analysis
+/// (mirrors `is_migration_line` plus the error/progress markers used at
+/// event extraction, matched on the raw text so irrelevant lines can be
+/// dropped before they are stored).
+pub fn raw_line_migration_relevant(raw: &str) -> bool {
+    let l = raw.to_lowercase();
+    l.contains("migrate")
+        || l.contains("server_error")
+        || l.contains("xenopsd_error")
+        || l.contains("exception")
+        || l.contains("progress = ")
+        || l.contains("[error|")
+        || l.contains("|error|")
+}
+
 /// One parsed log line.
 #[derive(Debug, Clone)]
 pub struct LogLine {
@@ -107,7 +130,13 @@ pub fn collect_source_logs(
             continue;
         }
         for name in names {
-            let entry = source.read_entry(&name);
+            let declared = source
+                .list()
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, s)| *s)
+                .unwrap_or(0);
+            let entry = source.read_entry_capped(&name, MAX_LOG_ENTRY_BYTES);
             let bytes = match entry {
                 Some(Ok(b)) => b,
                 Some(Err(e)) => {
@@ -119,11 +148,18 @@ pub fn collect_source_logs(
                 }
                 None => continue,
             };
-            let size = bytes.len() as u64;
+            if declared > bytes.len() as u64 {
+                out.warnings.push(format!(
+                    "{}: {name}: truncated to {} bytes (entry is {declared} bytes)",
+                    source.path().display(),
+                    bytes.len()
+                ));
+            }
+            let size = declared;
             let text = if name.ends_with(".gz") {
-                let mut dec = flate2::read::GzDecoder::new(&bytes[..]);
+                let dec = flate2::read::GzDecoder::new(&bytes[..]);
                 let mut s = String::new();
-                match dec.read_to_string(&mut s) {
+                match dec.take(MAX_LOG_DECOMPRESSED_BYTES).read_to_string(&mut s) {
                     Ok(_) => s,
                     Err(e) => {
                         out.warnings.push(format!(
@@ -140,7 +176,22 @@ pub fn collect_source_logs(
                 name: name.clone(),
                 size,
             };
-            let parsed = parse_log(&text, &name, ref_time);
+            // xensource.log lines are self-contained: drop irrelevant lines
+            // before storing them (huge logs would otherwise OOM). SMlog JSON
+            // request/result pairs span lines, so only the caps apply there.
+            let keep: &dyn Fn(&str) -> bool = if is_sm {
+                &|_| true
+            } else {
+                &raw_line_migration_relevant
+            };
+            let (parsed, hit_cap) =
+                parse_log_filtered(&text, &name, ref_time, keep, MAX_LOG_LINES_PER_FILE);
+            if hit_cap {
+                out.warnings.push(format!(
+                    "{}: {name}: kept only the first {MAX_LOG_LINES_PER_FILE} relevant lines",
+                    source.path().display()
+                ));
+            }
             if is_sm {
                 out.smlog_files.push(file);
                 out.sm_lines.extend(parsed);
@@ -223,18 +274,35 @@ fn reference_time(source: &Source, db: Option<&XapiDb>) -> Option<u64> {
 /// Parse the whole text of one log file into lines. Lines without a
 /// timestamp (SMlog continuations, JSON-RPC result objects) inherit the
 /// previous line's timestamp and host.
+#[allow(dead_code)]
 pub fn parse_log(text: &str, file: &str, ref_time: Option<u64>) -> Vec<LogLine> {
+    parse_log_filtered(text, file, ref_time, &|_| true, usize::MAX).0
+}
+
+/// Parse with a raw-line filter and a cap on kept lines. Returns the kept
+/// lines and whether the cap was hit.
+pub fn parse_log_filtered(
+    text: &str,
+    file: &str,
+    ref_time: Option<u64>,
+    keep: &dyn Fn(&str) -> bool,
+    max_lines: usize,
+) -> (Vec<LogLine>, bool) {
     let mut out = Vec::new();
+    let mut hit_cap = false;
     for (i, raw) in text.lines().enumerate() {
-        if raw.trim().is_empty() {
+        if raw.trim().is_empty() || !keep(raw) {
             continue;
         }
-        match parse_line(raw, file, i + 1, out.last(), ref_time) {
-            Some(line) => out.push(line),
-            None => continue,
+        if out.len() >= max_lines {
+            hit_cap = true;
+            break;
+        }
+        if let Some(line) = parse_line(raw, file, i + 1, out.last(), ref_time) {
+            out.push(line);
         }
     }
-    out
+    (out, hit_cap)
 }
 
 /// Parse one raw line. `prev` is the previous parsed line (for timestamp
@@ -784,5 +852,24 @@ mod tests {
         let line = "Jun 15 12:00:01 host1 xapi: [debug|host1|5|pool.get_all D:xxx|audit] Session.create trackid=abc";
         let lines = parse_log(line, "xensource.log", None);
         assert!(!is_migration_line(&lines[0]));
+    }
+
+    #[test]
+    fn raw_filter_drops_irrelevant_lines_and_cap_stops() {
+        let text = "Jun 15 12:00:00 h xapi: [debug|h|1 |T|audit] VM.migrate_send: VM = 'x'\n\
+                    Jun 15 12:00:01 h xapi: [info|h|1 |T|xapi] routine heartbeat line\n\
+                    Jun 15 12:00:02 h xapi: [error|h|1 |T|xapi] Caught Server_error(X, [])\n\
+                    Jun 15 12:00:03 h xapi: [debug|h|1 |T|xenops] VM = u; domid = 7; progress = 50 / 100\n";
+        let (lines, cap) = parse_log_filtered(text, "f", None, &raw_line_migration_relevant, 100);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(!cap);
+        // line cap
+        let (lines, cap) = parse_log_filtered(text, "f", None, &|_| true, 2);
+        assert_eq!(lines.len(), 2);
+        assert!(cap);
+        // raw filter keeps error/progress lines even without 'migrate'
+        assert!(raw_line_migration_relevant("... [error|h|1 |T|x] boom"));
+        assert!(raw_line_migration_relevant("... progress = 3 / 100"));
+        assert!(!raw_line_migration_relevant("... routine heartbeat"));
     }
 }
