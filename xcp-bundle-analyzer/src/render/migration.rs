@@ -10,7 +10,8 @@
 
 use super::util::utc_timestamp;
 use crate::report::migration::{
-    artefact_role, FailureCategory, Migration, MigrationReport, MigrationStatus,
+    artefact_role, FailureCategory, Migration, MigrationBundleInfo, MigrationReport,
+    MigrationStatus,
 };
 use std::fmt::Write as _;
 
@@ -37,6 +38,7 @@ pub fn render_migration_text(r: &MigrationReport) -> String {
         for f in &b.smlogs {
             let _ = writeln!(out, "    SMlog: {} ({} bytes)", f.name, f.size);
         }
+        render_scan_summary(&mut out, b);
     }
     for w in &r.warnings {
         let _ = writeln!(out, "  WARNING: {w}");
@@ -120,6 +122,38 @@ pub fn render_migration_text(r: &MigrationReport) -> String {
         }
     }
     out
+}
+
+/// Render the stage-1 log scan summary (resource evaluation + pattern hits)
+/// of one bundle.
+fn render_scan_summary(out: &mut String, b: &MigrationBundleInfo) {
+    let scan = &b.scan;
+    if scan.files.is_empty() && scan.pattern_counts.is_empty() {
+        return;
+    }
+    let total_declared: u64 = scan.files.iter().map(|f| f.declared_bytes).sum();
+    let total_read: u64 = scan.files.iter().map(|f| f.read_bytes).sum();
+    let _ = writeln!(
+        out,
+        "    log scan: {} file(s), {:.1} MB declared / {:.1} MB read{}, {} events kept",
+        scan.files.len(),
+        total_declared as f64 / 1_048_576.0,
+        total_read as f64 / 1_048_576.0,
+        if scan.truncated {
+            "  [TRUNCATED by caps]"
+        } else {
+            ""
+        },
+        scan.events_kept
+    );
+    if !scan.pattern_counts.is_empty() {
+        let pats: Vec<String> = scan
+            .pattern_counts
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        let _ = writeln!(out, "    patterns matched: {}", pats.join(", "));
+    }
 }
 
 fn cat_label(c: FailureCategory) -> &'static str {
@@ -270,6 +304,10 @@ fn fmt_duration(secs: u64) -> String {
 pub fn render_migration_list_text(r: &MigrationReport) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "=== LIVE MIGRATIONS ({}) ===", r.migrations.len());
+    for b in &r.bundles {
+        let _ = writeln!(out, "  bundle {} (origin host: {})", b.path, b.origin_host);
+        render_scan_summary(&mut out, b);
+    }
     if r.migrations.is_empty() {
         let _ = writeln!(out, "  (no migration found in the bundles)");
         return out;
@@ -532,6 +570,7 @@ mod tests {
                     size: 4096,
                 }],
                 smlogs: vec![],
+                scan: Default::default(),
             }],
             migrations: vec![
                 Migration {

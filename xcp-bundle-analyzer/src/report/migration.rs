@@ -101,6 +101,9 @@ pub struct MigrationBundleInfo {
     pub xensource_logs: Vec<logs::LogFile>,
     /// SMlog entries read (current + rotations).
     pub smlogs: Vec<logs::LogFile>,
+    /// Stage-1 log scan summary: resource evaluation (declared vs read
+    /// bytes, truncation) + per-pattern hit counts + events kept.
+    pub scan: logs::ScanSummary,
 }
 
 /// Outcome of one migration.
@@ -293,6 +296,7 @@ pub fn build_migration_report(inputs: Vec<BundleInput>) -> MigrationReport {
             origin_host: inp.logs.origin_host.clone(),
             xensource_logs: inp.logs.xensource_files.clone(),
             smlogs: inp.logs.smlog_files.clone(),
+            scan: inp.logs.scan.clone(),
         });
         report.warnings.extend(inp.logs.warnings.iter().cloned());
         if inp.db.is_none() {
@@ -1212,6 +1216,7 @@ mod tests {
             lines,
             sm_lines: Vec::new(),
             warnings: Vec::new(),
+            scan: Default::default(),
         }
     }
 
@@ -1539,7 +1544,13 @@ mod tests {
         .unwrap();
         let source = crate::bundle::Source::open(dir.path()).unwrap();
         let db = source.xapi_db().transpose().unwrap();
-        let logs = logs::collect_source_logs(&source, db.as_ref(), "host1.example.com").unwrap();
+        let logs = logs::collect_source_logs(
+            &source,
+            db.as_ref(),
+            "host1.example.com",
+            &logs::LogScanOptions::default(),
+        )
+        .unwrap();
         assert_eq!(logs.lines.len(), 2);
         assert_eq!(logs.lines[0].ts, Some(ts("20260615T12:00:00Z")));
         let rep = build_migration_report(vec![BundleInput {
