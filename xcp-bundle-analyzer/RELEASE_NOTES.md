@@ -4,6 +4,15 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.5 (patch)
+
+- fix: `analyze --section pool` now ALWAYS shows the `migration-compression`
+  line — when the pool row omits the attribute (never set, xapi default
+  false) it prints "not set (defaults to false)" with the
+  `xe pool-param-set uuid=<pool> migration-compression=true` hint, instead
+  of printing nothing. Both db attribute spellings (`migration-compression` /
+  `migration_compression`) are read.
+
 ## v0.6.4 (patch)
 
 - feat: `analyze --section pool` now shows the pool param

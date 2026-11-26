@@ -27,7 +27,10 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         let master_ref = ref_of(pool, "master");
         pool_master_ref = master_ref.clone();
         report.pool.ha_enabled = as_bool(get(pool, "ha_enabled"));
-        report.pool.migration_compression = as_bool(get(pool, "migration-compression"));
+        // the db attribute spelling varies (migration-compression /
+        // migration_compression); absent means never set (default false)
+        report.pool.migration_compression = as_bool(get(pool, "migration-compression"))
+            .or_else(|| as_bool(get(pool, "migration_compression")));
         report.pool.master = ref_label(db, "host", &master_ref, "hostname");
     }
 
