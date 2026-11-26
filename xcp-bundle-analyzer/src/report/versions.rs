@@ -16,8 +16,11 @@
 //! staleness. `XCPNG_UPDATES` cross-references the xapi/xen versions
 //! (which move with nearly every update) with the official XCP-ng blog /
 //! forum announcements to estimate when a host was last updated. The
-//! table is maintained by hand; when a host reports versions newer than
-//! the newest entry, the estimate says so instead of guessing.
+//! table is maintained by hand: REFRESH IT ON EVERY COMMIT of this tool
+//! (check https://xcp-ng.org/blog/tag/update/ for new XCP-ng 8.3 LTS update
+//! announcements) and bump `RELEASE_DB_LAST_UPDATED` to the date the table
+//! was last brought up to date. When a host reports versions newer than the
+//! newest entry, the estimate says so instead of guessing.
 
 /// (version, release date, note). Dates are the initial GA dates.
 /// Sources: docs.xcp-ng.org/releases, XCP-ng GitHub releases.
@@ -82,7 +85,35 @@ const XCPNG_83_UPDATES: &[(&str, &str, &str, &str)] = &[
         "2026-10-05",
         "https://xcp-ng.org/blog/2026/10/05/october-2026-updates-1-for-xcp-ng-8-3-lts/",
     ),
+    // November 2026 updates: the xapi line stayed on 26.2.x and xen on
+    // 4.17.7 (synced with XenServer 4.17.7-4), so entries are ordered by
+    // announcement date; window matching picks the newest matching entry.
+    (
+        "26.2",
+        "4.17.7",
+        "2026-11-03",
+        "https://xcp-ng.org/blog/2026/11/03/november-2026-security-and-maintenance-updates-1-for-xcp-ng-8-3-lts/",
+    ),
+    (
+        "26.2",
+        "4.17.7",
+        "2026-11-04",
+        "https://xcp-ng.org/blog/2026/11/04/november-2026-security-updates-2-for-xcp-ng-8-3-lts/",
+    ),
+    (
+        "26.2",
+        "4.17.7",
+        "2026-11-10",
+        "https://xcp-ng.org/blog/2026/11/10/november-2026-security-updates-3-for-xcp-ng-8-3-lts/",
+    ),
 ];
+
+/// Date (YYYY-MM-DD) the embedded release/update tables above were last
+/// brought up to date with the official XCP-ng announcements. Shown next to
+/// release estimates so users know how fresh the offline database is.
+/// MAINTAINERS: bump this whenever XCPNG_RELEASES / XCPNG_83_UPDATES /
+/// XENSERVER_RELEASES are refreshed — on every commit, per repo policy.
+pub const RELEASE_DB_LAST_UPDATED: &str = "2026-11-25";
 
 /// One release estimate for a host's product version.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]

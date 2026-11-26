@@ -18,6 +18,10 @@ pub struct HostReport {
     pub kernel_version: String,
     /// xapi version from software_version:xapi, when present.
     pub xapi_version: String,
+    /// XOSTOR (LINSTOR) version from software_version:xostor / :linstor,
+    /// when installed on the host.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub xostor_version: Option<String>,
     /// Estimated release info for product_version (release date, how many
     /// releases behind the newest known release).
     pub release_estimate: Option<crate::report::ReleaseEstimate>,

@@ -12,6 +12,7 @@
 mod anomalies;
 mod build;
 mod consolidate;
+pub mod migration;
 mod types;
 mod util;
 mod versions;
@@ -19,8 +20,9 @@ mod versions;
 pub use anomalies::compute_anomalies;
 pub use build::build_report;
 pub use consolidate::{consolidate, ConsolidatedReport};
+pub use migration::{build_migration_report, BundleInput};
 pub use types::*;
-pub use versions::ReleaseEstimate;
+pub use versions::{ReleaseEstimate, RELEASE_DB_LAST_UPDATED};
 
 #[cfg(test)]
 mod time_tests {

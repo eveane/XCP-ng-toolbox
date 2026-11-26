@@ -378,13 +378,19 @@ mod tests {
             .iter()
             .filter(|a| a.category == "auto-scan-interval")
             .collect();
-        // host1 is the master (pool.master=host1) and has the setting: no
-        // "master has none" warning; host2 is a slave with the same setting
-        // -> info entry saying it matches the master's setting
+        // host1 is the master (pool.master=host1) and has the setting; host2
+        // is a slave with the same setting -> a single info entry from the
+        // master stating that all slaves match, and no per-slave entry
         assert!(
             scans.iter().any(|a| a.severity == "info"
-                && a.detail.contains("slave host2.example.com")
-                && a.detail.contains("It matches the master's setting")),
+                && a.subject == "host1.example.com"
+                && a.detail.contains("all 1 slave(s) match this setting")),
+            "scans: {scans:?}"
+        );
+        assert!(
+            !scans
+                .iter()
+                .any(|a| a.detail.contains("slave host2.example.com")),
             "scans: {scans:?}"
         );
         // master identified on the host reports
@@ -430,6 +436,37 @@ mod tests {
         // per-SR wording: 30s default, 5min only for linstor/xostor
         assert!(
             scans.iter().any(|a| a.detail.contains("30 seconds")),
+            "scans: {scans:?}"
+        );
+    }
+
+    #[test]
+    fn auto_scan_slave_differs_gets_its_own_entry() {
+        // Slave with a DIFFERENT interval than the master: no "all slaves
+        // match" collapse, the deviating slave gets its own entry.
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml").replace(
+            r#"other_config="(('auto-scan-interval' '600'))""#,
+            r#"other_config="(('auto-scan-interval' '3600'))""#,
+        );
+        let db = XapiDb::from_xml(&xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        let scans: Vec<&Anomaly> = r
+            .anomalies
+            .iter()
+            .filter(|a| a.category == "auto-scan-interval")
+            .collect();
+        assert!(
+            !scans
+                .iter()
+                .any(|a| a.detail.contains("all 1 slave(s) match")),
+            "scans: {scans:?}"
+        );
+        assert!(
+            scans
+                .iter()
+                .any(|a| a.detail.contains("slave host2.example.com")
+                    && a.detail
+                        .contains("It differs from the master's setting (600s)")),
             "scans: {scans:?}"
         );
     }

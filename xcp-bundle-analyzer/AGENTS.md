@@ -13,13 +13,21 @@ Binary: `xcp-bundle-analyzer`.
 - `xapidb.rs` — `xapi-db.xml` → typed tables + xapi value decoding
   (`OpaqueRef:` refs, OCaml sets/maps, Xml_spaces whitespace protection).
 - `inventory.rs` — `xensource-inventory` parsing.
+- `logs.rs` — `xensource.log` / `SMlog` line parsing into structured events
+  (syslog + ISO + xapi-compact timestamps, year inference; SMlog JSON-RPC
+  lines). `collect_source_logs` reads log entries through `bundle::Source`.
+  Used by the `migrate` subcommand.
 - `report/` — Domain model. `types.rs` (serde structs = JSON contract, see
   `docs/SPEC.md`), `build.rs` (XapiDb → BundleReport), `anomalies.rs`,
-  `consolidate.rs` (pool view), `util.rs`.
+  `consolidate.rs` (pool view), `migration.rs` (live-migration report:
+  correlates task rows + log events + SMlog calls per VM uuid across bundles,
+  classifies succeeded/incomplete/failed, computes timing + estimated
+  downtime), `util.rs`.
 - `render/` — Output only: `text.rs`, `json.rs`, `html.rs`, `anomalies.rs`,
-  `vm_display.rs`, `vdi_tree.rs`, `util.rs`. Never parses input.
+  `vm_display.rs`, `vdi_tree.rs`, `migration.rs` (text rendering of the
+  migration report), `util.rs`. Never parses input.
 
-Data flows one way: `bundle` → `xapidb` → `report` → `render`.
+Data flows one way: `bundle` → `xapidb` / `logs` → `report` → `render`.
 Rendering modules must not read files; parsing modules must not format output.
 
 ## Conventions
