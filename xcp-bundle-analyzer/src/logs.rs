@@ -439,7 +439,9 @@ fn reference_time(source: &Source, db: Option<&XapiDb>) -> Option<u64> {
 /// Parse the whole text of one log file into lines. Lines without a
 /// timestamp (SMlog continuations, JSON-RPC result objects) inherit the
 /// previous line's timestamp and host.
-#[allow(dead_code)]
+/// Parse without filtering (test helper; production path is
+/// `parse_log_filtered` via `collect_source_logs`).
+#[cfg(test)]
 pub fn parse_log(text: &str, file: &str, ref_time: Option<u64>) -> Vec<LogLine> {
     parse_log_filtered(text, file, ref_time, &|_| true, usize::MAX).0
 }

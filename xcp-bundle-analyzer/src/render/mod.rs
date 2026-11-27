@@ -15,7 +15,7 @@ mod migration;
 mod object_display;
 mod search;
 mod text;
-mod util;
+pub(crate) mod util;
 mod vdi_tree;
 mod vm_display;
 
@@ -118,11 +118,9 @@ impl VdiClassFilter {
     }
 }
 
-#[allow(dead_code)]
-pub fn render_text(r: &BundleReport) -> String {
-    render_sections(r, &[Section::All])
-}
-
+/// Render an explicit section list (test helper; the CLI uses
+/// `render_sections_filtered` with the parsed --section list).
+#[cfg(test)]
 pub fn render_sections(r: &BundleReport, sections: &[Section]) -> String {
     render_sections_filtered(r, sections, None)
 }

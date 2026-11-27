@@ -37,11 +37,6 @@ impl Inventory {
         self.0.get(key).map(|s| s.as_str())
     }
 
-    #[allow(dead_code)]
-    pub fn str_or(&self, key: &str, default: &str) -> String {
-        self.get(key).unwrap_or(default).to_string()
-    }
-
     /// Dom0 configured memory in MiB.
     pub fn dom0_memory_mib(&self) -> Option<u64> {
         self.get("CONTROL_DOMAIN_MEMORY")

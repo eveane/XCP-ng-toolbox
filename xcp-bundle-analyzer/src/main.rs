@@ -5,6 +5,8 @@
 
 mod build_info;
 mod bundle;
+mod cmd_migrate;
+mod examples;
 mod inventory;
 mod logs;
 mod render;
@@ -14,12 +16,14 @@ mod xapidb;
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, Shell};
+use cmd_migrate::{dispatch_migrate, MigrateAction};
+use examples::EXAMPLES;
 use report::BundleReport;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
-enum Format {
+pub(crate) enum Format {
     Text,
     Json,
     Html,
@@ -54,167 +58,6 @@ impl CompletionShell {
     }
 }
 
-const EXAMPLES: &str = r#"EXAMPLES:
-
-  # Full text report on stdout
-  xcp-bundle-analyzer analyze XenServer-host1-20260616.tar.bz2
-
-  # Against a directory where the bundle is already decompressed
-  xcp-bundle-analyzer analyze /path/to/decompressed-bundle
-
-  # No argument: use the current directory as the decompressed bundle
-  cd /path/to/decompressed-bundle && xcp-bundle-analyzer analyze
-
-  # Against a bare xapi-db.xml dump file
-  xcp-bundle-analyzer analyze xapi-db.xml
-  xcp-bundle-analyzer vm-display xapi-db.xml uuid=<uuid>
-
-  # All details of one object, like `xe vdi-param-list`
-  xcp-bundle-analyzer object vdi <vdi-uuid> XenServer-host1.tar.bz2
-
-  # VDI snapshot trees: all of them, or just the tree containing one VDI
-  xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2
-  xcp-bundle-analyzer vdi-tree XenServer-host1.tar.bz2 uuid=<vdi-uuid>
-
-  # Live-migration analysis (EXPERIMENTAL): pass the bugtool bundles of the
-  # source, destination and master (or any subset)
-  xcp-bundle-analyzer migrate list host1.tar.bz2 host2.tar.bz2 master.tar.bz2
-  xcp-bundle-analyzer migrate analyze #1 host1.tar.bz2 host2.tar.bz2    # by list index
-  xcp-bundle-analyzer migrate analyze a5609e55-f48c-56c7-e795-5edee4841245 host1.tar.bz2  # by uuid
-  xcp-bundle-analyzer migrate check host1.tar.bz2 host2.tar.bz2         # best-practice checklist
-  xcp-bundle-analyzer migrate all -f json -o=migrations.json host1.tar.bz2 host2.tar.bz2
-
-SECTIONS AVAILABLE FOR THE ANALYZE COMMAND (--section, single or
-comma-separated list; the default is the full report):
-
-  pool       pool name, UUID, master, HA status, totals
-  hosts      per-host hardware, versions, memory, vCPU usage, uptime
-  vms        VMs grouped per resident host + templates + snapshots
-  network    PIFs (per host, bonds, link speed) + VIFs (merged section)
-  storage    host storage adapters + SRs + VDIs + PBDs (merged section)
-  srs        SRs with category, device-config, multipath details
-  vdis       VDIs grouped per SR with per-SR statistics
-  vbds       VBDs grouped per VM
-  vifs       VIFs grouped per VM
-  pifs       PIFs grouped per host
-  pbd        (same as pbds below, singular accepted)
-  pbds       PBDs grouped per SR, pool inconsistencies highlighted
-  tasks      xapi asynchronous tasks (pending/failed first, subtasks)
-             EXPERIMENTAL / work in progress: xapi tasks are usually purged
-             quickly, so this section is often empty
-  anomalies  settings needing attention, opt-in only, never shown by default
-             (management MTU != 1500, VDIs on dom0, shared SR missing a host,
-             SR free space < 2x largest VDI, multipath inconsistencies,
-             dom0 memory mismatch, broken snapshot parents, missing
-             auto-scan-interval, version mismatches, ...)
-
-  Examples:
-    xcp-bundle-analyzer analyze --section vms XenServer-host1.tar.bz2
-    xcp-bundle-analyzer analyze --section pool,storage XenServer-host1.tar.bz2
-    xcp-bundle-analyzer analyze --section anomalies host1.tar.bz2 host2.tar.bz2
-
-VDI CLASSIFICATION (--vdi-class R|GC|D):
-
-  Every VDI is classified for deletion safety, using the same criteria
-  as the SM garbage collector (see docs/SNAPSHOTS.md):
-    R   required — attached to a VM, has physical children (mid-chain
-        base), or a valid snapshot. Never deletable.
-    GC  garbage-collector territory — unmanaged (hidden) orphan. The GC
-        should remove it; do not hand-delete, investigate why it lingers.
-    D   user-deletable — still-managed orphan (leftover xapi object after
-        a failed/aborted coalesce or migration). Safe `xe vdi-destroy`
-        candidate.
-  VDIs expected to be unattached (HA statefiles, SR metadata, CDs, ISO
-  SRs, tools ISOs) carry no flag.
-  The flags appear on every VDI line in the vdis section and on every
-  node in vdi-tree. The STORAGE header shows a synthetic summary with
-  counts per class and reclaimable sizes.
-
-  Examples:
-    xcp-bundle-analyzer analyze --section vdis --vdi-class GC host1.tar.bz2
-    xcp-bundle-analyzer analyze --section vdis --vdi-class D host1.tar.bz2
-    xcp-bundle-analyzer analyze --section storage --vdi-class R host1.tar.bz2
-
-OUTPUT OPTIONS (-f/--format plus optional -o/--output):
-
-  -f text (default)  plain-text report on stdout
-  -f json             JSON report (compact with -c)
-  -f html             self-contained HTML dashboard (open in a browser,
-                      works offline; single bundle only)
-
-  Without -o the report goes to stdout; with -o=<file> it is written to
-  the file (the parent directory is created if needed) and the path is
-  echoed on stderr. A bare -o (or -o=) without a value generates a
-  default filename:
-
-    analyze (full report)    report-$(date).txt|.json|.html
-    fewer than 4 sections    $(section1)-$(section2)-$(date).ext
-    vdi-tree, no uuid        vdi-tree-$(date).ext
-    vdi-tree, with uuid      vdi-tree-$(uuid)-$(date).ext
-
-  Examples:
-    # text report on stdout
-    xcp-bundle-analyzer analyze XenServer-host1.tar.bz2
-
-    # JSON report to a file (compact with -c)
-    xcp-bundle-analyzer analyze -f json -o=report.json XenServer-host1.tar.bz2
-
-    # Self-contained HTML dashboard
-    xcp-bundle-analyzer analyze -f html -o=report.html XenServer-host1.tar.bz2
-
-    # Whole pool: pass one bundle per host, get a consolidated view
-    xcp-bundle-analyzer analyze -f json -o=pool.json host1.tar.bz2 host2.tar.bz2
-
-    # Default filename (report-$(date).json)
-    xcp-bundle-analyzer analyze -f json -o host1.tar.bz2
-
-    # vdi-tree as JSON or HTML (was: text only)
-    xcp-bundle-analyzer vdi-tree -f json -o tree.json XenServer-host1.tar.bz2
-    xcp-bundle-analyzer vdi-tree -f html -o tree.html XenServer-host1.tar.bz2 uuid=<vdi-uuid>
-
-OTHER COMMANDS:
-
-  # List the entries inside a bundle
-  xcp-bundle-analyzer list XenServer-host1.tar.bz2
-  xcp-bundle-analyzer list --grep xapi XenServer-host1.tar.bz2
-
-  # Comprehensive view of one VM's config (network, disks, ...):
-  # name, uuid, vCPUs, memory, state, host, VBDs -> VDIs, VIFs, snapshot chain
-  xcp-bundle-analyzer vm-display XenServer-host1.tar.bz2 uuid=a5609e55-f48c-56c7-e795-5edee4841245
-
-  # Dump a raw xapi table from xapi-db.xml (host, VM, SR, VDI, VIF, PIF, PBD, network, ...)
-  xcp-bundle-analyzer xapi-db XenServer-host1.tar.bz2 host
-
-  # Search xapi-db.xml by name, uuid or OpaqueRef (full or partial): lists
-  # only the matching objects themselves (name + uuid + OpaqueRef), never
-  # the objects that merely reference them (e.g. the VBDs/VIFs of a VM)
-  xcp-bundle-analyzer search a5609e55-f48c-56c7-e795-5edee4841245 XenServer-host1.tar.bz2
-  xcp-bundle-analyzer search "my vm" xapi-db.xml
-  xcp-bundle-analyzer search OpaqueRef:vm1 XenServer-host1.tar.bz2
-
-  # Live-migration analysis (EXPERIMENTAL / WORK IN PROGRESS — use with
-  # caution and verify against the logs):
-  #   migrate list     short list of all migrations found (index, vm,
-  #                    start/end, duration, status) + summary of times
-  #   migrate analyze  detailed analysis of ONE migration, by list index
-  #                    (#1), VM uuid or VM name
-  #   migrate check    best-practice checklist (auto-scan-interval, cpu
-  #                    governor, xostor workers, xen compression, VM
-  #                    dynamic memory, disk count, parallelism)
-  #   migrate all      full report over all migrations
-  xcp-bundle-analyzer migrate list XenServer-host1.tar.bz2 XenServer-host2.tar.bz2
-  xcp-bundle-analyzer migrate analyze #1 host1.tar.bz2 host2.tar.bz2
-  xcp-bundle-analyzer migrate check host1.tar.bz2 host2.tar.bz2
-  xcp-bundle-analyzer migrate all -f json host1.tar.bz2 host2.tar.bz2 master.tar.bz2
-
-  # Shell completion scripts
-  xcp-bundle-analyzer completions bash > xcp-bundle-analyzer.bash
-  xcp-bundle-analyzer completions zsh > _xcp-bundle-analyzer
-
-  # Show version/build number
-  xcp-bundle-analyzer -V
-"#;
-
 #[derive(Parser)]
 #[command(
     name = "xcp-bundle-analyzer",
@@ -236,66 +79,6 @@ xapi-db.xml, plus dom0 configuration, uptime and bundle origin.",
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-}
-
-/// Shared options of the `migrate` sub-actions.
-#[derive(clap::Args)]
-struct MigrateOpts {
-    /// Bundle files (tar/tar.gz/tar.bz2/zip) or decompressed bundle
-    /// directories: pass the source, destination and master bundles
-    /// (or any subset) to correlate migrations per VM
-    #[arg(required = true)]
-    bundles: Vec<PathBuf>,
-    /// OUTPUT format: text (default) or json (html not supported yet);
-    /// use -o/--output <file> to write to a file instead of stdout
-    #[arg(short, long, value_enum, default_value = "text")]
-    format: Format,
-    /// Write output to a file instead of stdout. When given without a
-    /// value (bare -o), a default filename is generated per action:
-    /// migrate-list-$(date).ext / migrate-analyze-$(sel)-$(date).ext /
-    /// migrate-check-$(date).ext / migrate-$(date).ext for `all`.
-    /// Use -o=<file> to pass an explicit filename.
-    #[arg(short, long, num_args = 0..=1, require_equals = true, default_missing_value = "__default__")]
-    output: Option<String>,
-    /// Compact JSON
-    #[arg(short, long, default_value = "false")]
-    compact: bool,
-    /// Cap on matched log lines (events) processed across all bundles:
-    /// patterns are still counted (stage 1), but only up to N matching lines
-    /// are extracted and analyzed (default 800000). Protects CPU/memory on
-    /// huge logs.
-    #[arg(long)]
-    max_events: Option<usize>,
-    /// Read ALL log rotations without byte caps, to catch even the oldest
-    /// occurrences in history. Resource-heavy: a resource evaluation is
-    /// printed and large line/event ceilings still apply (graceful).
-    #[arg(long)]
-    full_history: bool,
-}
-
-#[derive(Subcommand)]
-enum MigrateAction {
-    /// Short list of all live migrations found in the bundles: index, vm,
-    /// kind, source -> destination, start -> end, duration, status, plus a
-    /// summary of the times. Use the index with `migrate analyze #<n>`.
-    List(MigrateOpts),
-    /// Analyze ONE migration in detail (full event correlation + timing).
-    /// The selector is a list index (#2 or 2), a VM uuid (artefact uuids
-    /// ending in 000000000000/000000000001 resolve to the real VM), or a
-    /// VM name.
-    Analyze {
-        /// Migration selector: list index (#2 / 2), VM uuid or VM name
-        selector: String,
-        #[command(flatten)]
-        opts: MigrateOpts,
-    },
-    /// Best-practice checklist for live migrations, computed from the
-    /// bundles: auto-scan-interval, host power setting (cpu governor),
-    /// xostor worker setting, xen migration compression, VM dynamic memory
-    /// range, attached disk count, migration parallelism
-    Check(MigrateOpts),
-    /// Full migration report over all migrations (grouped by status)
-    All(MigrateOpts),
 }
 
 #[derive(Subcommand)]
@@ -459,7 +242,7 @@ fn analyze_one(source_path: &Path) -> Result<BundleReport> {
     Ok(rep)
 }
 
-fn write_output(path: Option<&Path>, content: &str) -> Result<()> {
+pub(crate) fn write_output(path: Option<&Path>, content: &str) -> Result<()> {
     match path {
         Some(p) => {
             if let Some(parent) = p.parent() {
@@ -642,12 +425,7 @@ fn main() -> Result<()> {
             output.as_deref(),
             compact,
         ),
-        Commands::Migrate { action } => match action {
-            MigrateAction::List(opts) => cmd_migrate_list(&opts),
-            MigrateAction::Analyze { selector, opts } => cmd_migrate_analyze(&selector, &opts),
-            MigrateAction::Check(opts) => cmd_migrate_check(&opts),
-            MigrateAction::All(opts) => cmd_migrate_all(&opts),
-        },
+        Commands::Migrate { action } => dispatch_migrate(&action),
         Commands::Completions { shell } => {
             generate(
                 shell.clap_shell(),
@@ -663,7 +441,7 @@ fn main() -> Result<()> {
 /// Hostname of the host a bundle was collected on, using the same rule as
 /// `report::build_report`: INSTALLATION_UUID / HOSTNAME from
 /// xensource-inventory matched against the host table ("" when unknown).
-fn bundle_origin_host(source: &bundle::Source, db: &Option<xapidb::XapiDb>) -> String {
+pub(crate) fn bundle_origin_host(source: &bundle::Source, db: &Option<xapidb::XapiDb>) -> String {
     let inventory = match source.read_best("xensource-inventory") {
         Some(Ok(bytes)) => inventory::Inventory::parse(&String::from_utf8_lossy(&bytes)),
         _ => inventory::Inventory::default(),
@@ -684,174 +462,6 @@ fn bundle_origin_host(source: &bundle::Source, db: &Option<xapidb::XapiDb>) -> S
     inv_host.to_string()
 }
 
-/// Read the small extra files used by `migrate check` from a bundle:
-/// cpu governor, kernel/xen cmdline and grub defaults.
-fn read_migrate_extra_files(source: &bundle::Source) -> std::collections::BTreeMap<String, String> {
-    let mut out = std::collections::BTreeMap::new();
-    for w in [
-        "sys/devices/system/cpu/cpu0/cpufreq/scaling_governor",
-        "proc/cmdline",
-        "etc/default/grub",
-    ] {
-        if let Some(Ok(bytes)) = source.read_best(w) {
-            out.insert(
-                w.to_string(),
-                String::from_utf8_lossy(&bytes).trim().to_string(),
-            );
-        }
-    }
-    out
-}
-
-/// Build the per-bundle inputs (logs + xapi-db + extra files) for migrate.
-fn migrate_inputs(bundles: &[PathBuf], opts: &MigrateOpts) -> Result<Vec<report::BundleInput>> {
-    if bundles.is_empty() {
-        bail!("no bundle given");
-    }
-    let mut scan_opts = if opts.full_history {
-        logs::LogScanOptions::full_history()
-    } else {
-        logs::LogScanOptions::default()
-    };
-    if let Some(m) = opts.max_events {
-        scan_opts.max_events = Some(m);
-    }
-    let mut inputs = Vec::new();
-    for b in bundles {
-        let source = bundle::Source::open(b).with_context(|| format!("opening {}", b.display()))?;
-        let db = match source.xapi_db() {
-            Some(Ok(db)) => Some(db),
-            Some(Err(e)) => {
-                eprintln!(
-                    "warning: {}: failed reading xapi-db.xml: {e:#}",
-                    b.display()
-                );
-                None
-            }
-            None => None,
-        };
-        let origin = bundle_origin_host(&source, &db);
-        let logs = logs::collect_source_logs(&source, db.as_ref(), &origin, &scan_opts)
-            .with_context(|| format!("reading logs of {}", b.display()))?;
-        let extra_files = read_migrate_extra_files(&source);
-        inputs.push(report::BundleInput {
-            logs,
-            db,
-            extra_files,
-        });
-    }
-    Ok(inputs)
-}
-
-/// Resolve the -o/--output of a migrate sub-action to a path (default
-/// filename per action when bare -o was given).
-fn migrate_out_path(
-    output: Option<&str>,
-    format: Format,
-    prefix: &str,
-    selector: Option<&str>,
-) -> Option<PathBuf> {
-    let ext = match format {
-        Format::Text => "txt",
-        Format::Json => "json",
-        Format::Html => "html",
-    };
-    match output {
-        None => None,
-        Some("__default__") => {
-            let date = current_date_str();
-            let mid = match selector {
-                Some(s) => format!("-{}", s.trim_start_matches('#')),
-                None => String::new(),
-            };
-            Some(PathBuf::from(format!("{prefix}{mid}-{date}.{ext}")))
-        }
-        Some(p) => Some(PathBuf::from(p)),
-    }
-}
-
-fn write_migrate_output(
-    output: Option<&str>,
-    format: Format,
-    prefix: &str,
-    selector: Option<&str>,
-    compact: bool,
-    text: impl FnOnce() -> String,
-    json: impl FnOnce() -> Result<String>,
-) -> Result<()> {
-    let out_path = migrate_out_path(output, format, prefix, selector);
-    match format {
-        Format::Text => write_output(out_path.as_deref(), &text()),
-        Format::Json => {
-            let s = json()?;
-            let _ = compact;
-            write_output(out_path.as_deref(), &s)
-        }
-        Format::Html => bail!(
-            "HTML output is not supported for the migrate command yet (use -f text or -f json)"
-        ),
-    }
-}
-
-/// `migrate all`: full migration report over all migrations.
-fn cmd_migrate_all(opts: &MigrateOpts) -> Result<()> {
-    let rep = report::build_migration_report(migrate_inputs(&opts.bundles, opts)?);
-    write_migrate_output(
-        opts.output.as_deref(),
-        opts.format,
-        "migrate",
-        None,
-        opts.compact,
-        || render::render_migration_text(&rep),
-        || render::render_json(&rep, !opts.compact),
-    )
-}
-
-/// `migrate list`: short list of all live migrations found + summary of times.
-fn cmd_migrate_list(opts: &MigrateOpts) -> Result<()> {
-    let rep = report::build_migration_report(migrate_inputs(&opts.bundles, opts)?);
-    write_migrate_output(
-        opts.output.as_deref(),
-        opts.format,
-        "migrate-list",
-        None,
-        opts.compact,
-        || render::render_migration_list_text(&rep),
-        || render::render_json(&rep.migrations, !opts.compact),
-    )
-}
-
-/// `migrate analyze <selector>`: detailed analysis of one migration.
-fn cmd_migrate_analyze(selector: &str, opts: &MigrateOpts) -> Result<()> {
-    let rep = report::build_migration_report(migrate_inputs(&opts.bundles, opts)?);
-    let m = report::select_migration(&rep, selector)?;
-    write_migrate_output(
-        opts.output.as_deref(),
-        opts.format,
-        "migrate-analyze",
-        Some(selector),
-        opts.compact,
-        || render::render_migration_detail_text(&rep, selector, &m),
-        || render::render_json(&m, !opts.compact),
-    )
-}
-
-/// `migrate check`: best-practice checklist for live migrations.
-fn cmd_migrate_check(opts: &MigrateOpts) -> Result<()> {
-    let inputs = migrate_inputs(&opts.bundles, opts)?;
-    let mig = report::build_migration_report(inputs.clone());
-    let cl = report::build_checklist(&inputs, &mig);
-    write_migrate_output(
-        opts.output.as_deref(),
-        opts.format,
-        "migrate-check",
-        None,
-        opts.compact,
-        || render::render_migrate_checklist_text(&cl),
-        || render::render_json(&cl, !opts.compact),
-    )
-}
-
 fn cmd_vdi_tree(
     bundle_path: &Path,
     uuid: Option<&str>,
@@ -862,7 +472,6 @@ fn cmd_vdi_tree(
 ) -> Result<()> {
     // Accept uuid= prefix, and the argument in either position.
     let bp = bundle_path.display().to_string();
-    let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
     let (bundle_path, uuid): (&Path, Option<&str>) = match uuid {
         Some(u) if looks_like_uuid(&bp) && !looks_like_uuid(u) => (Path::new(u), Some(bp.as_str())),
         other => (bundle_path, other),
@@ -931,24 +540,17 @@ fn resolve_output_path(
 }
 
 /// Current date as `YYYY-MM-DD` (UTC), without pulling in a date crate.
-fn current_date_str() -> String {
+pub(crate) fn current_date_str() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let days = (secs / 86400) as i64;
-    // civil-from-days (Howard Hinnant's algorithm)
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = if m <= 2 { y + 1 } else { y };
-    format!("{year:04}-{m:02}-{d:02}")
+    render::util::utc_date_str(secs)
+}
+
+/// True when the argument looks like a uuid (with or without the uuid= prefix).
+fn looks_like_uuid(s: &str) -> bool {
+    s.starts_with("uuid=") || s.len() == 36
 }
 
 /// First 8 characters of a uuid, for compact default filenames.
@@ -981,7 +583,6 @@ fn cmd_search(pattern: &str, bundle_path: &Path) -> Result<()> {
     // object command); accept the swapped order too: if the bundle arg
     // looks like a uuid/pattern and the pattern arg does not, swap them.
     let bp = bundle_path.display().to_string();
-    let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
     let (pattern, bundle_path): (&str, &Path) = if looks_like_uuid(&bp) && !looks_like_uuid(pattern)
     {
         (bp.as_str(), Path::new(pattern))
@@ -1031,7 +632,6 @@ fn cmd_vm_display(bundle_path: &Path, uuid: &str) -> Result<()> {
     // `vm-display <bundle> uuid=<uuid>` and `vm-display uuid=<uuid> <bundle>`
     // work: if the bundle arg looks like a uuid, swap them.
     let bp = bundle_path.display().to_string();
-    let looks_like_uuid = |s: &str| s.starts_with("uuid=") || s.len() == 36;
     let (bundle_path, uuid): (&Path, &str) = if looks_like_uuid(&bp) && !looks_like_uuid(uuid) {
         (Path::new(uuid), bp.as_str())
     } else {

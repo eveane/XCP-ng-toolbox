@@ -205,11 +205,6 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn render_storage(r: &BundleReport, out: &mut String) {
-    render_storage_filtered(r, out, None);
-}
-
 pub(crate) fn render_storage_filtered(
     r: &BundleReport,
     out: &mut String,
@@ -433,11 +428,6 @@ pub(crate) fn render_vms(r: &BundleReport, out: &mut String) {
 /// unattached and must not read as garbage.
 fn is_orphan_garbage(d: &VdiReport) -> bool {
     d.orphaned && !d.is_ha_internal && !d.is_removable_media
-}
-
-#[allow(dead_code)]
-pub(crate) fn render_vdis_body(r: &BundleReport, out: &mut String) {
-    render_vdis_body_filtered(r, out, None);
 }
 
 pub(crate) fn render_vdis_body_filtered(

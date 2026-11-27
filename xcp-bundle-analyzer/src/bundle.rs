@@ -79,14 +79,6 @@ impl Source {
         }
     }
 
-    /// Read one entry by its name as listed by `list()` (relative path for
-    /// directory bundles, archive entry name for archives). Unlike
-    /// `read_best`, the name must match the listed name exactly.
-    #[allow(dead_code)]
-    pub fn read_entry(&self, name: &str) -> Option<Result<Vec<u8>>> {
-        self.read_entry_capped(name, u64::MAX)
-    }
-
     /// Read an entry but stop after `max` bytes (bounds memory on huge
     /// entries such as multi-GB logs).
     pub fn read_entry_capped(&self, name: &str, max: u64) -> Option<Result<Vec<u8>>> {
@@ -148,13 +140,6 @@ impl DirBundle {
             })()
             .with_context(|| format!("reading {}", p.display()))
         })
-    }
-
-    /// Read the file whose path relative to the bundle root equals `name`
-    /// (the same names `list()` returns).
-    #[allow(dead_code)]
-    pub fn read_entry(&self, name: &str) -> Option<Result<Vec<u8>>> {
-        self.read_entry_capped(name, u64::MAX)
     }
 
     /// Read an entry but stop after `max` bytes.

@@ -4,6 +4,24 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.9 (patch)
+
+- refactor(maintainability, no behavior change): moved the `migrate`
+  subcommand family (MigrateOpts/MigrateAction + cmd handlers) into
+  `src/cmd_migrate.rs` and the long `--help` EXAMPLES text into
+  `src/examples.rs`; `main.rs` is now dispatch-only. Deduplicated helpers:
+  one `looks_like_uuid` fn (was 3 closures) and one shared civil-date
+  conversion (`render::util::civil_from_days` + `utc_date_str`, used by
+  `utc_timestamp` and `current_date_str`).
+- ci: `cargo clippy --all-targets -- -D warnings` (test code is linted too);
+  fixed the 3 pre-existing test-code warnings (2 field-reassign in logs
+  tests, 1 too-many-args test builder in migration tests).
+- cleanup: removed dead code that had `#[allow(dead_code)]`: `as_i64`,
+  `Inventory::str_or`, `Source`/`DirBundle::read_entry`, `render_storage` /
+  `render_vdis_body` / `render_text` wrappers, `ContextMsg`;
+  `XapiDb::from_xml`, `logs::parse_log` and `render_sections` are now
+  `#[cfg(test)]` helpers instead of allowed dead code.
+
 ## v0.6.8 (patch)
 
 - security: HTML reports no longer allow `</script>` breakout — the embedded

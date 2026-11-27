@@ -18,11 +18,9 @@ pub fn mib(bytes: u64) -> String {
     format!("{:.0} MiB", bytes as f64 / 1024.0 / 1024.0)
 }
 
-/// Unix epoch seconds to a "YYYY-MM-DD HH:MM UTC" string.
-/// Chrono-free civil-from-days conversion.
-pub fn utc_timestamp(epoch: u64) -> String {
-    let days = epoch / 86400;
-    let secs = epoch % 86400;
+/// Civil (year, month, day) from days since the Unix epoch
+/// (Howard Hinnant's algorithm, chrono-free).
+pub fn civil_from_days(days: u64) -> (i64, i64, i64) {
     let z = days as i64 + 719468;
     let era = if z >= 0 { z } else { z - 146096 } / 146097;
     let doe = z - era * 146097;
@@ -33,9 +31,23 @@ pub fn utc_timestamp(epoch: u64) -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+/// Unix epoch seconds to a "YYYY-MM-DD HH:MM UTC" string.
+pub fn utc_timestamp(epoch: u64) -> String {
+    let (y, m, d) = civil_from_days(epoch / 86400);
+    let secs = epoch % 86400;
     format!(
         "{y:04}-{m:02}-{d:02} {:02}:{:02} UTC",
         secs / 3600,
         (secs % 3600) / 60
     )
+}
+
+/// Unix epoch seconds to an ISO "YYYY-MM-DD" date string (for default
+/// output filenames).
+pub fn utc_date_str(epoch: u64) -> String {
+    let (y, m, d) = civil_from_days(epoch / 86400);
+    format!("{y:04}-{m:02}-{d:02}")
 }
