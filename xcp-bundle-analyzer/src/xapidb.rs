@@ -233,11 +233,6 @@ pub fn as_bool(v: &str) -> Option<bool> {
     }
 }
 
-#[allow(dead_code)]
-pub fn as_i64(v: &str) -> Option<i64> {
-    v.trim().parse().ok()
-}
-
 pub fn as_u64(v: &str) -> Option<u64> {
     v.trim().parse().ok()
 }
