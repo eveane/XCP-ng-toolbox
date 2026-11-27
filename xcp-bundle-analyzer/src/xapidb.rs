@@ -20,9 +20,20 @@ pub struct XapiDb {
 }
 
 impl XapiDb {
-    pub fn from_xml(xml: &str) -> Result<XapiDb> {
-        let mut reader = Reader::from_str(xml);
+    /// Parse from a string (test helper; production path is
+    /// [`from_bytes`](Self::from_bytes) / [`from_reader`](Self::from_reader)).
+    #[cfg(test)]
+    pub fn from_xml(xml: impl AsRef<str>) -> Result<XapiDb> {
+        Self::from_reader(xml.as_ref().as_bytes())
+    }
+
+    /// Parse straight from a byte stream — avoids materializing a second
+    /// full copy of the document as a String (xapi-db.xml can be hundreds
+    /// of MB on big pools).
+    pub fn from_reader<R: std::io::BufRead>(r: R) -> Result<XapiDb> {
+        let mut reader = Reader::from_reader(r);
         reader.config_mut().trim_text(true);
+        let mut buf = Vec::new();
         let mut db = XapiDb::default();
         let mut stack: Vec<String> = Vec::new();
         let mut table: Option<String> = None;
@@ -30,7 +41,7 @@ impl XapiDb {
         let mut field: Option<(String, String)> = None;
 
         loop {
-            match reader.read_event()? {
+            match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => {
                     let name = e.name().as_ref().to_string();
                     match name.as_str() {
@@ -150,8 +161,7 @@ impl XapiDb {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<XapiDb> {
-        let xml = String::from_utf8_lossy(bytes);
-        XapiDb::from_xml(&xml).context("parsing xapi-db.xml")
+        XapiDb::from_reader(bytes).context("parsing xapi-db.xml")
     }
 
     pub fn table(&self, name: &str) -> Option<&Table> {

@@ -4,6 +4,25 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.8 (patch)
+
+- security: HTML reports no longer allow `</script>` breakout — the embedded
+  JSON is now escaped (`</` -> `<\/`, valid in JSON strings) in both
+  `render_html` and `render_vdi_tree_html`, and the vdi-tree title/bundle
+  path are HTML-escaped on the Rust side. Regression tests with a hostile
+  `</script><script>...` VM name added. (Rendered fields were already escaped
+  client-side via esc()/escapeHtml.)
+- fix: xapi-db.xml is parsed straight from the byte stream
+  (`XapiDb::from_reader`, no second full String copy) and read through a
+  2 GiB hard cap (`MAX_XAPI_DB_BYTES`, `Source::read_best_capped`) — a huge
+  dump now fails with a clear error instead of exhausting memory.
+- perf: stage-1 pattern counting processes lines in bounded batches
+  (50k refs) instead of collecting the whole file into a Vec first.
+- deps: `zip` now uses `default-features = false, features = ["deflate"]`
+  (stored + deflated entries still work; no aes/lzma/zstd parsing surface).
+- test: 300k-line log regression test (stage-1 counts, stage-2 keeps only
+  the 5 relevant lines, no truncation).
+
 ## v0.6.7 (patch)
 
 - feat(migrate): staged, budgeted log pipeline so log analysis always degrades
