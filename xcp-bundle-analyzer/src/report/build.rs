@@ -44,6 +44,11 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
     let mut sr_vdis: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut network_pifs: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut network_vifs: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // PBD ref -> SR ref, and XOSTOR (linstor-type) SR ref -> name, for the
+    // host-level "xostor present via SR" fallback.
+    let mut pbd_sr: BTreeMap<String, String> = BTreeMap::new();
+    let mut pbd_host: BTreeMap<String, String> = BTreeMap::new();
+    let mut linstor_srs: BTreeMap<String, String> = BTreeMap::new();
 
     for (r, host) in db.rows("host") {
         host_pdbs.insert(r.clone(), ref_set(get(host, "PBDs")));
@@ -56,6 +61,14 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
     for (r, sr) in db.rows("SR") {
         sr_pbds.insert(r.clone(), ref_set(get(sr, "PBDs")));
         sr_vdis.insert(r.clone(), ref_set(get(sr, "VDIs")));
+        let t = get(sr, "type").to_lowercase();
+        if t.contains("linstor") || t.contains("xostor") {
+            linstor_srs.insert(r.clone(), get2(sr, "name__label").to_string());
+        }
+    }
+    for (r, pbd) in db.rows("PBD") {
+        pbd_sr.insert(r.clone(), ref_of(pbd, "SR"));
+        pbd_host.insert(r.clone(), ref_of(pbd, "host"));
     }
     for (r, net) in db.rows("network") {
         network_pifs.insert(r.clone(), ref_set(get(net, "PIFs")));
@@ -207,6 +220,15 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
         } else {
             cpu_count
         };
+        // XOSTOR visibility fallback: even without a software_version
+        // xostor/linstor key (older installs only ship sm-*.linstor RPMs),
+        // a linstor-type SR plugged on this host proves XOSTOR is in use.
+        let xostor_sr = pbd_host
+            .iter()
+            .filter(|(_, h)| *h == r)
+            .filter_map(|(p, _)| pbd_sr.get(p))
+            .find(|sr| linstor_srs.contains_key(*sr))
+            .and_then(|sr| linstor_srs.get(sr).cloned());
         report.hosts.push(HostReport {
             name: get2(host, "name__label").to_string(),
             uuid,
@@ -219,6 +241,7 @@ pub fn build_report(db: &XapiDb, inventory: &Inventory, bundle_path: &str) -> Bu
             xostor_version: map_get(&software, "xostor")
                 .or_else(|| map_get(&software, "linstor"))
                 .map(|v| v.to_string()),
+            xostor_sr,
             xen_version: map_get(&software, "xen_version")
                 .or_else(|| map_get(&software, "xen"))
                 .unwrap_or_default()

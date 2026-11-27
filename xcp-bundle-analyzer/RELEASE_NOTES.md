@@ -4,6 +4,25 @@ Versioning scheme: `x.y.z` (major.minor.patch) — every patch/commit bumps
 `z`; every feature or addition bumps `y` only after explicit confirmation;
 the major `x` stays static at 0 until the first release-ready version.
 
+## v0.6.10 (patch)
+
+- feat(versions): XCP-ng 8.3 LTS update table refreshed for **November 2026
+  Updates #4 (2026-11-25)**: new entry xapi 26.1.23 / xen 4.17.7
+  (blog: november-2026-updates-4-for-xcp-ng-8-3-lts; kernel synced with
+  XenServer 4.19.19-8.0.51, OpenSSH 9.9p1-33.3, Windows tools 9.2.445).
+  Matching is now same-xapi-line first, because xapi lines are not monotonic
+  across batches (Oct 2026 = 26.2.x, Nov #4 = 26.1.23): a host on 26.2.x is
+  no longer mislabeled as Nov #4, and 26.1.23 maps to Nov #4 (not July).
+  `newer_than_table` now means "line absent from the table AND above every
+  entry". `RELEASE_DB_LAST_UPDATED` bumped to 2026-11-27. The tables and
+  their sources are now documented in `docs/VERSION_REFERENCES.md`.
+- feat(xostor): hosts with a linstor-type SR plugged (PBD) now report
+  `xostor_sr` even when `software_version` has no xostor/linstor key (older
+  installs only ship `sm-*.linstor.*` RPMs) — shown as "xostor: present via
+  linstor SR '…'" in the hosts section; SR lines with category xostor are
+  labeled "xostor (XOSTOR hyperconverged, LINSTOR-based)".
+
+
 ## v0.6.9 (patch)
 
 - refactor(maintainability, no behavior change): moved the `migrate`
