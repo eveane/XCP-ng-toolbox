@@ -12,6 +12,10 @@ use std::sync::Arc;
 
 /// Input source for the analyzer: an archive (tar/tar.gz/tar.bz2/zip),
 /// a directory with an already-decompressed bundle, or a bare xapi-db.xml.
+/// Hard cap on the xapi-db.xml entry read (2 GiB): bigger dumps fail with a
+/// clear error instead of exhausting memory.
+pub const MAX_XAPI_DB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 pub enum Source {
     Archive(Bundle),
     Dir(DirBundle),
@@ -54,10 +58,17 @@ impl Source {
         }
     }
 
+    /// Read the best-matching entry (uncapped).
+    /// Read the best-matching entry, stopping after `max` bytes.
+    /// Read the best-matching entry (uncapped).
     pub fn read_best(&self, suffix: &str) -> Option<Result<Vec<u8>>> {
+        self.read_best_capped(suffix, u64::MAX)
+    }
+
+    pub fn read_best_capped(&self, suffix: &str, max: u64) -> Option<Result<Vec<u8>>> {
         match self {
-            Source::Archive(b) => b.read_best(suffix),
-            Source::Dir(d) => d.read_best(suffix),
+            Source::Archive(b) => b.read_best_capped(suffix, max),
+            Source::Dir(d) => d.read_best_capped(suffix, max),
             Source::DbFile(d) => {
                 if suffix == "xapi-db.xml" {
                     Some(Ok(d.raw_xml.clone()))
@@ -125,8 +136,18 @@ impl DirBundle {
             .min_by_key(|p| p.as_os_str().len())
     }
 
-    pub fn read_best(&self, suffix: &str) -> Option<Result<Vec<u8>>> {
-        self.find_best(suffix).map(|p| fs::read(p).context_msg(p))
+    /// Read the best-matching entry, stopping after `max` bytes.
+    pub fn read_best_capped(&self, suffix: &str, max: u64) -> Option<Result<Vec<u8>>> {
+        self.find_best(suffix).map(|p| {
+            let p = p.to_path_buf();
+            (|| -> Result<Vec<u8>> {
+                let f = fs::File::open(&p)?;
+                let mut out = Vec::new();
+                std::io::Read::take(f, max).read_to_end(&mut out)?;
+                Ok(out)
+            })()
+            .with_context(|| format!("reading {}", p.display()))
+        })
     }
 
     /// Read the file whose path relative to the bundle root equals `name`
@@ -203,20 +224,14 @@ impl Source {
     pub fn xapi_db(&self) -> Option<Result<crate::xapidb::XapiDb>> {
         match self {
             Source::DbFile(d) => Some(Ok(XapiDb::clone(&d.db))),
+            // capped: a huge db dump fails with a clear error instead of OOM
             _ => self
-                .read_best("xapi-db.xml")
-                .map(|r| r.and_then(|b| crate::xapidb::XapiDb::from_bytes(&b))),
+                .read_best_capped("xapi-db.xml", MAX_XAPI_DB_BYTES)
+                .map(|r| {
+                    r.and_then(|b| crate::xapidb::XapiDb::from_bytes(&b))
+                        .context("parsing xapi-db.xml (entry capped at 2 GiB — dump too large?)")
+                }),
         }
-    }
-}
-
-trait ContextMsg {
-    fn context_msg(self, p: &Path) -> Result<Vec<u8>>;
-}
-
-impl ContextMsg for std::result::Result<Vec<u8>, std::io::Error> {
-    fn context_msg(self, p: &Path) -> Result<Vec<u8>> {
-        self.with_context(|| format!("reading {}", p.display()))
     }
 }
 
@@ -303,10 +318,6 @@ impl Bundle {
         })
     }
 
-    pub fn read(&self, name: &str) -> Result<Vec<u8>> {
-        self.read_capped(name, u64::MAX)
-    }
-
     /// Read an entry but stop after `max` bytes (bounds memory on huge
     /// entries such as multi-GB logs).
     pub fn read_capped(&self, name: &str, max: u64) -> Result<Vec<u8>> {
@@ -320,9 +331,8 @@ impl Bundle {
             .map(|(n, _)| n.as_str())
             .min_by_key(|n| n.len())
     }
-
-    pub fn read_best(&self, suffix: &str) -> Option<Result<Vec<u8>>> {
-        self.find_best(suffix).map(|n| self.read(n))
+    pub fn read_best_capped(&self, suffix: &str, max: u64) -> Option<Result<Vec<u8>>> {
+        self.find_best(suffix).map(|n| self.read_capped(n, max))
     }
 
     pub fn list(&self) -> &[(String, u64)] {

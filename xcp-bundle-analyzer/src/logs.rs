@@ -222,6 +222,17 @@ pub struct SourceLogs {
 /// `db` (when present) provides the reference time for year inference and is
 /// not otherwise interpreted here; `origin_host` is the bundle's origin
 /// hostname resolved by the caller from xapi-db.xml / xensource-inventory.
+/// Count key-pattern hits in one batch of lines (stage 1).
+fn count_pattern_batch(batch: &[&str], counts: &mut BTreeMap<String, usize>) {
+    for raw in batch {
+        for (pname, pat) in MIGRATION_PATTERNS {
+            if contains_ci(raw, pat) {
+                *counts.entry(pname.to_string()).or_default() += 1;
+            }
+        }
+    }
+}
+
 pub fn collect_source_logs(
     source: &Source,
     db: Option<&XapiDb>,
@@ -307,18 +318,19 @@ pub fn collect_source_logs(
                 name: name.clone(),
                 size,
             };
-            // stage 1: count key-pattern hits per batch, without storing lines
-            for batch in text.lines().collect::<Vec<_>>().chunks(SCAN_BATCH_LINES) {
-                for raw in batch {
-                    for (pname, pat) in MIGRATION_PATTERNS {
-                        if contains_ci(raw, pat) {
-                            *out.scan
-                                .pattern_counts
-                                .entry(pname.to_string())
-                                .or_default() += 1;
-                        }
-                    }
+            // stage 1: count key-pattern hits per batch, without storing
+            // lines — the batch buffer is bounded (SCAN_BATCH_LINES refs),
+            // never the whole file
+            let mut batch: Vec<&str> = Vec::with_capacity(SCAN_BATCH_LINES);
+            for raw in text.lines() {
+                batch.push(raw);
+                if batch.len() >= SCAN_BATCH_LINES {
+                    count_pattern_batch(&batch, &mut out.scan.pattern_counts);
+                    batch.clear();
                 }
+            }
+            if !batch.is_empty() {
+                count_pattern_batch(&batch, &mut out.scan.pattern_counts);
             }
             // stage 2: extract only the matching lines, in batches, capped per
             // file and by the remaining global event budget. xensource.log
@@ -1021,8 +1033,10 @@ mod tests {
             ("h1/var/log/xensource.log.1.gz".to_string(), 5_000),
             ("h1/var/log/other".to_string(), 1),
         ];
-        let mut opts = LogScanOptions::default();
-        opts.max_entry_bytes = 100;
+        let opts = LogScanOptions {
+            max_entry_bytes: 100,
+            ..Default::default()
+        };
         let est = estimate_log_resources(&list, "xensource.log", &opts);
         assert_eq!(est.len(), 2);
         assert_eq!(est[0], ("h1/var/log/xensource.log".to_string(), 1_000, 100)); // capped
@@ -1047,8 +1061,10 @@ mod tests {
         text.push_str("Jun 15 12:00:01 h xapi: [error|h|1 |T|x] Caught Server_error(X, [])\n");
         std::fs::write(root.join("var/log/xensource.log"), text).unwrap();
         let src = Source::open(&root).unwrap();
-        let mut capped = LogScanOptions::default();
-        capped.max_events = Some(1);
+        let capped = LogScanOptions {
+            max_events: Some(1),
+            ..Default::default()
+        };
         let logs = collect_source_logs(&src, None, "h", &capped).unwrap();
         assert_eq!(logs.scan.pattern_counts.get("migrate"), Some(&1));
         assert_eq!(logs.scan.pattern_counts.get("server_error"), Some(&1));
@@ -1059,6 +1075,35 @@ mod tests {
         let logs2 = collect_source_logs(&src, None, "h", &LogScanOptions::default()).unwrap();
         assert_eq!(logs2.lines.len(), 2);
         assert!(!logs2.scan.truncated);
+    }
+
+    #[test]
+    fn big_log_stays_bounded_and_findings_survive() {
+        // 300k noise lines + 5 relevant: stage 1 counts everything cheaply,
+        // stage 2 keeps only the relevant lines; memory stays bounded
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("h1");
+        std::fs::create_dir_all(root.join("var/log")).unwrap();
+        let mut text = String::new();
+        for i in 0..300_000 {
+            text.push_str(&format!(
+                "Jun 15 12:{:02}:{:02} h xapi: [debug|h|{} |pool.get_all D:abc|audit] routine noise line with some padding {i}\n",
+                i % 60,
+                (i / 60) % 60,
+                i % 1000
+            ));
+        }
+        for i in 0..5 {
+            text.push_str(&format!(
+                "Jun 15 12:00:0{i} h xapi: [debug|h|1 |Async.VM.migrate_send R:t{i}|audit] VM.migrate_send: VM = 'x'\n"
+            ));
+        }
+        std::fs::write(root.join("var/log/xensource.log"), text).unwrap();
+        let src = Source::open(&root).unwrap();
+        let logs = collect_source_logs(&src, None, "h", &LogScanOptions::default()).unwrap();
+        assert_eq!(logs.scan.pattern_counts.get("migrate"), Some(&5));
+        assert_eq!(logs.lines.len(), 5);
+        assert!(!logs.scan.truncated);
     }
 
     #[test]

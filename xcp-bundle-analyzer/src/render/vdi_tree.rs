@@ -217,18 +217,29 @@ pub fn render_vdi_tree_json(
 }
 
 /// Render VDI trees as a self-contained HTML page.
+/// HTML-escape a string for interpolation into markup (title/meta).
+fn esc_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 pub fn render_vdi_tree_html(
     r: &BundleReport,
     uuid: Option<&str>,
     xapi: bool,
 ) -> anyhow::Result<String> {
     let trees = build_vdi_tree_data(r, uuid, xapi)?;
-    let json = serde_json::to_string(&trees)?;
+    // escape `</` so the embedded JSON cannot close the <script> block early
+    let json = crate::render::html::json_for_script_embed(&serde_json::to_string(&trees)?);
     let chain = if xapi { "xapi" } else { "physical" };
-    let title = match uuid {
+    let raw_title = match uuid {
         Some(u) => format!("VDI chain ({chain}) — {u}"),
         None => format!("VDI chains ({chain})"),
     };
+    let title = esc_html(&raw_title);
+    let bundle = esc_html(&r.bundle_path);
     let html = format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -319,7 +330,7 @@ trees.forEach(tree => {{
 </body>
 </html>"#,
         title = title,
-        bundle = r.bundle_path,
+        bundle = bundle,
         chain = chain,
         json = json,
     );
@@ -708,5 +719,31 @@ mod vdi_tree_export_tests {
         // no external resources: no http(s) links to stylesheets/scripts
         assert!(!html.contains("<link "));
         assert!(!html.contains("src=\"http"));
+    }
+
+    #[test]
+    fn html_export_escapes_script_breakout_in_names() {
+        let hostile = "</script><script>alert(1)</script>";
+        // a VDI name lands in the embedded tree JSON
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml").replace("base copy", hostile);
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), "test");
+        let html = render_vdi_tree_html(&r, None, false).unwrap();
+        assert!(
+            !html.contains("</script><script>alert(1)</script>"),
+            "unescaped </script> in embedded JSON"
+        );
+        assert!(html.contains("<\\/script>"));
+    }
+
+    #[test]
+    fn html_export_escapes_bundle_path_in_meta() {
+        let hostile = "<script>alert(1)</script>";
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml");
+        let db = crate::xapidb::XapiDb::from_xml(xml).unwrap();
+        let r = crate::report::build_report(&db, &crate::inventory::Inventory::default(), hostile);
+        let html = render_vdi_tree_html(&r, None, false).unwrap();
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(!html.contains("bundle: <script>"));
     }
 }

@@ -1156,6 +1156,7 @@ mod tests {
         parse_xapi_time(s).unwrap()
     }
 
+    #[allow(clippy::too_many_arguments)] // test builder: one arg per LogLine field
     fn line(
         file: &str,
         n: usize,

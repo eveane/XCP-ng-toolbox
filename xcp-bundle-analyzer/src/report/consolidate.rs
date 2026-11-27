@@ -413,7 +413,7 @@ mod tests {
             r#"other_config="(('boot_time' '1750000000')%.('auto-scan-interval' '600'))""#,
             r#"other_config="(('boot_time' '1750000000'))""#,
         );
-        let db = XapiDb::from_xml(&xml).unwrap();
+        let db = XapiDb::from_xml(xml).unwrap();
         let r = build_report(&db, &Inventory::default(), "test");
         let scans: Vec<&Anomaly> = r
             .anomalies
@@ -448,7 +448,7 @@ mod tests {
             r#"other_config="(('auto-scan-interval' '600'))""#,
             r#"other_config="(('auto-scan-interval' '3600'))""#,
         );
-        let db = XapiDb::from_xml(&xml).unwrap();
+        let db = XapiDb::from_xml(xml).unwrap();
         let r = build_report(&db, &Inventory::default(), "test");
         let scans: Vec<&Anomaly> = r
             .anomalies

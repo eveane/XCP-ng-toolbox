@@ -13,8 +13,15 @@ use crate::report::BundleReport;
 pub fn render_html(r: &BundleReport) -> anyhow::Result<String> {
     let json = serde_json::to_string_pretty(r)?;
     Ok(HTML_TEMPLATE
-        .replace("__REPORT_JSON__", &json)
+        .replace("__REPORT_JSON__", &json_for_script_embed(&json))
         .replace("__VERSION__", VERSION))
+}
+
+/// Make a JSON string safe to embed in a `<script>` block: a literal `</`
+/// would close the script element early (XSS via e.g. a VM name containing
+/// `</script>`), so escape it as `<\/` (valid inside JSON strings).
+pub fn json_for_script_embed(json: &str) -> String {
+    json.replace("</", "<\\/")
 }
 
 const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -155,3 +162,35 @@ function filterVms() {
 // ---------------------------------------------------------------------------
 // vm-display: detailed single-VM view (like `xe vm-param-list`)
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::inventory::Inventory;
+    use crate::report::build_report;
+    use crate::xapidb::XapiDb;
+
+    #[test]
+    fn embedded_json_cannot_break_out_of_script_tag() {
+        let hostile = "</script><script>alert(1)</script>";
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml")
+            .replace("Debian%.12%.template", hostile);
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        let html = render_html(&r).unwrap();
+        assert!(
+            !html.contains("</script><script>alert(1)</script>"),
+            "unescaped </script> in embedded JSON"
+        );
+        assert!(html.contains("<\\/script>"), "expected escaped close tag");
+    }
+
+    #[test]
+    fn json_for_script_embed_only_touches_close_tags() {
+        assert_eq!(
+            json_for_script_embed("{\"a\":\"</b>\"}"),
+            "{\"a\":\"<\\/b>\"}"
+        );
+        assert_eq!(json_for_script_embed("{\"a\":1}"), "{\"a\":1}");
+    }
+}

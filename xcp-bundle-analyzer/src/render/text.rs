@@ -1098,7 +1098,7 @@ mod pool_section_tests {
                 "master=\"OpaqueRef:host1\"",
                 &format!("master=\"OpaqueRef:host1\" {attr}=\"true\""),
             );
-            let db = XapiDb::from_xml(&xml).unwrap();
+            let db = XapiDb::from_xml(xml).unwrap();
             let r = build_report(&db, &Inventory::default(), "test");
             assert_eq!(r.pool.migration_compression, Some(true), "{attr}");
             let text = render_sections(&r, &[Section::Pool]);
@@ -1208,7 +1208,7 @@ mod host_release_line_tests {
             r#"('xapi' '26.1')"#,
             r#"('xapi' '26.1') ('xostor' '3.2.1')"#,
         );
-        let db = XapiDb::from_xml(&xml).unwrap();
+        let db = XapiDb::from_xml(xml).unwrap();
         let r = build_report(&db, &Inventory::default(), "test");
         let text = render_sections(&r, &[Section::Hosts]);
         let line = text.lines().find(|l| l.contains("xostor:")).unwrap();
