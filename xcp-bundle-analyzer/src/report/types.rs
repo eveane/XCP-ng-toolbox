@@ -22,6 +22,10 @@ pub struct HostReport {
     /// when installed on the host.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub xostor_version: Option<String>,
+    /// Name of the XOSTOR (linstor-type) SR plugged on this host — fallback
+    /// visibility when the dump has no xostor/linstor version key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub xostor_sr: Option<String>,
     /// Estimated release info for product_version (release date, how many
     /// releases behind the newest known release).
     pub release_estimate: Option<crate::report::ReleaseEstimate>,

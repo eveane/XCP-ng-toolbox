@@ -140,6 +140,16 @@ pub(crate) fn render_hosts(r: &BundleReport, out: &mut String) {
         if let Some(xv) = &h.xostor_version {
             let _ = writeln!(out, "  xostor: {xv} (installed)");
         }
+        if let Some(sr) = &h.xostor_sr {
+            if h.xostor_version.is_some() {
+                let _ = writeln!(out, "  xostor SR: '{sr}' (type linstor)");
+            } else {
+                let _ = writeln!(
+                    out,
+                    "  xostor: present via linstor SR '{sr}' (no version key in dump)"
+                );
+            }
+        }
         let ht = if h.cpu_count > h.cpu_cores {
             "on"
         } else {
@@ -276,13 +286,18 @@ pub(crate) fn render_storage_filtered(
 pub(crate) fn render_srs_body(r: &BundleReport, out: &mut String) {
     let _ = writeln!(out, "\n--- STORAGE REPOSITORIES ({}) ---", r.srs.len());
     for s in &r.srs {
+        let cat = if s.category == "xostor" {
+            "xostor (XOSTOR hyperconverged, LINSTOR-based)".to_string()
+        } else {
+            s.category.clone()
+        };
         let _ = writeln!(
             out,
             "{} [{}] type={} category={} shared={} size={} used={} PBDs={} VDIs={}",
             s.name,
             s.uuid,
             s.sr_type,
-            s.category,
+            cat,
             s.shared,
             gib(s.size_bytes),
             gib(s.used_bytes),
@@ -1186,6 +1201,37 @@ mod host_release_line_tests {
         assert!(line.contains("xapi: 26.1"), "{line}");
         // no standalone xapi line anymore
         assert!(!text.lines().any(|l| l.trim_start().starts_with("xapi:")));
+    }
+
+    #[test]
+    fn xostor_detected_via_linstor_sr_without_version_key() {
+        // a linstor SR plugged on host1, no xostor/linstor key in
+        // software_version (older installs only ship sm-*.linstor RPMs)
+        let xml = include_str!("../../tests/fixtures/xapi-db.xml")
+            .replace(
+                "<table name=\"SR\">",
+                "<table name=\"SR\"><row ref=\"OpaqueRef:sr-xostor\" uuid=\"sr-xostor-uuid\" name__label=\"XOSTOR\" type=\"linstor\" shared=\"true\" PBDs=\"(OpaqueRef:pbd-xostor)\" VDIs=\"()\"/>",
+            )
+            .replace(
+                "<table name=\"PBD\">",
+                "<table name=\"PBD\"><row ref=\"OpaqueRef:pbd-xostor\" uuid=\"pbd-xostor-uuid\" host=\"OpaqueRef:host1\" SR=\"OpaqueRef:sr-xostor\" currently_attached=\"true\"/>",
+            );
+        let db = XapiDb::from_xml(xml).unwrap();
+        let r = build_report(&db, &Inventory::default(), "test");
+        // host1 reports xostor presence via the SR even without a version key
+        let h1 = r
+            .hosts
+            .iter()
+            .find(|h| h.hostname == "host1.example.com")
+            .unwrap();
+        assert_eq!(h1.xostor_version, None);
+        assert_eq!(h1.xostor_sr.as_deref(), Some("XOSTOR"));
+        // text: host line + SR category label
+        let text = render_sections(&r, &[Section::Hosts, Section::Storage]);
+        let line = text.lines().find(|l| l.contains("xostor:")).unwrap();
+        assert!(line.contains("present via linstor SR 'XOSTOR'"), "{line}");
+        let srline = text.lines().find(|l| l.contains("type=linstor")).unwrap();
+        assert!(srline.contains("XOSTOR hyperconverged"), "{srline}");
     }
 
     #[test]

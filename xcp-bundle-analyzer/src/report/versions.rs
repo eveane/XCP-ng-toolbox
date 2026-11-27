@@ -106,6 +106,16 @@ const XCPNG_83_UPDATES: &[(&str, &str, &str, &str)] = &[
         "2026-11-10",
         "https://xcp-ng.org/blog/2026/11/10/november-2026-security-updates-3-for-xcp-ng-8-3-lts/",
     ),
+    // November 2026 Updates #4 (2026-11-25): xapi back on the 26.1 line
+    // (xapi 26.1.23-2.1.xcpng8.3), kernel synced with XenServer
+    // 4.19.19-8.0.51 (4.19.19-8.0.51.1.xcpng8.3), OpenSSH 9.9p1-33.3,
+    // Windows guest tools 9.2.445, XO Lite 0.27.0. XSA-524/XSA-525 fixes.
+    (
+        "26.1.23",
+        "4.17.7",
+        "2026-11-25",
+        "https://xcp-ng.org/blog/2026/11/25/november-2026-updates-4-for-xcp-ng-8-3-lts/",
+    ),
 ];
 
 /// Date (YYYY-MM-DD) the embedded release/update tables above were last
@@ -113,7 +123,7 @@ const XCPNG_83_UPDATES: &[(&str, &str, &str, &str)] = &[
 /// release estimates so users know how fresh the offline database is.
 /// MAINTAINERS: bump this whenever XCPNG_RELEASES / XCPNG_83_UPDATES /
 /// XENSERVER_RELEASES are refreshed — on every commit, per repo policy.
-pub const RELEASE_DB_LAST_UPDATED: &str = "2026-11-25";
+pub const RELEASE_DB_LAST_UPDATED: &str = "2026-11-27";
 
 /// One release estimate for a host's product version.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -196,17 +206,36 @@ fn estimate_83_update(xapi: &str, xen: &str) -> (Option<UpdateEstimate>, bool) {
     if xapi.is_empty() {
         return (None, false);
     }
-    // Window matching: the newest entry whose min xapi <= host's xapi.
+    // Matching, same-line first: xapi lines are NOT monotonic across update
+    // batches (Oct 2026 was 26.2.x; Nov 2026 Updates #4 went back to
+    // 26.1.23), so prefer the newest entry on the host's own xapi
+    // major.minor line; fall back to plain window matching (newest entry
+    // whose min xapi <= host's xapi) for lines absent from the table.
     let mut matched: Option<(&str, &str, &str)> = None;
     for (min_xapi, min_xen, date, source) in XCPNG_83_UPDATES {
-        if xapi_at_least(xapi, min_xapi) {
+        if same_line(xapi, min_xapi) && xapi_at_least(xapi, min_xapi) {
             matched = Some((min_xen, date, source));
         }
     }
-    // Staleness signal: the host's xapi is strictly above the newest entry
-    // and is not just an abbreviated form of that entry's line.
-    let (newest_xapi, ..) = XCPNG_83_UPDATES[XCPNG_83_UPDATES.len() - 1];
-    let newer = version_key(xapi) > version_key(newest_xapi) && !same_line(xapi, newest_xapi);
+    if matched.is_none() {
+        for (min_xapi, min_xen, date, source) in XCPNG_83_UPDATES {
+            if xapi_at_least(xapi, min_xapi) {
+                matched = Some((min_xen, date, source));
+            }
+        }
+    }
+    // Staleness signal: the host's xapi is strictly above every entry and
+    // its line is not in the table at all (not just an abbreviated form of
+    // a known line).
+    let max_entry = XCPNG_83_UPDATES
+        .iter()
+        .map(|(m, _, _, _)| version_key(m))
+        .max()
+        .unwrap_or_default();
+    let newer = version_key(xapi) > max_entry
+        && !XCPNG_83_UPDATES
+            .iter()
+            .any(|(m, _, _, _)| same_line(xapi, m));
     match matched {
         Some((min_xen, date, source)) => {
             // xen cross-check: the host's xen must be at least the entry's
@@ -346,6 +375,25 @@ mod tests {
         // xapi newer than the newest entry -> flagged as newer than the table
         let e = estimate_release_with_components("8.3.0", "27.0", "4.17.7").unwrap();
         assert!(e.newer_than_table, "xapi 27.0 is newer than the table");
+
+        // November 2026 Updates #4 (2026-11-25): xapi back on the 26.1 line
+        // (26.1.23) — must map to the Nov #4 announcement, not the July one
+        let e = estimate_release_with_components("8.3.0", "26.1.23", "4.17.7").unwrap();
+        let u = e.update_estimate.as_ref().unwrap();
+        assert_eq!(u.date, "2026-11-25", "{u:?}");
+        assert!(u.source.contains("updates-4"), "{}", u.source);
+        assert!(!e.newer_than_table);
+
+        // non-monotonic lines: an Oct 2026 host (xapi 26.2.x) must NOT be
+        // labeled with the later Nov #4 (26.1.23) entry
+        let e = estimate_release_with_components("8.3.0", "26.2.1", "4.17.7").unwrap();
+        let u = e.update_estimate.as_ref().unwrap();
+        assert_eq!(u.date, "2026-11-10", "{u:?}");
+        assert!(!e.newer_than_table, "26.2 line is in the table");
+
+        // July 2026 host on the 26.1 line still maps to July, not Nov #4
+        let e = estimate_release_with_components("8.3.0", "26.1.11", "4.17.7").unwrap();
+        assert_eq!(e.update_estimate.as_ref().unwrap().date, "2026-07-28");
 
         // non-8.3 XCP-ng: no update estimate even with xapi present
         let e = estimate_release_with_components("8.2.1", "24.30.3", "4.17").unwrap();
